@@ -9,7 +9,9 @@ use tauri_specta::{Builder, collect_commands};
 fn generate_typescript_bindings() {
     let builder = Builder::<tauri::Wry>::new()
         .commands(collect_commands![crate::commands::hello])
-        .typ::<crate::parser::model::Baseline>();
+        .typ::<crate::parser::model::Baseline>()
+        .typ::<crate::audit::model::Scan>()
+        .typ::<crate::storage::UserState>();
 
     builder
         .export(Typescript::default(), "../src/bindings.ts")

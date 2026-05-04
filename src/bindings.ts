@@ -47,6 +47,20 @@ export type Category = {
 	parent: string | null,
 };
 
+export type DeviceInfo = {
+	hostname: string,
+	osName: string,
+	osVersion: string,
+	osBuild: string,
+	managedBy: Management,
+};
+
+export type Exception = {
+	reason: string,
+	grantedAt: string,
+	grantedBy: string | null,
+};
+
 export type ExpectedValue = { type: "Equals"; value: Value } | { type: "NotEquals"; value: Value } | { type: "AtLeast"; value: number } | { type: "AtMost"; value: number } | { type: "OneOf"; values: Value[] } | { type: "Contains"; substring: string } | { type: "ContainsAll"; substrings: string[] } | { type: "Absent" } | { type: "AbsentOr"; inner: ExpectedValue } | { type: "All"; values: ExpectedValue[] } | { type: "Any"; values: ExpectedValue[] };
 
 export type Hello = {
@@ -54,6 +68,11 @@ export type Hello = {
 };
 
 export type Level = "L1" | "L2" | "BL";
+
+export type Management = {
+	intune: boolean,
+	groupPolicy: boolean,
+};
 
 export type PolicyScope = "Device" | "User";
 
@@ -99,6 +118,22 @@ export type Remediation = {
 	defaultValue: string | null,
 };
 
+export type Scan = {
+	baselineSha256: string,
+	startedAt: string,
+	finishedAt: string | null,
+	device: DeviceInfo,
+	results: { [key in string]: ScanResult },
+	error: string | null,
+};
+
+export type ScanResult = {
+	status: Status,
+	currentValue: string | null,
+	error: string | null,
+	measuredAt: string,
+};
+
 export type SeceditSection = 
 // Account Policies (Rename Guest, password policy, etc.).
 { type: "SystemAccess" } | 
@@ -108,6 +143,13 @@ export type SeceditSection =
 { type: "Service" } | 
 // Escape hatch for sections we encounter outside the above.
 { type: "Other"; name: string };
+
+export type Status = "Pass" | "Fail" | "Manual" | "Error";
+
+export type UserState = {
+	baselineSha256: string,
+	exceptions: { [key in string]: Exception },
+};
 
 export type Value = { type: "Dword"; value: number } | { type: "QDword"; value: number } | { type: "Str"; value: string } | { type: "MultiStr"; values: string[] } | { type: "Binary"; bytes: number[] };
 
