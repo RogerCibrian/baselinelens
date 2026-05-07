@@ -172,7 +172,7 @@ pub enum AuditPolicyMode {
 // Expected values and principals
 // ============================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(tag = "type", rename_all_fields = "camelCase")]
 pub enum ExpectedValue {
     Equals { value: Value },
@@ -188,7 +188,7 @@ pub enum ExpectedValue {
     Any { values: Vec<ExpectedValue> },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(tag = "type")]
 pub enum Value {
     Dword { value: u32 },
