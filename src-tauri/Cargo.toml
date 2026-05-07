@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 directories = "6"
+pdf-extract = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
