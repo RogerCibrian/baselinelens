@@ -17,17 +17,42 @@ pub(super) fn try_parse(body: &str, paths: &[JoinedPath]) -> Option<AuditProcedu
     if scoped.is_empty() {
         return None;
     }
-    let expected = expected::parse(body)?;
-    let checks = scoped
-        .into_iter()
-        .map(|(scope, joined)| RegistryCheck {
-            path: joined.path.clone(),
-            value_name: joined.value_name.clone(),
-            expected: expected.clone(),
-            scope,
-        })
-        .collect();
-    Some(AuditProcedure::Registry { checks })
+
+    // Common case: a single expected value applies to every check.
+    if let Some(expected) = expected::parse(body) {
+        let checks = scoped
+            .into_iter()
+            .map(|(scope, joined)| RegistryCheck {
+                path: joined.path.clone(),
+                value_name: joined.value_name.clone(),
+                expected: expected.clone(),
+                scope,
+            })
+            .collect();
+        return Some(AuditProcedure::Registry { checks });
+    }
+
+    // Per-key fallback: prose says "value of N1 (NameA) and N2 (NameB)" — each
+    // check looks up its expected value by matching value_name to NameA/NameB.
+    if let Some(per_key) = expected::parse_per_key_dword(body) {
+        let checks: Vec<RegistryCheck> = scoped
+            .into_iter()
+            .filter_map(|(scope, joined)| {
+                let entry = per_key.iter().find(|(name, _)| name == &joined.value_name)?;
+                Some(RegistryCheck {
+                    path: joined.path.clone(),
+                    value_name: joined.value_name.clone(),
+                    expected: entry.1.clone(),
+                    scope,
+                })
+            })
+            .collect();
+        if !checks.is_empty() {
+            return Some(AuditProcedure::Registry { checks });
+        }
+    }
+
+    None
 }
 
 fn scope_prefix(path: &str) -> Option<RegistryScope> {
@@ -85,6 +110,38 @@ HKLM\\SOFTWARE\\B:Y
         let body = "Some text with REG_DWORD value of 0 but no path.\n";
         let paths = paths_for(body);
         assert!(try_parse(body, &paths).is_none());
+    }
+
+    #[test]
+    fn try_parse_assigns_per_key_expected_when_prose_uses_split() {
+        // Mimics 4.10.20.1.13: each path's value_name maps to its own expected.
+        let body = "\
+REG_DWORD value of 1 (Disabled) and 0 (DoReport).
+HKLM\\SOFTWARE\\X:Disabled
+HKLM\\SOFTWARE\\Y:DoReport
+";
+        let paths = paths_for(body);
+        let procedure = try_parse(body, &paths).expect("should parse");
+        match procedure {
+            AuditProcedure::Registry { checks } => {
+                assert_eq!(checks.len(), 2);
+                let disabled = checks.iter().find(|c| c.value_name == "Disabled").unwrap();
+                let do_report = checks.iter().find(|c| c.value_name == "DoReport").unwrap();
+                assert_eq!(
+                    disabled.expected,
+                    ExpectedValue::Equals {
+                        value: Value::Dword { value: 1 }
+                    }
+                );
+                assert_eq!(
+                    do_report.expected,
+                    ExpectedValue::Equals {
+                        value: Value::Dword { value: 0 }
+                    }
+                );
+            }
+            _ => panic!("expected Registry variant"),
+        }
     }
 
     #[test]

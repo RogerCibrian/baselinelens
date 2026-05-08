@@ -127,14 +127,26 @@ HKLM\\SOFTWARE\\Microsoft\\PolicyManager\\Providers\\{GUID}\\Default\\Device\\Ab
     }
 
     #[test]
-    fn try_parse_returns_none_for_admx_xml_value() {
-        // Mimics rec 4.11.18.1 — XML serialization isn't supported in v1.
+    fn try_parse_handles_admx_xml_value_as_str_equals() {
         let body = "\
 HKLM\\SOFTWARE\\Microsoft\\PolicyManager\\current\\device\\ADMX_X:Setting_WinningProvider
 
 the value is set to <enabled/><data id=\"X\" value=\"Y\" />.
 ";
         let paths = path::extract_all(body);
-        assert!(try_parse(body, &paths).is_none());
+        let procedure = try_parse(body, &paths).expect("should parse");
+        match procedure {
+            AuditProcedure::PolicyManager { expected, .. } => {
+                assert_eq!(
+                    expected,
+                    ExpectedValue::Equals {
+                        value: Value::Str {
+                            value: "<enabled/><data id=\"X\" value=\"Y\" />".to_string()
+                        }
+                    }
+                );
+            }
+            _ => panic!("expected PolicyManager"),
+        }
     }
 }

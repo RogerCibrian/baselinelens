@@ -61,11 +61,50 @@ pub(super) fn parse(body: &str) -> Option<ExpectedValue> {
     }
 
     if let Some(after) = find_after(&normalized, "the value is set to ") {
-        let snippet = capture_until_period(after);
+        let snippet = capture_until_period(after).trim();
+        // ADMX-XML literal value (e.g. `<enabled/><data id="..." value="..." />`)
+        // is stored as a string; the audit script does an exact match.
+        if snippet.starts_with('<') {
+            return Some(ExpectedValue::Equals {
+                value: Value::Str {
+                    value: snippet.to_string(),
+                },
+            });
+        }
         return parse_dword_constraint(snippet);
     }
 
     None
+}
+
+/// Parses the per-key-different DWORD pattern: `REG_DWORD value of N1 (NameA)
+/// and N2 (NameB)`. Returns `(value_name, expected)` pairs that callers can
+/// use to assign each registry check its own expected value.
+pub(super) fn parse_per_key_dword(body: &str) -> Option<Vec<(String, ExpectedValue)>> {
+    let normalized = normalize_whitespace(body);
+    let after = find_after(&normalized, "REG_DWORD value of ")?;
+    let snippet = capture_until_period(after);
+    if !contains_per_key_split(snippet) {
+        return None;
+    }
+    let parts: Vec<&str> = snippet.split(" and ").collect();
+    let mut entries = Vec::with_capacity(parts.len());
+    for part in parts {
+        let trimmed = part.trim();
+        let value = parse_dword(trimmed)?;
+        let open = trimmed.find('(')?;
+        let close_offset = trimmed[open..].find(')')?;
+        let name = trimmed[open + 1..open + close_offset].trim().to_string();
+        if name.is_empty() {
+            return None;
+        }
+        entries.push((name, ExpectedValue::Equals { value }));
+    }
+    if entries.is_empty() {
+        None
+    } else {
+        Some(entries)
+    }
 }
 
 /// Parses the snippet after `the value contains ` (used in ASR rec audit text).
@@ -489,12 +528,6 @@ mod tests {
         assert_eq!(parse(body), None);
     }
 
-    #[test]
-    fn bails_on_admx_xml_value() {
-        // 4.11.18.1 — XML serialization can't be parsed by v1.
-        let body = "...the value is set to <enabled/><data id=\"X\" value=\"Y\" />.\n";
-        assert_eq!(parse(body), None);
-    }
 
     #[test]
     fn parses_reg_sz_guid_list_as_containsall() {
@@ -571,6 +604,52 @@ mod tests {
                 substring: "d4f940ab-401b-4efc-aadc-ad5f3c50688a=1".to_string(),
             })
         );
+    }
+
+    #[test]
+    fn parses_admx_xml_literal_as_str_equals() {
+        // Mimics 4.11.18.1 — XML literal value.
+        let body = "...the value is set to <enabled/><data id=\"X\" value=\"Block\" />.\n";
+        assert_eq!(
+            parse(body),
+            Some(ExpectedValue::Equals {
+                value: Value::Str {
+                    value: "<enabled/><data id=\"X\" value=\"Block\" />".to_string()
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn parses_per_key_dword_returns_value_name_pairs() {
+        // Mimics 4.10.20.1.13 — different expected values per key.
+        let body = "...REG_DWORD value of 1 (Disabled) and 0 (DoReport).\n";
+        let entries = parse_per_key_dword(body).expect("per-key");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries[0],
+            (
+                "Disabled".to_string(),
+                ExpectedValue::Equals {
+                    value: Value::Dword { value: 1 }
+                }
+            )
+        );
+        assert_eq!(
+            entries[1],
+            (
+                "DoReport".to_string(),
+                ExpectedValue::Equals {
+                    value: Value::Dword { value: 0 }
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn parse_per_key_dword_returns_none_when_no_per_key_split() {
+        let body = "...REG_DWORD value of 0.\n";
+        assert!(parse_per_key_dword(body).is_none());
     }
 
     #[test]

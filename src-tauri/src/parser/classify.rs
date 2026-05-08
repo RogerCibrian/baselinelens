@@ -149,26 +149,22 @@ mod tests {
              manual_other={manual_other}"
         );
 
-        assert!(
-            registry >= 200,
-            "expected at least 200 Registry classifications, got {registry}"
+        assert_eq!(
+            registry + policy_manager + audit_policy + user_rights + secedit_count,
+            recs.len(),
+            "every recommendation should be cleanly classified"
         );
         assert!(
-            policy_manager >= 30,
-            "expected at least 30 PolicyManager classifications, got {policy_manager}"
+            registry >= 330,
+            "expected at least 330 Registry classifications, got {registry}"
         );
         assert!(
-            audit_policy >= 25,
-            "expected at least 25 AuditPolicy classifications, got {audit_policy}"
+            policy_manager >= 55,
+            "expected at least 55 PolicyManager classifications, got {policy_manager}"
         );
-        assert!(
-            user_rights >= 30,
-            "expected at least 30 URA classifications, got {user_rights}"
-        );
-        assert!(
-            secedit_count >= 3,
-            "expected at least 3 Secedit classifications, got {secedit_count}"
-        );
+        assert_eq!(audit_policy, 27);
+        assert_eq!(user_rights, 35);
+        assert_eq!(secedit_count, 3);
     }
 
     #[test]
