@@ -154,6 +154,14 @@ fn parse_dword_constraint(snippet: &str) -> Option<ExpectedValue> {
         return Some(ExpectedValue::AtLeast { value: bound });
     }
 
+    // "N or that the key does not exist" → AbsentOr(Equals(Dword(N)))
+    if let Some((bound_part, _)) = cleaned.split_once(" or that the key does not exist") {
+        let value = parse_dword(bound_part)?;
+        return Some(ExpectedValue::AbsentOr {
+            inner: Box::new(ExpectedValue::Equals { value }),
+        });
+    }
+
     let parts: Vec<&str> = cleaned.split(" or ").map(str::trim).collect();
     if parts.len() == 1 {
         let value = parse_dword(parts[0])?;
@@ -446,6 +454,20 @@ mod tests {
     fn parses_absent_key_not_existing() {
         let body = "...registry location with the key not existing.\n";
         assert_eq!(parse(body), Some(ExpectedValue::Absent));
+    }
+
+    #[test]
+    fn parses_absent_or_with_reversed_wording() {
+        // Services pattern: "REG_DWORD value of 4 or that the key does not exist."
+        let body = "...REG_DWORD value of 4 or that the key does not exist.\n";
+        assert_eq!(
+            parse(body),
+            Some(ExpectedValue::AbsentOr {
+                inner: Box::new(ExpectedValue::Equals {
+                    value: Value::Dword { value: 4 }
+                }),
+            })
+        );
     }
 
     #[test]

@@ -6,6 +6,7 @@ mod expected;
 mod path;
 mod policy_manager;
 mod registry;
+mod secedit;
 mod user_rights_assignment;
 
 use crate::parser::model::AuditProcedure;
@@ -61,6 +62,19 @@ pub(crate) fn audit_procedure(rec: &RawRecommendation) -> AuditProcedure {
         return manual("URA body could not be parsed");
     }
 
+    if rec
+        .sections
+        .remediation
+        .as_deref()
+        .map(|remediation| remediation.contains("Local Policies Security Options\\"))
+        .unwrap_or(false)
+    {
+        if let Some(procedure) = secedit::try_parse(rec) {
+            return procedure;
+        }
+        return manual("Secedit body could not be parsed");
+    }
+
     manual("unhandled audit body shape")
 }
 
@@ -88,10 +102,12 @@ mod tests {
         let mut policy_manager = 0usize;
         let mut audit_policy = 0usize;
         let mut user_rights = 0usize;
+        let mut secedit_count = 0usize;
         let mut manual_unparsed_pm = 0usize;
         let mut manual_unparsed_registry = 0usize;
         let mut manual_unparsed_ap = 0usize;
         let mut manual_unparsed_ura = 0usize;
+        let mut manual_unparsed_secedit = 0usize;
         let mut manual_other = 0usize;
 
         for rec in &recs {
@@ -100,6 +116,7 @@ mod tests {
                 AuditProcedure::PolicyManager { .. } => policy_manager += 1,
                 AuditProcedure::AuditPolicy { .. } => audit_policy += 1,
                 AuditProcedure::UserRightsAssignment { .. } => user_rights += 1,
+                AuditProcedure::Secedit { .. } => secedit_count += 1,
                 AuditProcedure::Manual { description } => {
                     if description.contains("PolicyManager body") {
                         manual_unparsed_pm += 1;
@@ -109,11 +126,12 @@ mod tests {
                         manual_unparsed_ap += 1;
                     } else if description.contains("URA body") {
                         manual_unparsed_ura += 1;
+                    } else if description.contains("Secedit body") {
+                        manual_unparsed_secedit += 1;
                     } else {
                         manual_other += 1;
                     }
                 }
-                _ => {}
             }
         }
 
@@ -122,10 +140,12 @@ mod tests {
              policy_manager={policy_manager} \
              audit_policy={audit_policy} \
              user_rights={user_rights} \
+             secedit={secedit_count} \
              manual_unparsed_pm={manual_unparsed_pm} \
              manual_unparsed_registry={manual_unparsed_registry} \
              manual_unparsed_ap={manual_unparsed_ap} \
              manual_unparsed_ura={manual_unparsed_ura} \
+             manual_unparsed_secedit={manual_unparsed_secedit} \
              manual_other={manual_other}"
         );
 
@@ -144,6 +164,10 @@ mod tests {
         assert!(
             user_rights >= 30,
             "expected at least 30 URA classifications, got {user_rights}"
+        );
+        assert!(
+            secedit_count >= 3,
+            "expected at least 3 Secedit classifications, got {secedit_count}"
         );
     }
 
@@ -293,6 +317,29 @@ mod tests {
             }
         }
         eprintln!("\n--- total URA recs: {count} ---");
+    }
+
+    #[test]
+    #[ignore = "diagnostic — dumps Secedit + Services rec bodies for pattern review"]
+    fn dumps_secedit_and_services_bodies() {
+        let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
+        let text = pdf::extract(&pdf_path).expect("PDF extraction");
+        let recs = structure::slice(&text).expect("slicing");
+
+        for rec in &recs {
+            // Secedit (49.x) and Services (81.x).
+            if !rec.id.starts_with("49.") && !rec.id.starts_with("81.") {
+                continue;
+            }
+            eprintln!("\n=== [{}] {} ===", rec.id, rec.title);
+            if let Some(audit) = rec.sections.audit.as_deref() {
+                eprintln!("--- audit ---\n{audit}");
+            }
+            if let Some(rem) = rec.sections.remediation.as_deref() {
+                eprintln!("--- remediation ---\n{rem}");
+            }
+        }
     }
 
     fn summarize(procedure: &AuditProcedure) -> String {
