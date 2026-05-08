@@ -1,6 +1,10 @@
 //! Variant detection: maps a raw recommendation's audit body to an
 //! `AuditProcedure` variant.
 
+mod audit_policy;
+mod expected;
+mod path;
+mod policy_manager;
 mod registry;
 
 use crate::parser::model::AuditProcedure;
@@ -8,27 +12,39 @@ use crate::parser::structure::RawRecommendation;
 
 /// Returns the appropriate `AuditProcedure` variant for this recommendation.
 ///
-/// Cues are checked in priority order so that recs whose body happens to
-/// contain `HKLM\` for incidental reasons (PolicyManager's WinningProvider
-/// lookup) don't get mis-classified as Registry. Anything we don't yet
-/// recognize falls through to a `Manual` variant whose description names
-/// the reason.
+/// HKLM/HKU paths are extracted once via the shared `path` module; if any of
+/// them is a `_WinningProvider` lookup the rec is routed to PolicyManager,
+/// otherwise to Registry. Anything we don't yet recognize falls through to a
+/// `Manual` variant whose description names the reason.
 pub(crate) fn audit_procedure(rec: &RawRecommendation) -> AuditProcedure {
     let Some(body) = rec.sections.audit.as_deref() else {
         return manual("missing audit section");
     };
 
-    // PolicyManager recs also contain `HKLM\` paths, so we have to disambiguate
-    // before falling into the registry branch.
-    if body.contains("_WinningProvider") {
-        return manual("PolicyManager variant (not yet implemented)");
+    let paths = path::extract_all(body);
+
+    if paths
+        .iter()
+        .any(|joined| joined.value_name.ends_with("_WinningProvider"))
+    {
+        if let Some(procedure) = policy_manager::try_parse(body, &paths) {
+            return procedure;
+        }
+        return manual("PolicyManager body could not be parsed");
     }
 
-    if body.contains("HKLM\\") || body.contains("HKU\\") {
-        if let Some(procedure) = registry::try_parse(body) {
+    if !paths.is_empty() {
+        if let Some(procedure) = registry::try_parse(body, &paths) {
             return procedure;
         }
         return manual("registry body could not be parsed");
+    }
+
+    if body.contains("auditpol /get /subcategory:") {
+        if let Some(procedure) = audit_policy::try_parse(body, &rec.title) {
+            return procedure;
+        }
+        return manual("AuditPolicy body could not be parsed");
     }
 
     manual("unhandled audit body shape")
@@ -55,40 +71,54 @@ mod tests {
         assert_eq!(recs.len(), 457);
 
         let mut registry = 0usize;
-        let mut manual_pm = 0usize;
-        let mut manual_other = 0usize;
+        let mut policy_manager = 0usize;
+        let mut audit_policy = 0usize;
+        let mut manual_unparsed_pm = 0usize;
         let mut manual_unparsed_registry = 0usize;
-        let mut other_variants = 0usize;
+        let mut manual_unparsed_ap = 0usize;
+        let mut manual_other = 0usize;
 
         for rec in &recs {
             match audit_procedure(rec) {
                 AuditProcedure::Registry { .. } => registry += 1,
+                AuditProcedure::PolicyManager { .. } => policy_manager += 1,
+                AuditProcedure::AuditPolicy { .. } => audit_policy += 1,
                 AuditProcedure::Manual { description } => {
-                    if description.contains("PolicyManager") {
-                        manual_pm += 1;
+                    if description.contains("PolicyManager body") {
+                        manual_unparsed_pm += 1;
                     } else if description.contains("registry body could not be parsed") {
                         manual_unparsed_registry += 1;
+                    } else if description.contains("AuditPolicy body") {
+                        manual_unparsed_ap += 1;
                     } else {
                         manual_other += 1;
                     }
                 }
-                _ => other_variants += 1,
+                _ => {}
             }
         }
 
         eprintln!(
             "classification: registry={registry} \
-             manual_policy_manager={manual_pm} \
+             policy_manager={policy_manager} \
+             audit_policy={audit_policy} \
+             manual_unparsed_pm={manual_unparsed_pm} \
              manual_unparsed_registry={manual_unparsed_registry} \
-             manual_other={manual_other} \
-             other_variants={other_variants}"
+             manual_unparsed_ap={manual_unparsed_ap} \
+             manual_other={manual_other}"
         );
 
-        // Conservative floor: most Registry recs (memory-noted ~337) should
-        // classify cleanly with the v1 expected-value patterns.
         assert!(
             registry >= 200,
             "expected at least 200 Registry classifications, got {registry}"
+        );
+        assert!(
+            policy_manager >= 30,
+            "expected at least 30 PolicyManager classifications, got {policy_manager}"
+        );
+        assert!(
+            audit_policy >= 25,
+            "expected at least 25 AuditPolicy classifications, got {audit_policy}"
         );
     }
 
@@ -125,6 +155,87 @@ mod tests {
                 ),
             };
             eprintln!("{line}");
+        }
+    }
+
+    #[test]
+    #[ignore = "diagnostic — dumps all PolicyManager rec bodies for pattern review"]
+    fn dumps_all_policy_manager_audit_bodies() {
+        let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
+        let text = pdf::extract(&pdf_path).expect("PDF extraction");
+        let recs = structure::slice(&text).expect("slicing");
+
+        let mut count = 0;
+        for rec in &recs {
+            let Some(audit) = rec.sections.audit.as_deref() else {
+                continue;
+            };
+            if !audit.contains("_WinningProvider") {
+                continue;
+            }
+            count += 1;
+            eprintln!("\n=== [{}] {} ===", rec.id, rec.title);
+            eprintln!("{audit}");
+        }
+        eprintln!("\n--- total PolicyManager recs: {count} ---");
+    }
+
+    #[test]
+    #[ignore = "diagnostic — dumps all AuditPolicy rec bodies for pattern review"]
+    fn dumps_all_audit_policy_bodies() {
+        let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
+        let text = pdf::extract(&pdf_path).expect("PDF extraction");
+        let recs = structure::slice(&text).expect("slicing");
+
+        let mut count = 0;
+        for rec in &recs {
+            let Some(audit) = rec.sections.audit.as_deref() else {
+                continue;
+            };
+            if !audit.contains("auditpol /get /subcategory:") {
+                continue;
+            }
+            count += 1;
+            eprintln!("\n=== [{}] {} ===", rec.id, rec.title);
+            eprintln!("--- audit ---\n{audit}");
+            if let Some(desc) = rec.sections.description.as_deref() {
+                eprintln!("--- description excerpt ---");
+                for line in desc.lines() {
+                    if line.contains("recommended state") {
+                        eprintln!("{line}");
+                    }
+                }
+            }
+        }
+        eprintln!("\n--- total AuditPolicy recs: {count} ---");
+    }
+
+    #[test]
+    #[ignore = "diagnostic — dumps every Manual-fallback rec grouped by reason"]
+    fn dumps_all_manual_fallbacks() {
+        let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
+        let text = pdf::extract(&pdf_path).expect("PDF extraction");
+        let recs = structure::slice(&text).expect("slicing");
+
+        let mut by_reason: std::collections::BTreeMap<String, Vec<&_>> =
+            std::collections::BTreeMap::new();
+        for rec in &recs {
+            if let AuditProcedure::Manual { description } = audit_procedure(rec) {
+                by_reason.entry(description).or_default().push(rec);
+            }
+        }
+
+        for (reason, members) in &by_reason {
+            eprintln!("\n############ {} ({} recs) ############", reason, members.len());
+            for rec in members {
+                eprintln!("\n--- [{}] {} ---", rec.id, rec.title);
+                if let Some(audit) = rec.sections.audit.as_deref() {
+                    eprintln!("{audit}");
+                }
+            }
         }
     }
 

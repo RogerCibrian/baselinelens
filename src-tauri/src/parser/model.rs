@@ -118,6 +118,7 @@ pub enum AuditProcedure {
     AuditPolicy {
         subcategory_guid: String,
         expected: AuditPolicyMode,
+        matching: AuditPolicyMatch,
     },
 
     /// No automated audit available.
@@ -166,6 +167,15 @@ pub enum AuditPolicyMode {
     Success,
     Failure,
     SuccessAndFailure,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub enum AuditPolicyMatch {
+    /// Title says `is set to 'X'` — actual must equal `X` exactly.
+    Exact,
+    /// Title says `is set to include 'X'` — actual must contain `X` (so
+    /// `Success` recs also pass when actual is `SuccessAndFailure`).
+    Includes,
 }
 
 // ============================================================================

@@ -178,7 +178,12 @@ fn read_title(heading_lines: &[&str]) -> String {
         .strip_suffix("(Automated)")
         .or_else(|| trimmed.strip_suffix("(Manual)"))
         .unwrap_or(trimmed);
-    without_assessment.trim_end().to_string()
+    // Collapse runs of whitespace introduced by mid-heading PDF wraps
+    // (e.g. `is  set to` / `is set  to`) into single spaces.
+    without_assessment
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Splits a single recommendation's body lines into the standard labeled
