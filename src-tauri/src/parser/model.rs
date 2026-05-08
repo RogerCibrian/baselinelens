@@ -105,6 +105,7 @@ pub enum AuditProcedure {
     UserRightsAssignment {
         right_name: String,
         expected: Vec<Principal>,
+        matching: MatchMode,
     },
 
     /// Account Policies / Security Options (audited via secedit /export).
@@ -118,7 +119,7 @@ pub enum AuditProcedure {
     AuditPolicy {
         subcategory_guid: String,
         expected: AuditPolicyMode,
-        matching: AuditPolicyMatch,
+        matching: MatchMode,
     },
 
     /// No automated audit available.
@@ -170,11 +171,12 @@ pub enum AuditPolicyMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub enum AuditPolicyMatch {
+pub enum MatchMode {
     /// Title says `is set to 'X'` — actual must equal `X` exactly.
     Exact,
-    /// Title says `is set to include 'X'` — actual must contain `X` (so
-    /// `Success` recs also pass when actual is `SuccessAndFailure`).
+    /// Title says `is set to include 'X'` / `to include 'X'` — actual must
+    /// contain `X` (so e.g. URA principals can be a superset, AuditPolicy
+    /// `Success` recs pass when actual is `SuccessAndFailure`).
     Includes,
 }
 

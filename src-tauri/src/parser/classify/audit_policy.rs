@@ -2,7 +2,7 @@
 //! `auditpol /get /subcategory:"{GUID}"` line in the audit body and the
 //! expected mode from the rec title.
 
-use crate::parser::model::{AuditPolicyMatch, AuditPolicyMode, AuditProcedure};
+use crate::parser::model::{MatchMode, AuditPolicyMode, AuditProcedure};
 
 /// Returns an `AuditPolicy` `AuditProcedure` if the body has a recognizable
 /// auditpol command and the title carries a parseable mode. Returns `None`
@@ -30,11 +30,11 @@ fn extract_subcategory_guid(audit_body: &str) -> Option<String> {
 
 /// Reads the mode and match kind out of the rec title.
 /// `is set to 'X'` → `(X, Exact)`; `is set to include 'X'` → `(X, Includes)`.
-fn parse_mode_from_title(title: &str) -> Option<(AuditPolicyMode, AuditPolicyMatch)> {
+fn parse_mode_from_title(title: &str) -> Option<(AuditPolicyMode, MatchMode)> {
     let (cue, matching) = if let Some(idx) = title.find("is set to include '") {
-        (&title[idx + "is set to include '".len()..], AuditPolicyMatch::Includes)
+        (&title[idx + "is set to include '".len()..], MatchMode::Includes)
     } else if let Some(idx) = title.find("is set to '") {
-        (&title[idx + "is set to '".len()..], AuditPolicyMatch::Exact)
+        (&title[idx + "is set to '".len()..], MatchMode::Exact)
     } else {
         return None;
     };
@@ -71,7 +71,7 @@ mod tests {
         let title = "Ensure 'Foo' is set to 'Success and Failure'";
         let (mode, matching) = parse_mode_from_title(title).expect("should parse");
         assert_eq!(mode, AuditPolicyMode::SuccessAndFailure);
-        assert_eq!(matching, AuditPolicyMatch::Exact);
+        assert_eq!(matching, MatchMode::Exact);
     }
 
     #[test]
@@ -79,7 +79,7 @@ mod tests {
         let title = "Ensure 'Foo' is set to include 'Success'";
         let (mode, matching) = parse_mode_from_title(title).expect("should parse");
         assert_eq!(mode, AuditPolicyMode::Success);
-        assert_eq!(matching, AuditPolicyMatch::Includes);
+        assert_eq!(matching, MatchMode::Includes);
     }
 
     #[test]
@@ -87,7 +87,7 @@ mod tests {
         let title = "Ensure 'Foo' is set to include 'Failure'";
         let (mode, matching) = parse_mode_from_title(title).expect("should parse");
         assert_eq!(mode, AuditPolicyMode::Failure);
-        assert_eq!(matching, AuditPolicyMatch::Includes);
+        assert_eq!(matching, MatchMode::Includes);
     }
 
     #[test]
@@ -95,7 +95,7 @@ mod tests {
         let title = "Ensure 'Foo' is set to 'No Auditing'";
         let (mode, matching) = parse_mode_from_title(title).expect("should parse");
         assert_eq!(mode, AuditPolicyMode::NoAuditing);
-        assert_eq!(matching, AuditPolicyMatch::Exact);
+        assert_eq!(matching, MatchMode::Exact);
     }
 
     #[test]
@@ -122,7 +122,7 @@ auditpol /get /subcategory:\"{0cce9215-69ae-11d9-bed3-505054503030}\"
             } => {
                 assert_eq!(subcategory_guid, "{0cce9215-69ae-11d9-bed3-505054503030}");
                 assert_eq!(expected, AuditPolicyMode::SuccessAndFailure);
-                assert_eq!(matching, AuditPolicyMatch::Exact);
+                assert_eq!(matching, MatchMode::Exact);
             }
             _ => panic!("expected AuditPolicy variant"),
         }
