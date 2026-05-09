@@ -10,21 +10,21 @@ use specta::Type;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct Baseline {
-    pub source: BaselineSource,
-    pub categories: Vec<Category>,
-    pub recommendations: Vec<Recommendation>,
+pub(crate) struct Baseline {
+    pub(crate) source: BaselineSource,
+    pub(crate) categories: Vec<Category>,
+    pub(crate) recommendations: Vec<Recommendation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct BaselineSource {
-    pub benchmark_name: String,
-    pub benchmark_version: String,
-    pub pdf_filename: String,
-    pub pdf_sha256: String,
-    pub parsed_at: DateTime<Utc>,
-    pub parser_version: String,
+pub(crate) struct BaselineSource {
+    pub(crate) benchmark_name: String,
+    pub(crate) benchmark_version: String,
+    pub(crate) pdf_filename: String,
+    pub(crate) pdf_sha256: String,
+    pub(crate) parsed_at: DateTime<Utc>,
+    pub(crate) parser_version: String,
 }
 
 // ============================================================================
@@ -33,54 +33,54 @@ pub struct BaselineSource {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct Recommendation {
-    pub id: String,
-    pub level: Level,
-    pub category_number: String,
-    pub title: String,
-    pub description: String,
-    pub rationale: Option<String>,
-    pub impact: Option<String>,
-    pub assessment: Assessment,
-    pub audit: AuditProcedure,
-    pub remediation: Option<Remediation>,
-    pub references: Vec<Reference>,
+pub(crate) struct Recommendation {
+    pub(crate) id: String,
+    pub(crate) level: Level,
+    pub(crate) category_number: String,
+    pub(crate) title: String,
+    pub(crate) description: String,
+    pub(crate) rationale: Option<String>,
+    pub(crate) impact: Option<String>,
+    pub(crate) assessment: Assessment,
+    pub(crate) audit: AuditProcedure,
+    pub(crate) remediation: Option<Remediation>,
+    pub(crate) references: Vec<Reference>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
-pub enum Level {
+pub(crate) enum Level {
     L1,
     L2,
     BL,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub enum Assessment {
+pub(crate) enum Assessment {
     Automated,
     Manual,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct Remediation {
-    pub description: String,
-    pub settings_catalog_path: Option<String>,
-    pub default_value: Option<String>,
+pub(crate) struct Remediation {
+    pub(crate) description: String,
+    pub(crate) settings_catalog_path: Option<String>,
+    pub(crate) default_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "type")]
-pub enum Reference {
+pub(crate) enum Reference {
     Url { url: String },
     Note { text: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct Category {
-    pub number: String,
-    pub name: String,
-    pub parent: Option<String>,
+pub(crate) struct Category {
+    pub(crate) number: String,
+    pub(crate) name: String,
+    pub(crate) parent: Option<String>,
 }
 
 // ============================================================================
@@ -89,7 +89,7 @@ pub struct Category {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "type", rename_all_fields = "camelCase")]
-pub enum AuditProcedure {
+pub(crate) enum AuditProcedure {
     /// One or more registry checks; ALL must pass.
     Registry { checks: Vec<RegistryCheck> },
 
@@ -128,15 +128,15 @@ pub enum AuditProcedure {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct RegistryCheck {
-    pub path: String,
-    pub value_name: String,
-    pub expected: ExpectedValue,
-    pub scope: RegistryScope,
+pub(crate) struct RegistryCheck {
+    pub(crate) path: String,
+    pub(crate) value_name: String,
+    pub(crate) expected: ExpectedValue,
+    pub(crate) scope: RegistryScope,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub enum RegistryScope {
+pub(crate) enum RegistryScope {
     /// HKLM — applies to the machine.
     Machine,
     /// HKU\[USER SID]\... — applies to the currently-logged-in user only.
@@ -144,14 +144,14 @@ pub enum RegistryScope {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub enum PolicyScope {
+pub(crate) enum PolicyScope {
     Device,
     User,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "type")]
-pub enum SeceditSection {
+pub(crate) enum SeceditSection {
     /// Account Policies (Rename Guest, password policy, etc.).
     SystemAccess,
     /// Security Options exposed via UI but no separate registry path.
@@ -163,7 +163,7 @@ pub enum SeceditSection {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub enum AuditPolicyMode {
+pub(crate) enum AuditPolicyMode {
     NoAuditing,
     Success,
     Failure,
@@ -171,7 +171,7 @@ pub enum AuditPolicyMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub enum MatchMode {
+pub(crate) enum MatchMode {
     /// Title says `is set to 'X'` — actual must equal `X` exactly.
     Exact,
     /// Title says `is set to include 'X'` / `to include 'X'` — actual must
@@ -186,7 +186,7 @@ pub enum MatchMode {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(tag = "type", rename_all_fields = "camelCase")]
-pub enum ExpectedValue {
+pub(crate) enum ExpectedValue {
     Equals { value: Value },
     NotEquals { value: Value },
     AtLeast { value: i64 },
@@ -202,7 +202,7 @@ pub enum ExpectedValue {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(tag = "type")]
-pub enum Value {
+pub(crate) enum Value {
     Dword { value: u32 },
     QDword { value: i64 },
     Str { value: String },
@@ -212,13 +212,13 @@ pub enum Value {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct Principal {
-    pub identifier: String,
-    pub kind: PrincipalKind,
+pub(crate) struct Principal {
+    pub(crate) identifier: String,
+    pub(crate) kind: PrincipalKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-pub enum PrincipalKind {
+pub(crate) enum PrincipalKind {
     Sid,
     WellKnownName,
     AccountName,

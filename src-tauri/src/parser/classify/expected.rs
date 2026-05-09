@@ -25,12 +25,11 @@ pub(super) fn parse(body: &str) -> Option<ExpectedValue> {
 
     if let Some(after) =
         find_after(&normalized, "does not exist, or when it exists with a value of ")
+        && let Some(value) = parse_dword(after)
     {
-        if let Some(value) = parse_dword(after) {
-            return Some(ExpectedValue::AbsentOr {
-                inner: Box::new(ExpectedValue::Equals { value }),
-            });
-        }
+        return Some(ExpectedValue::AbsentOr {
+            inner: Box::new(ExpectedValue::Equals { value }),
+        });
     }
 
     if let Some(after) = find_after(&normalized, "REG_SZ value of ") {

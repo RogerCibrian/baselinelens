@@ -8,9 +8,9 @@
 #[derive(Debug, Clone)]
 pub(super) struct JoinedPath {
     /// The path component (everything before the last `:`).
-    pub path: String,
+    pub(super) path: String,
     /// The value name (everything after the last `:`).
-    pub value_name: String,
+    pub(super) value_name: String,
 }
 
 /// Walks `body` line-by-line and stitches wrapped registry paths back into

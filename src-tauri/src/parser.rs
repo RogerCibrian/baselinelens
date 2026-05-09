@@ -81,7 +81,7 @@ pub(crate) fn parse_with_progress(
             // Coalesce per-rec updates so we send roughly 18 events instead
             // of 457 (the channel can keep up either way; this just keeps
             // event traffic reasonable).
-            if done % 25 == 0 || done == total {
+            if done.is_multiple_of(25) || done == total {
                 on_progress(ParserProgress::Classifying { done, total });
             }
             rec
@@ -233,14 +233,15 @@ fn parse_references(text: Option<&str>) -> Vec<Reference> {
             continue;
         }
 
-        if let Some((number, rest)) = trimmed.split_once(". ") {
-            if !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()) {
-                if let Some(prev) = current.take() {
-                    refs.push(make_reference(&prev));
-                }
-                current = Some(rest.to_string());
-                continue;
+        if let Some((number, rest)) = trimmed.split_once(". ")
+            && !number.is_empty()
+            && number.chars().all(|c| c.is_ascii_digit())
+        {
+            if let Some(prev) = current.take() {
+                refs.push(make_reference(&prev));
             }
+            current = Some(rest.to_string());
+            continue;
         }
 
         if let Some(buf) = current.as_mut() {

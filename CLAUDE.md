@@ -46,6 +46,13 @@ Follow the [Rust API Guidelines naming chapter](https://rust-lang.github.io/api-
 - Unit tests live at the bottom of the file they test, in `#[cfg(test)] mod tests { ... }`.
 - Integration tests live in `src-tauri/tests/`.
 
+### Imports
+
+- **Types** (structs, enums, traits): import directly. `use crate::storage::model::UserState;` then write `UserState`.
+- **Functions / macros**: import the parent module. `use crate::storage::persist;` then write `persist::load_user_state()`. The module prefix at the call site documents where the function lives — context that gets lost when you import the function itself.
+- Three import blocks separated by blank lines: stdlib, third-party crates, then internal (`crate::...`).
+- Multi-item imports alphabetized: `{AppState, UserState}` not `{UserState, AppState}`.
+
 ### Comments and doc comments
 
 - Comments explain *why*, not *what*. The code already says what.

@@ -10,23 +10,23 @@ use crate::parser::model::{Assessment, Level};
 
 #[derive(Debug, Clone)]
 pub(crate) struct RawRecommendation {
-    pub id: String,
-    pub level: Level,
-    pub assessment: Assessment,
-    pub title: String,
-    pub sections: BodySections,
+    pub(crate) id: String,
+    pub(crate) level: Level,
+    pub(crate) assessment: Assessment,
+    pub(crate) title: String,
+    pub(crate) sections: BodySections,
 }
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BodySections {
-    pub profile_applicability: Option<String>,
-    pub description: Option<String>,
-    pub rationale: Option<String>,
-    pub impact: Option<String>,
-    pub audit: Option<String>,
-    pub remediation: Option<String>,
-    pub default_value: Option<String>,
-    pub references: Option<String>,
+    pub(crate) profile_applicability: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) rationale: Option<String>,
+    pub(crate) impact: Option<String>,
+    pub(crate) audit: Option<String>,
+    pub(crate) remediation: Option<String>,
+    pub(crate) default_value: Option<String>,
+    pub(crate) references: Option<String>,
 }
 
 /// Slices the extracted PDF text into one `RawRecommendation` per heading.
@@ -51,19 +51,19 @@ pub(crate) fn slice(text: &str) -> Result<Vec<RawRecommendation>, ParseError> {
     let headings = locate_headings(body);
 
     let mut recs = Vec::with_capacity(headings.len());
-    for (i, h) in headings.iter().enumerate() {
+    for (i, heading) in headings.iter().enumerate() {
         let body_end = headings
             .get(i + 1)
             .map(|next| next.start)
             .unwrap_or(body.len());
 
-        let title = read_title(&body[h.start..h.body_start]);
-        let sections = split_sections(&body[h.body_start..body_end]);
+        let title = read_title(&body[heading.start..heading.body_start]);
+        let sections = split_sections(&body[heading.body_start..body_end]);
 
         recs.push(RawRecommendation {
-            id: h.id.clone(),
-            level: h.level,
-            assessment: h.assessment,
+            id: heading.id.clone(),
+            level: heading.level,
+            assessment: heading.assessment,
             title,
             sections,
         });
@@ -94,20 +94,23 @@ fn locate_headings(body: &[&str]) -> Vec<Heading> {
             // Heading text wraps over up to a few lines, terminated by an
             // "(Automated)" or "(Manual)" suffix on the final line.
             let scan_end = body.len().min(i + 6);
-            for scan_idx in i..scan_end {
-                if let Some(assessment) = trailing_assessment(body[scan_idx]) {
-                    headings.push(Heading {
-                        start: i,
-                        body_start: scan_idx + 1,
-                        id,
-                        level,
-                        assessment,
-                    });
-                    i = scan_idx + 1;
-                    break;
-                }
+            let found = body[i..scan_end]
+                .iter()
+                .enumerate()
+                .find_map(|(offset, line)| {
+                    trailing_assessment(line).map(|assessment| (i + offset, assessment))
+                });
+            if let Some((scan_idx, assessment)) = found {
+                headings.push(Heading {
+                    start: i,
+                    body_start: scan_idx + 1,
+                    id,
+                    level,
+                    assessment,
+                });
+                i = scan_idx + 1;
             }
-            // If we fell out without finding a terminator, fall through.
+            // If we didn't find a terminator, fall through to i += 1 below.
         }
         i += 1;
     }

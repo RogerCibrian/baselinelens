@@ -2,7 +2,7 @@
 //! `auditpol /get /subcategory:"{GUID}"` line in the audit body and the
 //! expected mode from the rec title.
 
-use crate::parser::model::{MatchMode, AuditPolicyMode, AuditProcedure};
+use crate::parser::model::{AuditPolicyMode, AuditProcedure, MatchMode};
 
 /// Returns an `AuditPolicy` `AuditProcedure` if the body has a recognizable
 /// auditpol command and the title carries a parseable mode. Returns `None`
