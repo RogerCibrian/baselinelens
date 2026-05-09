@@ -96,12 +96,10 @@ pub(crate) fn parse_with_progress(
         .collect();
     let categories = derive_categories(&recommendations, &text);
 
-    let pdf_path = path.to_str().map(|p| p.to_string());
     let source = BaselineSource {
         benchmark_name,
         benchmark_version,
         pdf_filename,
-        pdf_path,
         pdf_sha256,
         parsed_at: Utc::now(),
         parser_version: PARSER_VERSION.to_string(),

@@ -61,7 +61,7 @@ function App() {
         isStale={appState.isStale}
         tab={tab}
         onTabChange={setTab}
-        onReparse={() => void reparse(appState.baseline, setAppState)}
+        onReparse={() => void selectAndParse(setAppState)}
       />
     );
   }
@@ -101,23 +101,11 @@ async function restoreFromCache(setAppState: Dispatch<SetStateAction<AppState>>)
 }
 
 /**
- * Re-parses the active baseline. Prefers the absolute path captured at
- * original parse time; falls back to the file picker when that path is
- * missing (older caches) — and the parse_baseline command itself surfaces
- * any error if the saved file has since been moved or deleted.
+ * Prompts for a PDF and parses it. Used for first-time parses from the
+ * Welcome screen and for "Re-parse" from the stale-cache banner — the
+ * banner case re-opens the picker so the user can swap in a different
+ * PDF if the version mismatch coincides with an updated benchmark.
  */
-async function reparse(
-  baseline: Baseline,
-  setAppState: Dispatch<SetStateAction<AppState>>,
-) {
-  const savedPath = baseline.source.pdfPath;
-  if (savedPath) {
-    await parseAtPath(savedPath, setAppState);
-    return;
-  }
-  await selectAndParse(setAppState);
-}
-
 async function selectAndParse(setAppState: Dispatch<SetStateAction<AppState>>) {
   const path = await open({
     multiple: false,
@@ -125,13 +113,7 @@ async function selectAndParse(setAppState: Dispatch<SetStateAction<AppState>>) {
     filters: [{ name: "PDF", extensions: ["pdf"] }],
   });
   if (typeof path !== "string") return;
-  await parseAtPath(path, setAppState);
-}
 
-async function parseAtPath(
-  path: string,
-  setAppState: Dispatch<SetStateAction<AppState>>,
-) {
   const channel = new Channel<ParserProgress>();
   channel.onmessage = (progress) => {
     // Guard against late progress events: if the parse already resolved
@@ -140,6 +122,7 @@ async function parseAtPath(
       prev.kind === "parsing" ? { ...prev, progress } : prev,
     );
   };
+
   setAppState({ kind: "parsing", path, progress: null });
   const result = await commands.parseBaseline(path, channel);
   if (result.status !== "ok") {

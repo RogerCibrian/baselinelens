@@ -71,12 +71,6 @@ export type BaselineSource = {
 	benchmarkName: string,
 	benchmarkVersion: string,
 	pdfFilename: string,
-	/**
-	 *  Absolute path to the PDF on disk at parse time, used to drive
-	 *  "re-parse" without re-prompting the user. `None` for caches written
-	 *  before this field was added.
-	 */
-	pdfPath: string | null,
 	pdfSha256: string,
 	parsedAt: string,
 	parserVersion: string,
