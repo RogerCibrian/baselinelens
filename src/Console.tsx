@@ -11,31 +11,46 @@ import type {
 } from "./bindings";
 import { effectiveStatus, type EffectiveStatus } from "./data/score";
 
-type StatusFilter = "all" | EffectiveStatus;
-type LevelFilter = "all" | Level;
+export type ConsoleFilter = {
+  level: "all" | Level;
+  status: "all" | EffectiveStatus;
+  /** Category number to filter to, or `null` for no category filter. Set
+   * via Overview click-throughs (level cards / weakest-categories rows). */
+  category: string | null;
+  search: string;
+};
+
+export const defaultConsoleFilter: ConsoleFilter = {
+  level: "all",
+  status: "all",
+  category: null,
+  search: "",
+};
 
 export default function Console({
   baseline,
   scan,
   userState,
+  filter,
+  onFilterChange,
   onUpdateUserState,
 }: {
   baseline: Baseline;
   scan: Scan;
   userState: UserState;
+  filter: ConsoleFilter;
+  onFilterChange: (next: ConsoleFilter) => void;
   onUpdateUserState: (next: UserState) => void;
 }) {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [levelFilter, setLevelFilter] = useState<LevelFilter>("all");
-  const [search, setSearch] = useState("");
   const [openRecId, setOpenRecId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
+    const needle = filter.search.trim().toLowerCase();
     return baseline.recommendations.filter((rec) => {
-      if (levelFilter !== "all" && rec.level !== levelFilter) return false;
-      if (statusFilter !== "all") {
-        if (effectiveStatus(rec, scan, userState) !== statusFilter) return false;
+      if (filter.level !== "all" && rec.level !== filter.level) return false;
+      if (filter.category && rec.categoryNumber !== filter.category) return false;
+      if (filter.status !== "all") {
+        if (effectiveStatus(rec, scan, userState) !== filter.status) return false;
       }
       if (needle) {
         if (
@@ -47,7 +62,7 @@ export default function Console({
       }
       return true;
     });
-  }, [baseline, scan, userState, statusFilter, levelFilter, search]);
+  }, [baseline, scan, userState, filter]);
 
   const openRec = openRecId
     ? (baseline.recommendations.find((r) => r.id === openRecId) ?? null)
@@ -56,12 +71,8 @@ export default function Console({
   return (
     <div className="console">
       <FilterBar
-        statusFilter={statusFilter}
-        onStatusFilter={setStatusFilter}
-        levelFilter={levelFilter}
-        onLevelFilter={setLevelFilter}
-        search={search}
-        onSearch={setSearch}
+        filter={filter}
+        onFilterChange={onFilterChange}
         total={baseline.recommendations.length}
         shown={filtered.length}
       />
@@ -83,21 +94,13 @@ export default function Console({
 }
 
 function FilterBar({
-  statusFilter,
-  onStatusFilter,
-  levelFilter,
-  onLevelFilter,
-  search,
-  onSearch,
+  filter,
+  onFilterChange,
   total,
   shown,
 }: {
-  statusFilter: StatusFilter;
-  onStatusFilter: (s: StatusFilter) => void;
-  levelFilter: LevelFilter;
-  onLevelFilter: (l: LevelFilter) => void;
-  search: string;
-  onSearch: (s: string) => void;
+  filter: ConsoleFilter;
+  onFilterChange: (next: ConsoleFilter) => void;
   total: number;
   shown: number;
 }) {
@@ -107,8 +110,13 @@ function FilterBar({
         {shown} of {total}
       </span>
       <select
-        value={statusFilter}
-        onChange={(e) => onStatusFilter(e.target.value as StatusFilter)}
+        value={filter.status}
+        onChange={(e) =>
+          onFilterChange({
+            ...filter,
+            status: e.target.value as ConsoleFilter["status"],
+          })
+        }
         aria-label="Status filter"
       >
         <option value="all">All statuses</option>
@@ -119,8 +127,13 @@ function FilterBar({
         <option value="exception">Exception</option>
       </select>
       <select
-        value={levelFilter}
-        onChange={(e) => onLevelFilter(e.target.value as LevelFilter)}
+        value={filter.level}
+        onChange={(e) =>
+          onFilterChange({
+            ...filter,
+            level: e.target.value as ConsoleFilter["level"],
+          })
+        }
         aria-label="Level filter"
       >
         <option value="all">All levels</option>
@@ -131,9 +144,20 @@ function FilterBar({
       <input
         type="search"
         placeholder="Search id or title…"
-        value={search}
-        onChange={(e) => onSearch(e.target.value)}
+        value={filter.search}
+        onChange={(e) => onFilterChange({ ...filter, search: e.target.value })}
       />
+      {filter.category && (
+        <button
+          type="button"
+          className="filter-chip"
+          onClick={() => onFilterChange({ ...filter, category: null })}
+          aria-label="Clear category filter"
+        >
+          <span className="mono">{filter.category}</span>
+          <span aria-hidden="true">×</span>
+        </button>
+      )}
     </div>
   );
 }

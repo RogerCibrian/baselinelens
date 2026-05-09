@@ -216,6 +216,7 @@
 
 .threshold-bar-fill,
 .category-bar-fill {
+  display: block;
   height: 100%;
   background: currentColor;
   transition: width 0.3s var(--v-ease);
@@ -230,10 +231,13 @@
 }
 
 .level-card {
+  width: 100%;
   padding: 20px 22px;
   background: var(--v-paper);
   border: 1px solid var(--v-line);
   border-radius: var(--v-radius-sm);
+  text-align: left;
+  cursor: pointer;
   transition: border-color 120ms ease;
 }
 
@@ -289,6 +293,12 @@
   letter-spacing: -0.02em;
 }
 
+.level-pct-unit {
+  margin-left: 2px;
+  font-size: 16px;
+  color: var(--v-text-subtle);
+}
+
 .level-full {
   font-size: 18px;
   font-weight: 500;
@@ -319,12 +329,30 @@
 }
 
 .category-list li {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--v-line);
+}
+
+.category-row {
   display: grid;
   grid-template-columns: 1fr auto 70px;
   align-items: center;
   gap: 0.75rem;
+  width: 100%;
   padding: 0.5rem 0;
-  border-top: 1px solid var(--v-line);
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.category-row .category-label {
+  color: var(--v-text-2);
+  transition: color 120ms ease;
+}
+
+.category-row:hover .category-label {
+  color: var(--v-text);
 }
 
 .category-label {
@@ -338,10 +366,21 @@
 }
 
 .category-bar {
+  display: block;
   height: 4px;
   background: var(--v-line);
   border-radius: 2px;
   overflow: hidden;
+}
+
+.overview-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--v-line);
+  font-size: 11px;
+  color: var(--v-text-subtle);
 }
 
 /* Console */
@@ -376,6 +415,24 @@
 .filter-bar input[type="search"] {
   flex: 1;
   max-width: 320px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  background: var(--v-accent-bg);
+  color: var(--v-accent-text);
+  border: 1px solid var(--v-accent-line);
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.filter-chip:hover {
+  background: var(--v-paper-3);
 }
 
 .rec-table {

@@ -1,4 +1,5 @@
 import type { Baseline, Level, Scan, UserState } from "./bindings";
+import type { ConsoleFilter } from "./Console";
 import {
   scoresByLevel,
   weakestCategories,
@@ -10,10 +11,12 @@ export default function Overview({
   baseline,
   scan,
   userState,
+  onJumpToConsole,
 }: {
   baseline: Baseline;
   scan: Scan;
   userState: UserState;
+  onJumpToConsole: (filter: Partial<ConsoleFilter>) => void;
 }) {
   const levels = scoresByLevel(baseline, scan, userState);
   const weakest = weakestCategories(baseline, scan, userState, 6);
@@ -36,7 +39,11 @@ export default function Overview({
         <h2 className="section-eyebrow">Score by level</h2>
         <div className="level-cards">
           {levels.map((score) => (
-            <LevelCard key={score.level} score={score} />
+            <LevelCard
+              key={score.level}
+              score={score}
+              onJump={() => onJumpToConsole({ level: score.level })}
+            />
           ))}
         </div>
       </section>
@@ -50,22 +57,39 @@ export default function Overview({
         ) : (
           <ul className="category-list">
             {weakest.map((cat) => (
-              <CategoryRow key={cat.number} score={cat} />
+              <CategoryRow
+                key={cat.number}
+                score={cat}
+                onJump={() => onJumpToConsole({ category: cat.number })}
+              />
             ))}
           </ul>
         )}
       </section>
+
+      <footer className="overview-footer">
+        <span className="mono">{baseline.source.benchmarkVersion}</span>
+        <span className="mono">
+          {baseline.recommendations.length} recommendations
+        </span>
+      </footer>
     </article>
   );
 }
 
-function LevelCard({ score }: { score: LevelScore }) {
+function LevelCard({
+  score,
+  onJump,
+}: {
+  score: LevelScore;
+  onJump: () => void;
+}) {
   const tone = toneFor(score.inScopePct);
-  const inScopeText =
-    score.inScopePct === null ? "—" : `${Math.round(score.inScopePct * 100)}%`;
   const inScopeDenom = score.total - score.manual;
+  const inScopePct =
+    score.inScopePct === null ? null : Math.round(score.inScopePct * 100);
   return (
-    <div className="level-card">
+    <button type="button" className="level-card" onClick={onJump}>
       <div className="level-card-head">
         <span className={`level-chip level-${score.level.toLowerCase()}`}>
           {score.level}
@@ -75,7 +99,16 @@ function LevelCard({ score }: { score: LevelScore }) {
       <div className="level-card-numbers">
         <div>
           <span className="caption">In-scope</span>
-          <span className={`level-pct serif tone-${tone}`}>{inScopeText}</span>
+          <span className={`level-pct serif tone-${tone}`}>
+            {inScopePct === null ? (
+              "—"
+            ) : (
+              <>
+                {inScopePct}
+                <span className="level-pct-unit">%</span>
+              </>
+            )}
+          </span>
         </div>
         <div>
           <span className="caption">Full</span>
@@ -93,27 +126,35 @@ function LevelCard({ score }: { score: LevelScore }) {
           style={{ width: `${(score.inScopePct ?? 0) * 100}%` }}
         />
       </div>
-    </div>
+    </button>
   );
 }
 
-function CategoryRow({ score }: { score: CategoryScore }) {
+function CategoryRow({
+  score,
+  onJump,
+}: {
+  score: CategoryScore;
+  onJump: () => void;
+}) {
   const tone = toneFor(score.inScopePct);
   // Until the parser extracts category names, `name` is empty and we fall
   // back to the number — same render path either way.
   const label = score.name || score.number;
   return (
     <li>
-      <span className="category-label">{label}</span>
-      <span className="category-pct mono">
-        {score.pass} / {score.inScope}
-      </span>
-      <div className={`category-bar tone-${tone}`}>
-        <div
-          className="category-bar-fill"
-          style={{ width: `${score.inScopePct * 100}%` }}
-        />
-      </div>
+      <button type="button" className="category-row" onClick={onJump}>
+        <span className="category-label">{label}</span>
+        <span className="category-pct mono">
+          {score.pass} / {score.inScope}
+        </span>
+        <span className={`category-bar tone-${tone}`}>
+          <span
+            className="category-bar-fill"
+            style={{ width: `${score.inScopePct * 100}%` }}
+          />
+        </span>
+      </button>
     </li>
   );
 }

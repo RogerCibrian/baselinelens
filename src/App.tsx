@@ -15,8 +15,11 @@ import {
   type ParserProgress,
   type UserState,
 } from "./bindings";
+import Console, {
+  defaultConsoleFilter,
+  type ConsoleFilter,
+} from "./Console";
 import { mockScan } from "./fixtures/mockScan";
-import Console from "./Console";
 import Overview from "./Overview";
 
 import "./App.css";
@@ -42,6 +45,9 @@ function App() {
   // initial state we'd flash the welcome screen on every cold launch.
   const [appState, setAppState] = useState<AppState>({ kind: "loading" });
   const [tab, setTab] = useState<Tab>("overview");
+  const [consoleFilter, setConsoleFilter] = useState<ConsoleFilter>(
+    defaultConsoleFilter,
+  );
 
   useEffect(() => {
     void restoreFromCache(setAppState);
@@ -60,6 +66,15 @@ function App() {
     }
   }
 
+  // Overview click-through: replace the current Console filter with a
+  // fresh filter that has only the requested fields set, then switch
+  // tabs. Clearing other fields keeps the navigation predictable —
+  // clicking a level card always lands on "just that level".
+  function jumpToConsole(filter: Partial<ConsoleFilter>) {
+    setConsoleFilter({ ...defaultConsoleFilter, ...filter });
+    setTab("console");
+  }
+
   if (appState.kind === "loaded") {
     return (
       <Dashboard
@@ -70,6 +85,9 @@ function App() {
         onTabChange={setTab}
         onReparse={() => void selectAndParse(setAppState)}
         onUpdateUserState={(next) => void updateUserState(next)}
+        consoleFilter={consoleFilter}
+        onConsoleFilterChange={setConsoleFilter}
+        onJumpToConsole={jumpToConsole}
       />
     );
   }
@@ -262,6 +280,9 @@ function Dashboard({
   onTabChange,
   onReparse,
   onUpdateUserState,
+  consoleFilter,
+  onConsoleFilterChange,
+  onJumpToConsole,
 }: {
   baseline: Baseline;
   userState: UserState;
@@ -270,6 +291,9 @@ function Dashboard({
   onTabChange: (tab: Tab) => void;
   onReparse: () => void;
   onUpdateUserState: (next: UserState) => void;
+  consoleFilter: ConsoleFilter;
+  onConsoleFilterChange: (next: ConsoleFilter) => void;
+  onJumpToConsole: (filter: Partial<ConsoleFilter>) => void;
 }) {
   // The mock is deterministic per baseline, but it still walks all 457
   // recs — memoize so re-renders don't regenerate the result map.
@@ -303,12 +327,19 @@ function Dashboard({
 
       <main className="tab-content">
         {tab === "overview" ? (
-          <Overview baseline={baseline} scan={scan} userState={userState} />
+          <Overview
+            baseline={baseline}
+            scan={scan}
+            userState={userState}
+            onJumpToConsole={onJumpToConsole}
+          />
         ) : (
           <Console
             baseline={baseline}
             scan={scan}
             userState={userState}
+            filter={consoleFilter}
+            onFilterChange={onConsoleFilterChange}
             onUpdateUserState={onUpdateUserState}
           />
         )}
