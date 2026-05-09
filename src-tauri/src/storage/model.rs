@@ -1,0 +1,45 @@
+//! Data types persisted to the appdata directory.
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use std::collections::HashMap;
+
+/// Per-baseline user annotations, persisted as
+/// `user_states/{baseline_sha256}.json`. Loading re-creates the maps; an
+/// absent file means a fresh baseline with no annotations yet.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UserState {
+    pub(crate) baseline_sha256: String,
+    pub(crate) exceptions: HashMap<String, Exception>,
+    pub(crate) notes: HashMap<String, Note>,
+}
+
+/// An accepted-risk decision against a single recommendation. Counted as a
+/// pass for the In-scope score; the reason and grantor are surfaced in the
+/// detail drawer.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Exception {
+    pub(crate) reason: String,
+    pub(crate) granted_at: DateTime<Utc>,
+    pub(crate) granted_by: Option<String>,
+}
+
+/// Free-form context attached to a recommendation. Doesn't affect status or
+/// scoring; survives across scans of the same baseline.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Note {
+    pub(crate) text: String,
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+/// Cross-baseline application state, persisted as `app_state.json`. Tracks
+/// which baseline (if any) the dashboard should reopen on next launch.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AppState {
+    pub(crate) active_baseline_sha: Option<String>,
+}

@@ -14,9 +14,32 @@ export const commands = {
 	 *  over `on_progress` as each pipeline stage starts.
 	 */
 	parseBaseline: (path: string, onProgress: Channel<ParserProgress>) => typedError<Baseline, string>(__TAURI_INVOKE("parse_baseline", { path, onProgress })),
+	loadAppState: () => typedError<{
+	activeBaselineSha: string | null,
+} | null, string>(__TAURI_INVOKE("load_app_state")),
+	saveAppState: (state: AppState) => typedError<null, string>(__TAURI_INVOKE("save_app_state", { state })),
+	loadUserState: (baselineSha: string) => typedError<{
+	baselineSha256: string,
+	exceptions: { [key in string]: Exception },
+	notes: { [key in string]: Note },
+} | null, string>(__TAURI_INVOKE("load_user_state", { baselineSha })),
+	saveUserState: (state: UserState) => typedError<null, string>(__TAURI_INVOKE("save_user_state", { state })),
+	loadCachedBaseline: (sha: string) => typedError<{
+	source: BaselineSource,
+	categories: Category[],
+	recommendations: Recommendation[],
+} | null, string>(__TAURI_INVOKE("load_cached_baseline", { sha })),
 };
 
 /* Types */
+/**
+ *  Cross-baseline application state, persisted as `app_state.json`. Tracks
+ *  which baseline (if any) the dashboard should reopen on next launch.
+ */
+export type AppState = {
+	activeBaselineSha: string | null,
+};
+
 export type Assessment = "Automated" | "Manual";
 
 export type AuditPolicyMode = "NoAuditing" | "Success" | "Failure" | "SuccessAndFailure";
@@ -64,6 +87,11 @@ export type DeviceInfo = {
 	managedBy: Management,
 };
 
+/**
+ *  An accepted-risk decision against a single recommendation. Counted as a
+ *  pass for the In-scope score; the reason and grantor are surfaced in the
+ *  detail drawer.
+ */
 export type Exception = {
 	reason: string,
 	grantedAt: string,
@@ -92,6 +120,15 @@ export type MatchMode =
  *  `Success` recs pass when actual is `SuccessAndFailure`).
  */
 "Includes";
+
+/**
+ *  Free-form context attached to a recommendation. Doesn't affect status or
+ *  scoring; survives across scans of the same baseline.
+ */
+export type Note = {
+	text: string,
+	updatedAt: string,
+};
 
 /**
  *  Stages emitted by `parse_with_progress` so the UI can render a status
@@ -171,9 +208,15 @@ export type SeceditSection =
 
 export type Status = "Pass" | "Fail" | "Manual" | "Error";
 
+/**
+ *  Per-baseline user annotations, persisted as
+ *  `user_states/{baseline_sha256}.json`. Loading re-creates the maps; an
+ *  absent file means a fresh baseline with no annotations yet.
+ */
 export type UserState = {
 	baselineSha256: string,
 	exceptions: { [key in string]: Exception },
+	notes: { [key in string]: Note },
 };
 
 export type Value = { type: "Dword"; value: number } | { type: "QDword"; value: number } | { type: "Str"; value: string } | { type: "MultiStr"; values: string[] } | { type: "Binary"; bytes: number[] };

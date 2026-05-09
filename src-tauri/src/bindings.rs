@@ -10,12 +10,18 @@ fn generate_typescript_bindings() {
     let builder = Builder::<tauri::Wry>::new()
         .commands(collect_commands![
             crate::commands::hello,
-            crate::commands::parse_baseline
+            crate::commands::parse_baseline,
+            crate::commands::load_app_state,
+            crate::commands::save_app_state,
+            crate::commands::load_user_state,
+            crate::commands::save_user_state,
+            crate::commands::load_cached_baseline,
         ])
         .typ::<crate::parser::model::Baseline>()
         .typ::<crate::parser::ParserProgress>()
         .typ::<crate::audit::model::Scan>()
-        .typ::<crate::storage::UserState>();
+        .typ::<crate::storage::model::UserState>()
+        .typ::<crate::storage::model::AppState>();
 
     builder
         .export(Typescript::default(), "../src/bindings.ts")

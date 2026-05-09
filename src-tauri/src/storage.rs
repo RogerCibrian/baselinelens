@@ -1,21 +1,7 @@
-//! Durable user state, persisted across scans and re-imports.
+//! Durable on-disk state: user annotations and a cache of the parsed
+//! baseline so cold launches don't re-parse the PDF.
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use specta::Type;
-use std::collections::HashMap;
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct UserState {
-    pub baseline_sha256: String,
-    pub exceptions: HashMap<String, Exception>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct Exception {
-    pub reason: String,
-    pub granted_at: DateTime<Utc>,
-    pub granted_by: Option<String>,
-}
+pub(crate) mod error;
+pub(crate) mod model;
+pub(crate) mod paths;
+pub(crate) mod persist;
