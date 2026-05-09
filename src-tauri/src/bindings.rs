@@ -8,7 +8,10 @@ use tauri_specta::{Builder, collect_commands};
 #[test]
 fn generate_typescript_bindings() {
     let builder = Builder::<tauri::Wry>::new()
-        .commands(collect_commands![crate::commands::hello])
+        .commands(collect_commands![
+            crate::commands::hello,
+            crate::commands::parse_baseline
+        ])
         .typ::<crate::parser::model::Baseline>()
         .typ::<crate::audit::model::Scan>()
         .typ::<crate::storage::UserState>();

@@ -5,6 +5,11 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 /** Commands */
 export const commands = {
 	hello: () => __TAURI_INVOKE<Hello>("hello"),
+	/**
+	 *  Parses the CIS benchmark PDF at `path` and returns a fully-populated
+	 *  `Baseline` for the frontend to render.
+	 */
+	parseBaseline: (path: string) => typedError<Baseline, string>(__TAURI_INVOKE("parse_baseline", { path })),
 };
 
 /* Types */
@@ -18,11 +23,11 @@ export type AuditProcedure =
 // Intune MDM PolicyManager (two-step WinningProvider lookup).
 { type: "PolicyManager"; scope: PolicyScope; area: string; setting: string; expected: ExpectedValue } | 
 // User Rights Assignment (audited via secedit /export → [Privilege Rights]).
-{ type: "UserRightsAssignment"; rightName: string; expected: Principal[] } | 
+{ type: "UserRightsAssignment"; rightName: string; expected: Principal[]; matching: MatchMode } | 
 // Account Policies / Security Options (audited via secedit /export).
 { type: "Secedit"; section: SeceditSection; setting: string; expected: ExpectedValue } | 
 // Audit subcategory via auditpol /get /subcategory:"{GUID}".
-{ type: "AuditPolicy"; subcategoryGuid: string; expected: AuditPolicyMode } | 
+{ type: "AuditPolicy"; subcategoryGuid: string; expected: AuditPolicyMode; matching: MatchMode } | 
 // No automated audit available.
 { type: "Manual"; description: string };
 
@@ -73,6 +78,16 @@ export type Management = {
 	intune: boolean,
 	groupPolicy: boolean,
 };
+
+export type MatchMode = 
+// Title says `is set to 'X'` — actual must equal `X` exactly.
+"Exact" | 
+/**
+ *  Title says `is set to include 'X'` / `to include 'X'` — actual must
+ *  contain `X` (so e.g. URA principals can be a superset, AuditPolicy
+ *  `Success` recs pass when actual is `SuccessAndFailure`).
+ */
+"Includes";
 
 export type PolicyScope = "Device" | "User";
 
@@ -152,4 +167,14 @@ export type UserState = {
 };
 
 export type Value = { type: "Dword"; value: number } | { type: "QDword"; value: number } | { type: "Str"; value: string } | { type: "MultiStr"; values: string[] } | { type: "Binary"; bytes: number[] };
+
+/* Tauri Specta runtime */
+async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
+    try {
+        return { status: "ok", data: await result };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        return { status: "error", error: e as any };
+    }
+}
 
