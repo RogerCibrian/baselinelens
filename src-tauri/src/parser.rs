@@ -26,7 +26,7 @@ use crate::parser::model::{
 /// or the `Baseline` shape changes in a way that should invalidate older
 /// cached output. The frontend compares this against a cached baseline's
 /// `parser_version` and surfaces a re-parse prompt on mismatch.
-pub(crate) const PARSER_VERSION: &str = "1";
+pub(crate) const PARSER_VERSION: &str = "2";
 
 /// Stages emitted by `parse_with_progress` so the UI can render a status
 /// label and progress bar.
@@ -432,12 +432,20 @@ Above Lock\\Allow Cortana Above Lock
 
         // Every category should have a non-empty name (extracted from the
         // PDF body), and nested categories should produce a hierarchical
-        // path joined with " - ".
+        // path joined with " - ". Names should also be free of TOC
+        // leader-dots, which would indicate the parser captured a TOC
+        // entry instead of the real body heading.
         for cat in &baseline.categories {
             assert!(
                 !cat.name.is_empty(),
                 "category {} has empty name",
                 cat.number
+            );
+            assert!(
+                !cat.name.contains("..."),
+                "category {} captured TOC leader dots: {:?}",
+                cat.number,
+                cat.name
             );
             let depth = cat.number.matches('.').count();
             if depth >= 1 {

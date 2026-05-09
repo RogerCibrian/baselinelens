@@ -6,16 +6,24 @@ use std::collections::{HashMap, HashSet};
 /// Returns the local name for each entry in `valid_numbers` whose heading
 /// appears in `text`.
 ///
-/// A category heading is a line of the form `<dotted-number> <name>` where
-/// the number isn't followed by a level marker `(L1)` / `(L2)` / `(BL)`.
-/// The first matching occurrence wins so later prose references like
-/// "see section 4.6.11..." don't overwrite the real heading.
+/// Skips everything before the standalone `Recommendations` chapter
+/// heading so the table of contents (with its leader dots and page
+/// numbers) doesn't get captured as the name. Within the body, the first
+/// matching occurrence wins so later prose references like "see section
+/// 4.6.11..." don't overwrite the real heading.
 pub(crate) fn extract_local_names(
     text: &str,
     valid_numbers: &HashSet<String>,
 ) -> HashMap<String, String> {
+    let mut in_body = false;
     let mut names: HashMap<String, String> = HashMap::new();
     for line in text.lines() {
+        if !in_body {
+            if line.trim() == "Recommendations" {
+                in_body = true;
+            }
+            continue;
+        }
         if let Some((number, name)) = parse_heading(line)
             && valid_numbers.contains(&number)
         {
@@ -78,6 +86,8 @@ mod tests {
     #[test]
     fn extracts_top_level_and_nested_names() {
         let text = "\
+Recommendations
+
 1 Synthetic Top
 
 This section contains recommendations for the synthetic top.
@@ -99,6 +109,8 @@ This section contains recommendations for the synthetic top.
     #[test]
     fn rejects_rec_headings_with_level_marker() {
         let text = "\
+Recommendations
+
 1.1 (L1) Ensure 'Foo' is set to 'Block'
 1.1 Real Section Heading
 ";
@@ -110,6 +122,8 @@ This section contains recommendations for the synthetic top.
     #[test]
     fn ignores_numbers_not_in_valid_set() {
         let text = "\
+Recommendations
+
 2012 R2; some unrelated body prose with a leading year.
 1.  Step one of remediation
 ";
@@ -121,6 +135,8 @@ This section contains recommendations for the synthetic top.
     #[test]
     fn first_occurrence_wins() {
         let text = "\
+Recommendations
+
 4.6.11 First Heading
 
 later body prose mentioning 4.6.11 Different Name
@@ -133,8 +149,37 @@ later body prose mentioning 4.6.11 Different Name
     #[test]
     fn rejects_trailing_dot_in_numbered_list() {
         // "1." is a numbered-list marker, not a category number.
-        let text = "1. Step one of remediation\n";
+        let text = "Recommendations\n1. Step one of remediation\n";
         let valid = valid_set(&["1"]);
+        let names = extract_local_names(text, &valid);
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn skips_table_of_contents_with_leader_dots() {
+        // Lines before the "Recommendations" chapter heading look like
+        // TOC entries with dot leaders and page numbers. The body
+        // heading after the chapter should be the one captured.
+        let text = "\
+1 Synthetic Top ............................................. 34
+4.1.3 Synthetic Leaf ........................................ 37
+
+Recommendations
+
+1 Synthetic Top
+
+4.1.3 Synthetic Leaf
+";
+        let valid = valid_set(&["1", "4.1.3"]);
+        let names = extract_local_names(text, &valid);
+        assert_eq!(names.get("1"), Some(&"Synthetic Top".to_string()));
+        assert_eq!(names.get("4.1.3"), Some(&"Synthetic Leaf".to_string()));
+    }
+
+    #[test]
+    fn returns_empty_when_recommendations_marker_missing() {
+        let text = "1 Synthetic Top\n4.1.3 Synthetic Leaf\n";
+        let valid = valid_set(&["1", "4.1.3"]);
         let names = extract_local_names(text, &valid);
         assert!(names.is_empty());
     }
