@@ -17,6 +17,7 @@ fn generate_typescript_bindings() {
             crate::commands::save_user_state,
             crate::commands::load_cached_baseline,
         ])
+        .typ::<crate::commands::CachedBaseline>()
         .typ::<crate::parser::model::Baseline>()
         .typ::<crate::parser::ParserProgress>()
         .typ::<crate::audit::model::Scan>()

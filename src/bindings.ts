@@ -25,9 +25,12 @@ export const commands = {
 } | null, string>(__TAURI_INVOKE("load_user_state", { baselineSha })),
 	saveUserState: (state: UserState) => typedError<null, string>(__TAURI_INVOKE("save_user_state", { state })),
 	loadCachedBaseline: (sha: string) => typedError<{
-	source: BaselineSource,
-	categories: Category[],
-	recommendations: Recommendation[],
+	baseline: Baseline,
+	/**
+	 *  True when the cached baseline was produced by a different parser
+	 *  version than the one currently running.
+	 */
+	isStale: boolean,
 } | null, string>(__TAURI_INVOKE("load_cached_baseline", { sha })),
 };
 
@@ -68,9 +71,28 @@ export type BaselineSource = {
 	benchmarkName: string,
 	benchmarkVersion: string,
 	pdfFilename: string,
+	/**
+	 *  Absolute path to the PDF on disk at parse time, used to drive
+	 *  "re-parse" without re-prompting the user. `None` for caches written
+	 *  before this field was added.
+	 */
+	pdfPath: string | null,
 	pdfSha256: string,
 	parsedAt: string,
 	parserVersion: string,
+};
+
+/**
+ *  Wraps a cached `Baseline` with a staleness flag so the frontend can
+ *  surface a re-parse prompt without making a second IPC round-trip.
+ */
+export type CachedBaseline = {
+	baseline: Baseline,
+	/**
+	 *  True when the cached baseline was produced by a different parser
+	 *  version than the one currently running.
+	 */
+	isStale: boolean,
 };
 
 export type Category = {

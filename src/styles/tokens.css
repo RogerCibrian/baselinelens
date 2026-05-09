@@ -1,0 +1,129 @@
+:root {
+  color-scheme: light;
+
+  /* Surfaces */
+  --v-bg: #fbfbfd;
+  --v-paper: #ffffff;
+  --v-paper-2: #f7f7fa;
+  --v-paper-3: #f0f0f3;
+  --v-line: rgba(20, 20, 28, 0.09);
+  --v-line-strong: rgba(20, 20, 28, 0.16);
+  --v-line-soft: rgba(20, 20, 28, 0.05);
+
+  /* Text */
+  --v-text: #16161a;
+  --v-text-2: #3c3c45;
+  --v-text-muted: #6b6b75;
+  --v-text-subtle: #9b9ba5;
+  --v-text-inverse: #fafaf8;
+
+  /* Status */
+  --v-pass: oklch(0.55 0.14 145);
+  --v-pass-bg: oklch(0.95 0.04 145);
+  --v-fail: oklch(0.55 0.18 27);
+  --v-fail-bg: oklch(0.95 0.04 27);
+  --v-warn: oklch(0.62 0.13 75);
+  --v-warn-bg: oklch(0.95 0.05 75);
+  --v-exception: oklch(0.55 0.16 305);
+  --v-exception-bg: oklch(0.95 0.04 305);
+  --v-progress: oklch(0.62 0.12 230);
+  --v-progress-bg: oklch(0.95 0.03 230);
+  --v-snooze: oklch(0.65 0.02 270);
+  --v-snooze-bg: oklch(0.94 0.01 270);
+  --v-manual: oklch(0.60 0.02 270);
+  --v-manual-bg: oklch(0.94 0.005 270);
+
+  /* Levels */
+  --v-bl: oklch(0.55 0.14 55);
+  --v-bl-bg: oklch(0.95 0.04 55);
+  --v-l1: oklch(0.55 0.10 220);
+  --v-l1-bg: oklch(0.95 0.03 220);
+  --v-l2: oklch(0.55 0.14 305);
+  --v-l2-bg: oklch(0.95 0.04 305);
+
+  /* Accent */
+  --v-accent: oklch(0.50 0.13 245);
+  --v-accent-2: oklch(0.42 0.13 245);
+  --v-accent-bg: oklch(0.96 0.025 245);
+  --v-accent-line: oklch(0.85 0.06 245);
+  --v-accent-text: oklch(0.42 0.14 245);
+  --v-accent-on: #ffffff;
+
+  /* Type */
+  --v-font-sans: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --v-font-serif: "Source Serif 4", "Source Serif Pro", Georgia, "Times New Roman", serif;
+  --v-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Radius */
+  --v-radius-sm: 4px;
+  --v-radius-md: 6px;
+  --v-radius-lg: 10px;
+
+  /* Shadow */
+  --v-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --v-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --v-shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.18);
+
+  /* Easing */
+  --v-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--v-font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--v-text);
+  background: var(--v-bg);
+  font-feature-settings: "ss01", "cv11";
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+.mono {
+  font-family: var(--v-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.serif {
+  font-family: var(--v-font-serif);
+  letter-spacing: -0.012em;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--v-line-strong);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

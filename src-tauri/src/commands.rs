@@ -7,9 +7,20 @@ use tauri::ipc::Channel;
 
 use crate::parser;
 use crate::parser::model::Baseline;
-use crate::parser::ParserProgress;
+use crate::parser::{ParserProgress, PARSER_VERSION};
 use crate::storage::model::{AppState, UserState};
 use crate::storage::persist;
+
+/// Wraps a cached `Baseline` with a staleness flag so the frontend can
+/// surface a re-parse prompt without making a second IPC round-trip.
+#[derive(Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CachedBaseline {
+    pub(crate) baseline: Baseline,
+    /// True when the cached baseline was produced by a different parser
+    /// version than the one currently running.
+    pub(crate) is_stale: bool,
+}
 
 #[derive(Debug, Serialize, Deserialize, Type)]
 pub(crate) struct Hello {
@@ -88,6 +99,10 @@ pub(crate) fn save_user_state(state: UserState) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn load_cached_baseline(sha: String) -> Result<Option<Baseline>, String> {
-    persist::load_cached_baseline(&sha).map_err(|err| err.to_string())
+pub(crate) fn load_cached_baseline(sha: String) -> Result<Option<CachedBaseline>, String> {
+    let baseline = persist::load_cached_baseline(&sha).map_err(|err| err.to_string())?;
+    Ok(baseline.map(|baseline| {
+        let is_stale = baseline.source.parser_version != PARSER_VERSION;
+        CachedBaseline { baseline, is_stale }
+    }))
 }
