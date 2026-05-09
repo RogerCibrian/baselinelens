@@ -27,6 +27,7 @@ sha2 = "0.11"
 specta = { version = "2.0.0-rc.24", features = ["chrono"] }
 specta-typescript = "0.0.11"
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-specta = { version = "2.0.0-rc.24", features = ["derive", "typescript"] }
 thiserror = "2"

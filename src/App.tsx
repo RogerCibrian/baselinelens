@@ -1,50 +1,145 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+
+import { Channel } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+
+import { commands, type Baseline, type ParserProgress } from "./bindings";
+
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+type State =
+  | { kind: "idle" }
+  | { kind: "parsing"; path: string; progress: ParserProgress | null }
+  | { kind: "error"; message: string }
+  | { kind: "loaded"; baseline: Baseline };
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+function App() {
+  const [state, setState] = useState<State>({ kind: "idle" });
+
+  async function selectAndParse() {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (!path) return;
+
+    const channel = new Channel<ParserProgress>();
+    channel.onmessage = (progress) => {
+      setState((prev) =>
+        prev.kind === "parsing" ? { ...prev, progress } : prev,
+      );
+    };
+
+    setState({ kind: "parsing", path, progress: null });
+    const result = await commands.parseBaseline(path, channel);
+    if (result.status === "ok") {
+      setState({ kind: "loaded", baseline: result.data });
+    } else {
+      setState({ kind: "error", message: result.error });
+    }
   }
 
   return (
     <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+      <h1>BaselineLens</h1>
+      <p>Parse a CIS benchmark PDF and inspect the recommendations.</p>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+      <button onClick={selectAndParse} disabled={state.kind === "parsing"}>
+        {state.kind === "parsing" ? "Parsing…" : "Select PDF"}
+      </button>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      {state.kind === "parsing" && (
+        <ParseProgress path={state.path} progress={state.progress} />
+      )}
+
+      {state.kind === "error" && (
+        <p className="error">Failed to parse: {state.message}</p>
+      )}
+
+      {state.kind === "loaded" && <BaselineSummary baseline={state.baseline} />}
     </main>
+  );
+}
+
+function ParseProgress({
+  path,
+  progress,
+}: {
+  path: string;
+  progress: ParserProgress | null;
+}) {
+  const label = stageLabel(progress);
+  const fraction =
+    progress?.stage === "classifying" && progress.total > 0
+      ? progress.done / progress.total
+      : null;
+
+  return (
+    <div className="progress">
+      <p className="muted">{path}</p>
+      <p>{label}</p>
+      {fraction !== null ? (
+        <div className="progress-bar" role="progressbar" aria-valuenow={Math.round(fraction * 100)} aria-valuemin={0} aria-valuemax={100}>
+          <div className="progress-bar-fill" style={{ width: `${fraction * 100}%` }} />
+        </div>
+      ) : (
+        <div className="progress-bar progress-bar-indeterminate">
+          <div className="progress-bar-fill" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function stageLabel(progress: ParserProgress | null): string {
+  if (progress === null) return "Starting…";
+  switch (progress.stage) {
+    case "readingFile":
+      return "Reading file…";
+    case "computingChecksum":
+      return "Computing checksum…";
+    case "extractingText":
+      return "Extracting text from PDF…";
+    case "slicingRecommendations":
+      return "Slicing recommendations…";
+    case "classifying":
+      return `Classifying audit procedures (${progress.done} / ${progress.total})…`;
+    case "complete":
+      return "Done.";
+  }
+}
+
+function BaselineSummary({ baseline }: { baseline: Baseline }) {
+  const { source, recommendations, categories } = baseline;
+  const previewCount = 10;
+
+  return (
+    <section className="summary">
+      <h2>{source.benchmarkName}</h2>
+      <p>
+        Version {source.benchmarkVersion} · {recommendations.length} recommendations
+        across {categories.length} categories
+      </p>
+      <p className="muted">
+        SHA-256 <code>{source.pdfSha256.slice(0, 16)}…</code> · parsed by parser{" "}
+        {source.parserVersion}
+      </p>
+
+      <ul className="rec-list">
+        {recommendations.slice(0, previewCount).map((rec) => (
+          <li key={rec.id}>
+            <strong>{rec.id}</strong> <span className="level">({rec.level})</span>{" "}
+            {rec.title}
+          </li>
+        ))}
+      </ul>
+      {recommendations.length > previewCount && (
+        <p className="muted">
+          …and {recommendations.length - previewCount} more
+        </p>
+      )}
+    </section>
   );
 }
 

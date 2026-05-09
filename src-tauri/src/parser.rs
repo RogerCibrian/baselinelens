@@ -12,20 +12,47 @@ pub(crate) mod structure;
 use std::path::Path;
 
 use chrono::Utc;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
+use specta::Type;
 
 use crate::error::ParseError;
 use crate::parser::model::{
     Baseline, BaselineSource, Category, Recommendation, Reference, Remediation,
 };
 
+/// Stages emitted by `parse_with_progress` so the UI can render a status
+/// label and progress bar.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(tag = "stage", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub(crate) enum ParserProgress {
+    ReadingFile,
+    ComputingChecksum,
+    ExtractingText,
+    SlicingRecommendations,
+    Classifying { done: u32, total: u32 },
+    Complete,
+}
+
 /// Parses the PDF at `path` into a fully-populated `Baseline`.
 pub(crate) fn parse(path: &Path) -> Result<Baseline, ParseError> {
+    parse_with_progress(path, |_| {})
+}
+
+/// Same as `parse` but invokes `on_progress` at each pipeline stage so a
+/// caller (typically the Tauri command) can stream progress updates to the
+/// UI.
+pub(crate) fn parse_with_progress(
+    path: &Path,
+    mut on_progress: impl FnMut(ParserProgress),
+) -> Result<Baseline, ParseError> {
+    on_progress(ParserProgress::ReadingFile);
     let bytes = std::fs::read(path).map_err(|source| ParseError::Io {
         path: path.to_path_buf(),
         source,
     })?;
 
+    on_progress(ParserProgress::ComputingChecksum);
     let pdf_sha256 = Sha256::digest(&bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -36,12 +63,30 @@ pub(crate) fn parse(path: &Path) -> Result<Baseline, ParseError> {
         .unwrap_or("")
         .to_string();
 
+    on_progress(ParserProgress::ExtractingText);
     let text = pdf_extract::extract_text_from_mem(&bytes)?;
     let (benchmark_name, benchmark_version) = extract_benchmark_metadata(&text);
+
+    on_progress(ParserProgress::SlicingRecommendations);
     let raw_recs = structure::slice(&text)?;
 
-    let recommendations: Vec<Recommendation> =
-        raw_recs.into_iter().map(build_recommendation).collect();
+    let total = raw_recs.len() as u32;
+    on_progress(ParserProgress::Classifying { done: 0, total });
+    let recommendations: Vec<Recommendation> = raw_recs
+        .into_iter()
+        .enumerate()
+        .map(|(idx, raw)| {
+            let rec = build_recommendation(raw);
+            let done = (idx as u32) + 1;
+            // Coalesce per-rec updates so we send roughly 18 events instead
+            // of 457 (the channel can keep up either way; this just keeps
+            // event traffic reasonable).
+            if done % 25 == 0 || done == total {
+                on_progress(ParserProgress::Classifying { done, total });
+            }
+            rec
+        })
+        .collect();
     let categories = derive_categories(&recommendations);
 
     let source = BaselineSource {
@@ -53,6 +98,7 @@ pub(crate) fn parse(path: &Path) -> Result<Baseline, ParseError> {
         parser_version: env!("CARGO_PKG_VERSION").to_string(),
     };
 
+    on_progress(ParserProgress::Complete);
     Ok(Baseline {
         source,
         categories,

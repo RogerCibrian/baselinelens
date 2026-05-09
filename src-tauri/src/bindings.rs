@@ -13,6 +13,7 @@ fn generate_typescript_bindings() {
             crate::commands::parse_baseline
         ])
         .typ::<crate::parser::model::Baseline>()
+        .typ::<crate::parser::ParserProgress>()
         .typ::<crate::audit::model::Scan>()
         .typ::<crate::storage::UserState>();
 
