@@ -22,6 +22,10 @@ pub(crate) struct BaselineSource {
     pub(crate) benchmark_name: String,
     pub(crate) benchmark_version: String,
     pub(crate) pdf_filename: String,
+    /// Absolute path to the PDF on disk at parse time, used to drive
+    /// "re-parse" without re-prompting the user. `None` for caches written
+    /// before this field was added.
+    pub(crate) pdf_path: Option<String>,
     pub(crate) pdf_sha256: String,
     pub(crate) parsed_at: DateTime<Utc>,
     pub(crate) parser_version: String,

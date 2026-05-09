@@ -4,6 +4,7 @@
 //! classifies each one's audit procedure, and assembles a complete `Baseline`
 //! with source metadata (SHA-256, parser version, parsed-at timestamp).
 
+pub(crate) mod categories;
 pub(crate) mod classify;
 pub(crate) mod model;
 pub(crate) mod pdf;
@@ -20,6 +21,12 @@ use crate::error::ParseError;
 use crate::parser::model::{
     Baseline, BaselineSource, Category, Recommendation, Reference, Remediation,
 };
+
+/// Version of the parser-output schema. Bumped whenever extraction logic
+/// or the `Baseline` shape changes in a way that should invalidate older
+/// cached output. The frontend compares this against a cached baseline's
+/// `parser_version` and surfaces a re-parse prompt on mismatch.
+pub(crate) const PARSER_VERSION: &str = "1";
 
 /// Stages emitted by `parse_with_progress` so the UI can render a status
 /// label and progress bar.
@@ -87,15 +94,17 @@ pub(crate) fn parse_with_progress(
             rec
         })
         .collect();
-    let categories = derive_categories(&recommendations);
+    let categories = derive_categories(&recommendations, &text);
 
+    let pdf_path = path.to_str().map(|p| p.to_string());
     let source = BaselineSource {
         benchmark_name,
         benchmark_version,
         pdf_filename,
+        pdf_path,
         pdf_sha256,
         parsed_at: Utc::now(),
-        parser_version: env!("CARGO_PKG_VERSION").to_string(),
+        parser_version: PARSER_VERSION.to_string(),
     };
 
     on_progress(ParserProgress::Complete);
@@ -268,12 +277,14 @@ fn make_reference(text: &str) -> Reference {
     }
 }
 
-/// Builds the `Vec<Category>` from the recommendations' IDs by collecting
-/// every hierarchical prefix. v1 leaves names empty — they aren't extracted
-/// from the PDF yet — but the structure is in place for the frontend to
-/// render the tree.
-fn derive_categories(recs: &[Recommendation]) -> Vec<Category> {
-    use std::collections::BTreeSet;
+/// Builds the `Vec<Category>` from the recommendations' IDs and the raw
+/// PDF text. Each category's `name` is its full hierarchical path joined
+/// with " - ", assembled by walking the parent chain and looking up each
+/// ancestor's local heading. Levels without a matching heading in the PDF
+/// are skipped silently.
+fn derive_categories(recs: &[Recommendation], text: &str) -> Vec<Category> {
+    use std::collections::{BTreeSet, HashSet};
+
     let mut numbers: BTreeSet<String> = BTreeSet::new();
     for rec in recs {
         let parts: Vec<&str> = rec.category_number.split('.').collect();
@@ -284,15 +295,20 @@ fn derive_categories(recs: &[Recommendation]) -> Vec<Category> {
             }
         }
     }
+
+    let valid_numbers: HashSet<String> = numbers.iter().cloned().collect();
+    let local_names = categories::extract_local_names(text, &valid_numbers);
+
     numbers
         .into_iter()
         .map(|number| {
             let parent = number
                 .rsplit_once('.')
                 .map(|(prefix, _)| prefix.to_string());
+            let name = categories::build_full_path(&number, &local_names);
             Category {
                 number,
-                name: String::new(),
+                name,
                 parent,
             }
         })
@@ -412,6 +428,26 @@ Above Lock\\Allow Cortana Above Lock
                     category_numbers.contains(rec.category_number.as_str()),
                     "category {} missing from baseline.categories",
                     rec.category_number
+                );
+            }
+        }
+
+        // Every category should have a non-empty name (extracted from the
+        // PDF body), and nested categories should produce a hierarchical
+        // path joined with " - ".
+        for cat in &baseline.categories {
+            assert!(
+                !cat.name.is_empty(),
+                "category {} has empty name",
+                cat.number
+            );
+            let depth = cat.number.matches('.').count();
+            if depth >= 1 {
+                assert!(
+                    cat.name.contains(" - "),
+                    "nested category {} should join ancestor names with ' - ', got {:?}",
+                    cat.number,
+                    cat.name
                 );
             }
         }
