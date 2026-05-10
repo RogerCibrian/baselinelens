@@ -5,6 +5,7 @@ import type {
   ScanResult,
   Status,
 } from "../bindings";
+import { TARGET_MACHINE } from "../data/host";
 
 /**
  * Returns a deterministic mock Scan for `baseline` so the dashboard has
@@ -24,10 +25,10 @@ export function mockScan(baseline: Baseline): Scan {
     startedAt: measuredAt,
     finishedAt: measuredAt,
     device: {
-      hostname: "ADMIN-WKS-MOCK",
-      osName: "Windows 11 Pro",
-      osVersion: "23H2",
-      osBuild: "22631.4541",
+      hostname: TARGET_MACHINE.hostname,
+      osName: TARGET_MACHINE.osName,
+      osVersion: TARGET_MACHINE.osVersion,
+      osBuild: TARGET_MACHINE.osBuild,
       managedBy: { intune: true, groupPolicy: false },
     },
     results,

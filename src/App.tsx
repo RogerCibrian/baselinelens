@@ -22,15 +22,31 @@ import {
   type ConsoleFilter,
 } from "./data/consoleFilter";
 import { mockScan } from "./fixtures/mockScan";
+import Onboarding from "./Onboarding";
 import Overview from "./Overview";
 
 import "./App.css";
 
 type AppState =
   | { kind: "loading" }
-  | { kind: "noBaseline" }
-  | { kind: "parsing"; path: string; progress: ParserProgress | null }
-  | { kind: "error"; message: string }
+  | { kind: "onboarding" }
+  | { kind: "parsing"; fileName: string; progress: ParserProgress | null }
+  | {
+      kind: "pendingConfirm";
+      fileName: string;
+      baseline: Baseline;
+      userState: UserState;
+    }
+  | {
+      kind: "error";
+      message: string;
+      /** Filename of the rejected/failed file, if any. Carried through
+       * from parsing → error so the drop zone keeps showing the file
+       * instead of snapping back to its idle "Drop benchmark PDF here"
+       * label between drop and error message. Null for errors not tied
+       * to a specific file (e.g. cache restore failures). */
+      fileName: string | null;
+    }
   | {
       kind: "loaded";
       baseline: Baseline;
@@ -77,6 +93,11 @@ function App() {
     setTab("console");
   }
 
+  // Render nothing during the cache-restore window so a cold launch with
+  // an existing baseline doesn't flash the onboarding before landing on
+  // the dashboard.
+  if (appState.kind === "loading") return null;
+
   if (appState.kind === "loaded") {
     return (
       <Dashboard
@@ -93,34 +114,56 @@ function App() {
       />
     );
   }
-  return <Welcome state={appState} setAppState={setAppState} />;
+  return (
+    <Onboarding
+      state={appState}
+      onPickPath={(path) => void parseAtPath(path, setAppState)}
+      onError={(message, fileName) =>
+        setAppState({ kind: "error", message, fileName: fileName ?? null })
+      }
+      onConfirm={() => {
+        if (appState.kind !== "pendingConfirm") return;
+        setAppState({
+          kind: "loaded",
+          baseline: appState.baseline,
+          userState: appState.userState,
+          isStale: false,
+        });
+      }}
+      onCancel={() => setAppState({ kind: "onboarding" })}
+    />
+  );
 }
 
 /**
  * Reads `app_state.json` on mount and rehydrates the dashboard from the
- * cached `Baseline` and its `UserState`. Falls back to the file picker
- * when nothing is cached or the cached entry can't be loaded.
+ * cached `Baseline` and its `UserState`. Falls back to the onboarding
+ * screen when nothing is cached or the cached entry can't be loaded.
  */
 async function restoreFromCache(setAppState: Dispatch<SetStateAction<AppState>>) {
   const persisted = await commands.loadAppState();
   if (persisted.status !== "ok") {
-    setAppState({ kind: "error", message: persisted.error });
+    setAppState({ kind: "error", message: persisted.error, fileName: null });
     return;
   }
   const sha = persisted.data?.activeBaselineSha;
   if (!sha) {
-    setAppState({ kind: "noBaseline" });
+    setAppState({ kind: "onboarding" });
     return;
   }
   const baselineResult = await commands.loadCachedBaseline(sha);
   if (baselineResult.status !== "ok") {
-    setAppState({ kind: "error", message: baselineResult.error });
+    setAppState({
+      kind: "error",
+      message: baselineResult.error,
+      fileName: null,
+    });
     return;
   }
   if (!baselineResult.data) {
     // app_state points at a SHA whose cache file is gone (manual deletion,
-    // disk full at write time). Treat as "first launch" and show the picker.
-    setAppState({ kind: "noBaseline" });
+    // disk full at write time). Treat as "first launch" and show onboarding.
+    setAppState({ kind: "onboarding" });
     return;
   }
   const { baseline, isStale } = baselineResult.data;
@@ -129,10 +172,10 @@ async function restoreFromCache(setAppState: Dispatch<SetStateAction<AppState>>)
 }
 
 /**
- * Prompts for a PDF and parses it. Used for first-time parses from the
- * Welcome screen and for "Re-parse" from the stale-cache banner — the
- * banner case re-opens the picker so the user can swap in a different
- * PDF if the version mismatch coincides with an updated benchmark.
+ * Opens the file picker, then hands off to `parseAtPath`. Used by the
+ * "Re-parse" affordances (settings menu, stale-cache banner). The
+ * onboarding drop zone bypasses this and calls `parseAtPath` directly
+ * with the dropped file's path.
  */
 async function selectAndParse(setAppState: Dispatch<SetStateAction<AppState>>) {
   const path = await open({
@@ -141,7 +184,20 @@ async function selectAndParse(setAppState: Dispatch<SetStateAction<AppState>>) {
     filters: [{ name: "PDF", extensions: ["pdf"] }],
   });
   if (typeof path !== "string") return;
+  await parseAtPath(path, setAppState);
+}
 
+/**
+ * Drives the parse pipeline from a known path. Transitions through
+ * `parsing` (with progress events streamed in) to `pendingConfirm` so
+ * the onboarding flow can show the confirmation modal before committing
+ * to the new baseline.
+ */
+async function parseAtPath(
+  path: string,
+  setAppState: Dispatch<SetStateAction<AppState>>,
+) {
+  const fileName = extractFileName(path);
   const channel = new Channel<ParserProgress>();
   channel.onmessage = (progress) => {
     // Guard against late progress events: if the parse already resolved
@@ -151,16 +207,19 @@ async function selectAndParse(setAppState: Dispatch<SetStateAction<AppState>>) {
     );
   };
 
-  setAppState({ kind: "parsing", path, progress: null });
+  setAppState({ kind: "parsing", fileName, progress: null });
   const result = await commands.parseBaseline(path, channel);
   if (result.status !== "ok") {
-    setAppState({ kind: "error", message: result.error });
+    setAppState({ kind: "error", message: result.error, fileName });
     return;
   }
   const baseline = result.data;
   const userState = await loadOrInitUserState(baseline.source.pdfSha256);
-  // A fresh parse always produces output at the current PARSER_VERSION.
-  setAppState({ kind: "loaded", baseline, userState, isStale: false });
+  setAppState({ kind: "pendingConfirm", fileName, baseline, userState });
+}
+
+function extractFileName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
 }
 
 /**
@@ -173,100 +232,6 @@ async function loadOrInitUserState(sha: string): Promise<UserState> {
     return result.data;
   }
   return { baselineSha256: sha, exceptions: {}, notes: {} };
-}
-
-/**
- * Pre-load shell: shows the file picker, parse progress, and any
- * parse-error message. The post-load shell (`Dashboard`) takes over once
- * a baseline is in `loaded` state.
- */
-function Welcome({
-  state,
-  setAppState,
-}: {
-  state: Exclude<AppState, { kind: "loaded" }>;
-  setAppState: Dispatch<SetStateAction<AppState>>;
-}) {
-  return (
-    <main className="welcome">
-      <h1 className="serif">BaselineLens</h1>
-      <p className="muted">
-        Parse a CIS Microsoft Intune for Windows 11 Benchmark PDF and audit
-        this device against it.
-      </p>
-
-      <button
-        className="button-primary"
-        onClick={() => void selectAndParse(setAppState)}
-        disabled={state.kind === "parsing" || state.kind === "loading"}
-      >
-        {state.kind === "parsing" ? "Parsing…" : "Select PDF"}
-      </button>
-
-      {state.kind === "parsing" && (
-        <ParseProgress path={state.path} progress={state.progress} />
-      )}
-      {state.kind === "error" && (
-        <p className="error">Failed to parse: {state.message}</p>
-      )}
-    </main>
-  );
-}
-
-function ParseProgress({
-  path,
-  progress,
-}: {
-  path: string;
-  progress: ParserProgress | null;
-}) {
-  const fraction =
-    progress?.stage === "classifying" && progress.total > 0
-      ? progress.done / progress.total
-      : null;
-
-  return (
-    <div className="progress">
-      <p className="muted mono">{path}</p>
-      <p>{stageLabel(progress)}</p>
-      {fraction !== null ? (
-        <div
-          className="progress-bar"
-          role="progressbar"
-          aria-valuenow={Math.round(fraction * 100)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-        >
-          <div
-            className="progress-bar-fill"
-            style={{ width: `${fraction * 100}%` }}
-          />
-        </div>
-      ) : (
-        <div className="progress-bar progress-bar-indeterminate">
-          <div className="progress-bar-fill" />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function stageLabel(progress: ParserProgress | null): string {
-  if (progress === null) return "Starting…";
-  switch (progress.stage) {
-    case "readingFile":
-      return "Reading file…";
-    case "computingChecksum":
-      return "Computing checksum…";
-    case "extractingText":
-      return "Extracting text from PDF…";
-    case "slicingRecommendations":
-      return "Slicing recommendations…";
-    case "classifying":
-      return `Classifying audit procedures (${progress.done} / ${progress.total})…`;
-    case "complete":
-      return "Done.";
-  }
 }
 
 /**
