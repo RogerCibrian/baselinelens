@@ -1,5 +1,5 @@
 import type { Baseline, Level, Scan, UserState } from "./bindings";
-import type { ConsoleFilter } from "./Console";
+import type { ConsoleFilter } from "./data/consoleFilter";
 import {
   scoresByLevel,
   weakestCategories,

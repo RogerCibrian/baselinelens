@@ -15,10 +15,11 @@ import {
   type ParserProgress,
   type UserState,
 } from "./bindings";
-import Console, {
+import Console from "./Console";
+import {
   defaultConsoleFilter,
   type ConsoleFilter,
-} from "./Console";
+} from "./data/consoleFilter";
 import { mockScan } from "./fixtures/mockScan";
 import Overview from "./Overview";
 

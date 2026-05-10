@@ -3,29 +3,16 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   Baseline,
   Exception,
-  Level,
   Note,
   Recommendation,
   Scan,
   UserState,
 } from "./bindings";
+import {
+  defaultConsoleFilter,
+  type ConsoleFilter,
+} from "./data/consoleFilter";
 import { effectiveStatus, type EffectiveStatus } from "./data/score";
-
-export type ConsoleFilter = {
-  level: "all" | Level;
-  status: "all" | EffectiveStatus;
-  /** Category number to filter to, or `null` for no category filter. Set
-   * via Overview click-throughs (level cards / weakest-categories rows). */
-  category: string | null;
-  search: string;
-};
-
-export const defaultConsoleFilter: ConsoleFilter = {
-  level: "all",
-  status: "all",
-  category: null,
-  search: "",
-};
 
 export default function Console({
   baseline,
@@ -70,18 +57,27 @@ export default function Console({
 
   return (
     <div className="console">
-      <FilterBar
-        filter={filter}
-        onFilterChange={onFilterChange}
-        total={baseline.recommendations.length}
-        shown={filtered.length}
-      />
-      <RecTable
-        recs={filtered}
+      <SavedViewRail
+        baseline={baseline}
         scan={scan}
         userState={userState}
-        onOpen={setOpenRecId}
+        filter={filter}
+        onFilterChange={onFilterChange}
       />
+      <div className="console-main">
+        <FilterBar
+          filter={filter}
+          onFilterChange={onFilterChange}
+          total={baseline.recommendations.length}
+          shown={filtered.length}
+        />
+        <RecTable
+          recs={filtered}
+          scan={scan}
+          userState={userState}
+          onOpen={setOpenRecId}
+        />
+      </div>
       <DetailDrawer
         rec={openRec}
         scan={scan}
@@ -90,6 +86,128 @@ export default function Console({
         onUpdate={onUpdateUserState}
       />
     </div>
+  );
+}
+
+type SavedView = {
+  id: string;
+  name: string;
+  description?: string;
+  filter: Partial<ConsoleFilter>;
+};
+
+const SAVED_VIEWS: SavedView[] = [
+  { id: "all", name: "All recommendations", filter: {} },
+  {
+    id: "open-fails",
+    name: "Open fails",
+    description: "Failing without an exception",
+    filter: { status: "fail" },
+  },
+  {
+    id: "exceptions",
+    name: "Exceptions",
+    description: "Accepted-risk decisions",
+    filter: { status: "exception" },
+  },
+  {
+    id: "manual",
+    name: "Manual",
+    description: "Needs human verification",
+    filter: { status: "manual" },
+  },
+  {
+    id: "errored",
+    name: "Errored",
+    description: "Audit couldn't complete",
+    filter: { status: "error" },
+  },
+  {
+    id: "passing",
+    name: "Passing",
+    filter: { status: "pass" },
+  },
+  {
+    id: "bitlocker",
+    name: "BitLocker only",
+    filter: { level: "BL" },
+  },
+];
+
+function SavedViewRail({
+  baseline,
+  scan,
+  userState,
+  filter,
+  onFilterChange,
+}: {
+  baseline: Baseline;
+  scan: Scan;
+  userState: UserState;
+  filter: ConsoleFilter;
+  onFilterChange: (next: ConsoleFilter) => void;
+}) {
+  // Counts depend only on the data, not on the active filter — memoize
+  // so flipping between views doesn't recompute every recommendation.
+  const counts = useMemo(() => {
+    const result: Record<string, number> = {};
+    for (const view of SAVED_VIEWS) {
+      const target = { ...defaultConsoleFilter, ...view.filter };
+      result[view.id] = baseline.recommendations.filter((rec) => {
+        if (target.level !== "all" && rec.level !== target.level) return false;
+        if (target.status !== "all") {
+          if (effectiveStatus(rec, scan, userState) !== target.status) {
+            return false;
+          }
+        }
+        return true;
+      }).length;
+    }
+    return result;
+  }, [baseline, scan, userState]);
+
+  return (
+    <aside className="saved-view-rail">
+      <h3 className="rail-eyebrow">Views</h3>
+      <ul className="saved-views">
+        {SAVED_VIEWS.map((view) => {
+          const active = isViewActive(view, filter);
+          return (
+            <li key={view.id}>
+              <button
+                type="button"
+                className={`saved-view${active ? " saved-view-active" : ""}`}
+                onClick={() =>
+                  onFilterChange({ ...defaultConsoleFilter, ...view.filter })
+                }
+              >
+                <span className="saved-view-text">
+                  <span className="saved-view-name">{view.name}</span>
+                  {view.description && (
+                    <span className="saved-view-description">
+                      {view.description}
+                    </span>
+                  )}
+                </span>
+                <span className="saved-view-count mono">
+                  {counts[view.id]}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </aside>
+  );
+}
+
+function isViewActive(view: SavedView, current: ConsoleFilter): boolean {
+  const target = { ...defaultConsoleFilter, ...view.filter };
+  return (
+    target.level === current.level &&
+    target.status === current.status &&
+    target.category === current.category &&
+    target.search === current.search
   );
 }
 
