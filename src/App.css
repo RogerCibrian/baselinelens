@@ -620,6 +620,37 @@
   background: var(--v-paper-3);
 }
 
+.rec-table tbody tr.rec-row-selected {
+  background: var(--v-accent-bg);
+}
+
+.rec-table tbody tr.rec-row-selected:hover {
+  background: var(--v-accent-bg);
+}
+
+.sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sort-header:hover {
+  color: var(--v-text);
+}
+
+.sort-header-active {
+  color: var(--v-text);
+}
+
+.sort-arrow {
+  font-size: 9px;
+  color: var(--v-text-subtle);
+}
+
 .status-pill {
   display: inline-block;
   padding: 2px 8px;
@@ -627,6 +658,17 @@
   font-size: 11px;
   font-weight: 600;
   text-transform: capitalize;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  border: 1px dashed var(--v-line);
+  border-radius: var(--v-radius-md);
+  text-align: center;
 }
 
 .status-pass { background: var(--v-pass-bg); color: var(--v-pass); }
@@ -778,6 +820,30 @@
 .drawer-section textarea {
   resize: vertical;
   min-height: 60px;
+}
+
+.drawer-references {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.drawer-references li {
+  word-break: break-all;
+  color: var(--v-text-2);
+}
+
+.drawer-references a {
+  color: var(--v-accent-text);
+  text-decoration: none;
+}
+
+.drawer-references a:hover {
+  text-decoration: underline;
 }
 
 .drawer-actions {

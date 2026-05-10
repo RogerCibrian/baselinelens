@@ -1,8 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type {
   Baseline,
   Exception,
+  Level,
   Note,
   Recommendation,
   Scan,
@@ -13,6 +22,12 @@ import {
   type ConsoleFilter,
 } from "./data/consoleFilter";
 import { effectiveStatus, type EffectiveStatus } from "./data/score";
+
+type SortKey = "id" | "status" | "level" | "title" | "category";
+type SortDirection = "asc" | "desc";
+type Sort = { key: SortKey; direction: SortDirection };
+
+const defaultSort: Sort = { key: "id", direction: "asc" };
 
 export default function Console({
   baseline,
@@ -30,6 +45,8 @@ export default function Console({
   onUpdateUserState: (next: UserState) => void;
 }) {
   const [openRecId, setOpenRecId] = useState<string | null>(null);
+  const [selectedRecId, setSelectedRecId] = useState<string | null>(null);
+  const [sort, setSort] = useState<Sort>(defaultSort);
 
   const filtered = useMemo(() => {
     const needle = filter.search.trim().toLowerCase();
@@ -51,9 +68,56 @@ export default function Console({
     });
   }, [baseline, scan, userState, filter]);
 
+  const sorted = useMemo(() => {
+    const out = [...filtered];
+    const sign = sort.direction === "asc" ? 1 : -1;
+    out.sort((a, b) => sign * compareRecs(a, b, sort.key, scan, userState));
+    return out;
+  }, [filtered, sort, scan, userState]);
+
   const openRec = openRecId
     ? (baseline.recommendations.find((r) => r.id === openRecId) ?? null)
     : null;
+
+  // Keyboard navigation. ArrowUp/ArrowDown move the selected row; Enter
+  // opens the drawer for it. Skipped while the drawer is already open or
+  // while the user is typing in a form field.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (openRecId !== null) return;
+      const target = e.target as HTMLElement;
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedRecId((current) => {
+          const idx = current
+            ? sorted.findIndex((r) => r.id === current)
+            : -1;
+          return sorted[Math.min(idx + 1, sorted.length - 1)]?.id ?? current;
+        });
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedRecId((current) => {
+          const idx = current
+            ? sorted.findIndex((r) => r.id === current)
+            : sorted.length;
+          return sorted[Math.max(idx - 1, 0)]?.id ?? current;
+        });
+      } else if (e.key === "Enter" && selectedRecId !== null) {
+        e.preventDefault();
+        setOpenRecId(selectedRecId);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openRecId, selectedRecId, sorted]);
+
+  function selectAndOpen(id: string) {
+    setSelectedRecId(id);
+    setOpenRecId(id);
+  }
 
   return (
     <div className="console">
@@ -69,14 +133,23 @@ export default function Console({
           filter={filter}
           onFilterChange={onFilterChange}
           total={baseline.recommendations.length}
-          shown={filtered.length}
+          shown={sorted.length}
         />
-        <RecTable
-          recs={filtered}
-          scan={scan}
-          userState={userState}
-          onOpen={setOpenRecId}
-        />
+        {sorted.length === 0 ? (
+          <EmptyResults
+            onClear={() => onFilterChange(defaultConsoleFilter)}
+          />
+        ) : (
+          <RecTable
+            recs={sorted}
+            scan={scan}
+            userState={userState}
+            sort={sort}
+            onSortChange={setSort}
+            selectedRecId={selectedRecId}
+            onOpen={selectAndOpen}
+          />
+        )}
       </div>
       <DetailDrawer
         rec={openRec}
@@ -87,6 +160,53 @@ export default function Console({
       />
     </div>
   );
+}
+
+const LEVEL_RANK: Record<Level, number> = { L1: 1, L2: 2, BL: 3 };
+
+function compareRecs(
+  a: Recommendation,
+  b: Recommendation,
+  key: SortKey,
+  scan: Scan,
+  userState: UserState,
+): number {
+  switch (key) {
+    case "id":
+      return compareDottedNumbers(a.id, b.id);
+    case "category":
+      return compareDottedNumbers(a.categoryNumber, b.categoryNumber);
+    case "level":
+      return LEVEL_RANK[a.level] - LEVEL_RANK[b.level];
+    case "title":
+      return a.title.localeCompare(b.title);
+    case "status": {
+      const sa = effectiveStatus(a, scan, userState);
+      const sb = effectiveStatus(b, scan, userState);
+      return sa.localeCompare(sb);
+    }
+  }
+}
+
+/** Compares dotted-decimal IDs ("1.10" > "1.2") by treating each segment
+ * as an integer rather than the lexicographic default. */
+function compareDottedNumbers(a: string, b: string): number {
+  const aParts = a.split(".").map((p) => Number(p) || 0);
+  const bParts = b.split(".").map((p) => Number(p) || 0);
+  const max = Math.max(aParts.length, bParts.length);
+  for (let i = 0; i < max; i++) {
+    const av = aParts[i] ?? 0;
+    const bv = bParts[i] ?? 0;
+    if (av !== bv) return av - bv;
+  }
+  return 0;
+}
+
+function nextSort(current: Sort, key: SortKey): Sort {
+  if (current.key === key) {
+    return { key, direction: current.direction === "asc" ? "desc" : "asc" };
+  }
+  return { key, direction: "asc" };
 }
 
 type SavedView = {
@@ -297,29 +417,41 @@ function RecTable({
   recs,
   scan,
   userState,
+  sort,
+  onSortChange,
+  selectedRecId,
   onOpen,
 }: {
   recs: Recommendation[];
   scan: Scan;
   userState: UserState;
+  sort: Sort;
+  onSortChange: (next: Sort) => void;
+  selectedRecId: string | null;
   onOpen: (recId: string) => void;
 }) {
   return (
     <table className="rec-table">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Status</th>
-          <th>Level</th>
-          <th>Title</th>
-          <th>Category</th>
+          <th><SortHeader sort={sort} onChange={onSortChange} keyName="id">ID</SortHeader></th>
+          <th><SortHeader sort={sort} onChange={onSortChange} keyName="status">Status</SortHeader></th>
+          <th><SortHeader sort={sort} onChange={onSortChange} keyName="level">Level</SortHeader></th>
+          <th><SortHeader sort={sort} onChange={onSortChange} keyName="title">Title</SortHeader></th>
+          <th><SortHeader sort={sort} onChange={onSortChange} keyName="category">Category</SortHeader></th>
         </tr>
       </thead>
       <tbody>
         {recs.map((rec) => {
           const status = effectiveStatus(rec, scan, userState);
+          const selected = rec.id === selectedRecId;
           return (
-            <tr key={rec.id} onClick={() => onOpen(rec.id)}>
+            <tr
+              key={rec.id}
+              onClick={() => onOpen(rec.id)}
+              className={selected ? "rec-row-selected" : ""}
+              aria-selected={selected}
+            >
               <td className="mono">{rec.id}</td>
               <td>
                 <StatusPill status={status} />
@@ -339,9 +471,55 @@ function RecTable({
   );
 }
 
+function SortHeader({
+  sort,
+  onChange,
+  keyName,
+  children,
+}: {
+  sort: Sort;
+  onChange: (next: Sort) => void;
+  keyName: SortKey;
+  children: ReactNode;
+}) {
+  const active = sort.key === keyName;
+  return (
+    <button
+      type="button"
+      className={`sort-header${active ? " sort-header-active" : ""}`}
+      onClick={() => onChange(nextSort(sort, keyName))}
+      aria-sort={
+        active
+          ? sort.direction === "asc"
+            ? "ascending"
+            : "descending"
+          : "none"
+      }
+    >
+      {children}
+      {active && (
+        <span className="sort-arrow" aria-hidden="true">
+          {sort.direction === "asc" ? "▲" : "▼"}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function StatusPill({ status }: { status: EffectiveStatus }) {
   return (
     <span className={`status-pill status-${status}`}>{status}</span>
+  );
+}
+
+function EmptyResults({ onClear }: { onClear: () => void }) {
+  return (
+    <div className="empty-state">
+      <p className="muted">No recommendations match these filters.</p>
+      <button type="button" className="button-secondary" onClick={onClear}>
+        Clear filters
+      </button>
+    </div>
   );
 }
 
@@ -575,6 +753,34 @@ function DetailDrawer({
                   )}
                 </div>
               </section>
+
+              {rec.references.length > 0 && (
+                <section className="drawer-section">
+                  <h4 className="section-eyebrow">References</h4>
+                  <ul className="drawer-references">
+                    {rec.references.map((ref, i) => (
+                      <li key={i}>
+                        {ref.type === "Url" ? (
+                          <a
+                            href={ref.url}
+                            onClick={(e) => {
+                              // Default link click would navigate the
+                              // Tauri webview itself — open in the
+                              // system browser instead.
+                              e.preventDefault();
+                              void openUrl(ref.url);
+                            }}
+                          >
+                            {ref.url}
+                          </a>
+                        ) : (
+                          <span>{ref.text}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
             </div>
           </>
         )}
