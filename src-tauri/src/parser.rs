@@ -328,9 +328,9 @@ mod tests {
 
     #[test]
     fn returns_empty_strings_when_metadata_missing() {
-        let text = "No header at all\nJust some prose\n";
+        let text = "No header at all\nJust some text\n";
         let (name, version) = extract_benchmark_metadata(text);
-        assert_eq!(name, "No header at all Just some prose");
+        assert_eq!(name, "No header at all Just some text");
         assert_eq!(version, "");
     }
 

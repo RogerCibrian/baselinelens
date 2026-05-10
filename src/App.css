@@ -642,17 +642,25 @@
 }
 
 .drawer-title {
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.25rem;
   font-size: 18px;
   font-weight: 500;
 }
 
-.drawer-prose {
+.drawer-meta {
   margin: 0;
+  font-size: 12px;
+}
+
+.drawer-text {
+  margin: 0 0 0.75rem;
   font-size: 13px;
   line-height: 1.55;
   color: var(--v-text-2);
-  white-space: pre-wrap;
+}
+
+.drawer-text:last-child {
+  margin-bottom: 0;
 }
 
 .drawer-section {
@@ -703,8 +711,23 @@
 
 .drawer-actions {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
   margin-top: 0.75rem;
+}
+
+.saved-flash {
+  margin-left: 0.25rem;
+  font-size: 12px;
+  color: var(--v-pass);
+  animation: saved-flash-fade 2s ease-out forwards;
+}
+
+@keyframes saved-flash-fade {
+  0% { opacity: 0; transform: translateY(2px); }
+  10% { opacity: 1; transform: translateY(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 .button-secondary {

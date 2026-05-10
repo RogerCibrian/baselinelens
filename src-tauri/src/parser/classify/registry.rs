@@ -32,8 +32,8 @@ pub(super) fn try_parse(body: &str, paths: &[JoinedPath]) -> Option<AuditProcedu
         return Some(AuditProcedure::Registry { checks });
     }
 
-    // Per-key fallback: prose says "value of N1 (NameA) and N2 (NameB)" — each
-    // check looks up its expected value by matching value_name to NameA/NameB.
+    // Per-key fallback: the audit text says "value of N1 (NameA) and N2 (NameB)" —
+    // each check looks up its expected value by matching value_name to NameA/NameB.
     if let Some(per_key) = expected::parse_per_key_dword(body) {
         let checks: Vec<RegistryCheck> = scoped
             .into_iter()
@@ -113,7 +113,7 @@ HKLM\\SOFTWARE\\B:Y
     }
 
     #[test]
-    fn try_parse_assigns_per_key_expected_when_prose_uses_split() {
+    fn try_parse_assigns_per_key_expected_when_text_uses_split() {
         // Mimics 4.10.20.1.13: each path's value_name maps to its own expected.
         let body = "\
 REG_DWORD value of 1 (Disabled) and 0 (DoReport).

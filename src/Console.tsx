@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   Baseline,
@@ -211,6 +211,19 @@ function isViewActive(view: SavedView, current: ConsoleFilter): boolean {
   );
 }
 
+/**
+ * Splits a PDF-extracted text blob into display paragraphs. The PDF
+ * extractor keeps column-wrap newlines as literal `\n`, so we treat
+ * blank lines as the real paragraph break and collapse run-of-whitespace
+ * inside each paragraph to a single space.
+ */
+function paragraphs(text: string): string[] {
+  return text
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter((p) => p.length > 0);
+}
+
 function FilterBar({
   filter,
   onFilterChange,
@@ -354,6 +367,8 @@ function DetailDrawer({
   const [exceptionReason, setExceptionReason] = useState("");
   const [exceptionGrantedBy, setExceptionGrantedBy] = useState("");
   const [noteText, setNoteText] = useState("");
+  const [savedFlash, setSavedFlash] = useState<"exception" | "note" | null>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!rec) return;
@@ -363,6 +378,33 @@ function DetailDrawer({
     setExceptionGrantedBy(ex?.grantedBy ?? "");
     setNoteText(note?.text ?? "");
   }, [rec, userState]);
+
+  const isOpen = rec !== null;
+
+  // Focus the close button when the drawer transitions from closed to
+  // open. Tab moves on into the form, and Esc has somewhere to live.
+  useEffect(() => {
+    if (isOpen) closeRef.current?.focus();
+  }, [isOpen]);
+
+  // Esc closes from anywhere while the drawer is open.
+  useEffect(() => {
+    if (!isOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, onClose]);
+
+  // Briefly shows "Saved" next to the action button. The closure-captured
+  // `which` means rapid back-to-back saves don't clobber each other's flash.
+  function flashSaved(which: "exception" | "note") {
+    setSavedFlash(which);
+    setTimeout(() => {
+      setSavedFlash((prev) => (prev === which ? null : prev));
+    }, 2000);
+  }
 
   function saveException() {
     if (!rec) return;
@@ -378,6 +420,7 @@ function DetailDrawer({
       ...userState,
       exceptions: { ...userState.exceptions, [rec.id]: next },
     });
+    flashSaved("exception");
   }
 
   function clearException() {
@@ -397,6 +440,7 @@ function DetailDrawer({
       ...userState,
       notes: { ...userState.notes, [rec.id]: next },
     });
+    flashSaved("note");
   }
 
   function clearNote() {
@@ -406,7 +450,6 @@ function DetailDrawer({
     onUpdate({ ...userState, notes });
   }
 
-  const isOpen = rec !== null;
   const status = rec ? effectiveStatus(rec, scan, userState) : null;
   const hasException = rec ? userState.exceptions[rec.id] !== undefined : false;
   const hasNote = rec ? userState.notes[rec.id] !== undefined : false;
@@ -428,6 +471,7 @@ function DetailDrawer({
               </span>
               {status && <StatusPill status={status} />}
               <button
+                ref={closeRef}
                 type="button"
                 className="drawer-close"
                 onClick={onClose}
@@ -439,11 +483,16 @@ function DetailDrawer({
 
             <div className="drawer-body">
               <h3 className="drawer-title">{rec.title}</h3>
+              <p className="drawer-meta muted mono">{rec.categoryNumber}</p>
 
               {rec.description && (
                 <section className="drawer-section">
                   <h4 className="section-eyebrow">Description</h4>
-                  <p className="drawer-prose">{rec.description}</p>
+                  {paragraphs(rec.description).map((para, i) => (
+                    <p key={i} className="drawer-text">
+                      {para}
+                    </p>
+                  ))}
                 </section>
               )}
 
@@ -487,6 +536,9 @@ function DetailDrawer({
                       Remove
                     </button>
                   )}
+                  {savedFlash === "exception" && (
+                    <span className="saved-flash" role="status">Saved</span>
+                  )}
                 </div>
               </section>
 
@@ -517,6 +569,9 @@ function DetailDrawer({
                     >
                       Remove
                     </button>
+                  )}
+                  {savedFlash === "note" && (
+                    <span className="saved-flash" role="status">Saved</span>
                   )}
                 </div>
               </section>

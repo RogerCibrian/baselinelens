@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 /// Skips everything before the standalone `Recommendations` chapter
 /// heading so the table of contents (with its leader dots and page
 /// numbers) doesn't get captured as the name. Within the body, the first
-/// matching occurrence wins so later prose references like "see section
+/// matching occurrence wins so later body references like "see section
 /// 4.6.11..." don't overwrite the real heading.
 pub(crate) fn extract_local_names(
     text: &str,
@@ -124,7 +124,7 @@ Recommendations
         let text = "\
 Recommendations
 
-2012 R2; some unrelated body prose with a leading year.
+2012 R2; some unrelated body text with a leading year.
 1.  Step one of remediation
 ";
         let valid = valid_set(&["1", "2"]);
@@ -139,7 +139,7 @@ Recommendations
 
 4.6.11 First Heading
 
-later body prose mentioning 4.6.11 Different Name
+later body text mentioning 4.6.11 Different Name
 ";
         let valid = valid_set(&["4.6.11"]);
         let names = extract_local_names(text, &valid);
