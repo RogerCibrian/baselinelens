@@ -30,6 +30,7 @@ target/
 .vscode/*
 !.vscode/extensions.json
 .idea
+.claude/
 *.suo
 *.ntvs*
 *.njsproj
