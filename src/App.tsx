@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type Dispatch,
@@ -14,6 +13,9 @@ import {
   commands,
   type Baseline,
   type ParserProgress,
+  type Scan,
+  type ScanRecord,
+  type ScanResult,
   type UserState,
 } from "./bindings";
 import Console from "./Console";
@@ -21,7 +23,7 @@ import {
   defaultConsoleFilter,
   type ConsoleFilter,
 } from "./data/consoleFilter";
-import { mockScan } from "./fixtures/mockScan";
+import { TARGET_MACHINE } from "./data/host";
 import Onboarding from "./Onboarding";
 import Overview from "./Overview";
 
@@ -236,8 +238,10 @@ async function loadOrInitUserState(sha: string): Promise<UserState> {
 
 /**
  * Post-load shell: top bar with tabs and the currently-active panel.
- * Owns the tab state and the (currently-mocked) Scan; the baseline and
- * userState come from the parent so persistence stays the source of truth.
+ * Owns the Scan state — loaded from the most recent persisted scan on
+ * mount, then live-filled per-rec when the user clicks Rescan. The
+ * baseline and userState come from the parent so persistence stays the
+ * source of truth.
  */
 function Dashboard({
   baseline,
@@ -262,9 +266,62 @@ function Dashboard({
   onConsoleFilterChange: (next: ConsoleFilter) => void;
   onJumpToConsole: (filter: Partial<ConsoleFilter>) => void;
 }) {
-  // The mock is deterministic per baseline, but it still walks all 457
-  // recs — memoize so re-renders don't regenerate the result map.
-  const scan = useMemo(() => mockScan(baseline), [baseline]);
+  const [scan, setScan] = useState<Scan | null>(null);
+  const [scanning, setScanning] = useState(false);
+
+  // Pull the most recent persisted scan for this baseline on mount and
+  // whenever the baseline switches. A returning user lands on their last
+  // results without having to re-run; a fresh baseline gets `null` and
+  // falls through to the empty state.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await commands.loadMostRecentScan(baseline.source.pdfSha256);
+      if (cancelled) return;
+      setScan(result.status === "ok" ? (result.data ?? null) : null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [baseline]);
+
+  async function rescan() {
+    if (scanning) return;
+    setScanning(true);
+    // Seed an empty Scan so the dashboard switches out of the empty state
+    // immediately; channel messages then fill `results` row-by-row.
+    setScan(makePartialScan(baseline));
+    const channel = new Channel<ScanRecord>();
+    channel.onmessage = (record) => {
+      setScan((prev) =>
+        prev
+          ? {
+              ...prev,
+              results: {
+                ...prev.results,
+                [record.id]: scanRecordToResult(record),
+              },
+            }
+          : prev,
+      );
+    };
+    const result = await commands.startScan(baseline, channel);
+    if (result.status === "ok") {
+      // Final Scan from the backend has the canonical device info and
+      // finishedAt; replace the partial one so the top bar stops showing
+      // the placeholder host.
+      setScan(result.data);
+    } else {
+      console.error("Scan failed:", result.error);
+    }
+    setScanning(false);
+  }
+
+  const completed = scan ? Object.keys(scan.results).length : 0;
+  const total = baseline.recommendations.length;
+  const buttonLabel = scanning
+    ? `Scanning ${completed}/${total}`
+    : "Rescan";
 
   return (
     <div className="app">
@@ -289,16 +346,24 @@ function Dashboard({
           </button>
         </nav>
         <span className="top-bar-spacer" />
-        <span className="host-pill mono">{scan.device.hostname}</span>
-        <time className="last-scan-timestamp mono" dateTime={scan.startedAt}>
-          {formatTimestamp(scan.startedAt)}
-        </time>
+        {scan && (
+          <>
+            <span className="host-pill mono">{scan.device.hostname}</span>
+            <time
+              className="last-scan-timestamp mono"
+              dateTime={scan.startedAt}
+            >
+              {formatTimestamp(scan.startedAt)}
+            </time>
+          </>
+        )}
         <button
           type="button"
           className="button-primary top-bar-action"
-          disabled
+          onClick={() => void rescan()}
+          disabled={scanning}
         >
-          Rescan
+          {buttonLabel}
         </button>
         <SettingsMenu onChangeBaseline={onReparse} />
       </header>
@@ -306,7 +371,9 @@ function Dashboard({
       {isStale && <StaleBanner onReparse={onReparse} />}
 
       <main className="tab-content">
-        {tab === "overview" ? (
+        {!scan ? (
+          <EmptyScanState onScan={() => void rescan()} disabled={scanning} />
+        ) : tab === "overview" ? (
           <Overview
             baseline={baseline}
             scan={scan}
@@ -324,6 +391,66 @@ function Dashboard({
           />
         )}
       </main>
+    </div>
+  );
+}
+
+/**
+ * Renders an empty Scan with placeholder device info — used as the
+ * starting point for a live-filled scan. The top-bar host pill shows
+ * the local mock hostname during the run until the backend's real
+ * device info lands on completion.
+ */
+function makePartialScan(baseline: Baseline): Scan {
+  return {
+    baselineSha256: baseline.source.pdfSha256,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    device: {
+      hostname: TARGET_MACHINE.hostname,
+      osName: TARGET_MACHINE.osName,
+      osVersion: TARGET_MACHINE.osVersion,
+      osBuild: TARGET_MACHINE.osBuild,
+      managedBy: { intune: false, groupPolicy: false },
+    },
+    results: {},
+    error: null,
+  };
+}
+
+function scanRecordToResult(record: ScanRecord): ScanResult {
+  return {
+    status: record.status,
+    currentValue: record.currentValue,
+    expected: record.expected,
+    checks: record.checks,
+    error: record.error,
+    measuredAt: record.measuredAt,
+  };
+}
+
+function EmptyScanState({
+  onScan,
+  disabled,
+}: {
+  onScan: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="empty-scan">
+      <h2 className="empty-scan-title">No scan yet</h2>
+      <p className="empty-scan-body">
+        Run a scan to evaluate this device against the loaded baseline.
+        Results stay on the device and are saved between launches.
+      </p>
+      <button
+        type="button"
+        className="button-primary"
+        onClick={onScan}
+        disabled={disabled}
+      >
+        Run scan
+      </button>
     </div>
   );
 }

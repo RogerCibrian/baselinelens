@@ -123,6 +123,33 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
+.empty-scan {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 6rem auto;
+  max-width: 32rem;
+  text-align: center;
+}
+
+.empty-scan-title {
+  margin: 0;
+  font-family: var(--v-font-serif);
+  font-weight: 400;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+  color: var(--v-text);
+}
+
+.empty-scan-body {
+  margin: 0 0 1rem;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--v-text-muted);
+}
+
 .tab-content {
   flex: 1;
   padding: 2rem;
@@ -676,6 +703,17 @@
 .status-manual { background: var(--v-manual-bg); color: var(--v-manual); }
 .status-error { background: var(--v-fail-bg); color: var(--v-fail); }
 .status-exception { background: var(--v-exception-bg); color: var(--v-exception); }
+/* In-progress: not yet scanned. Muted so it doesn't read like a real
+   verdict, with a subtle pulse so the user can see the table is live. */
+.status-pending {
+  background: var(--v-paper-3);
+  color: var(--v-text-subtle);
+  animation: status-pending-pulse 1.4s ease-in-out infinite;
+}
+@keyframes status-pending-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
 
 /* Detail drawer */
 
@@ -785,6 +823,90 @@
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--v-line);
 }
+
+.drawer-kv {
+  display: grid;
+  grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr);
+  column-gap: 1rem;
+  row-gap: 0.4rem;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  /* Baseline-align rows so the small-caps DT and the larger DD share a
+     bottom line regardless of the value's font weight. */
+  align-items: baseline;
+}
+
+.drawer-kv dt {
+  font-family: var(--v-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--v-text-subtle);
+}
+
+.drawer-kv dd {
+  margin: 0;
+  color: var(--v-text);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.checks-table {
+  width: 100%;
+  margin-top: 0.75rem;
+  border-collapse: collapse;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.checks-table th {
+  font-family: var(--v-font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--v-text-subtle);
+  padding: 0.3rem 0.5rem 0.3rem 0;
+  border-bottom: 1px solid var(--v-line);
+}
+
+.checks-table td {
+  padding: 0.3rem 0.5rem 0.3rem 0;
+  border-bottom: 1px solid var(--v-line);
+  vertical-align: top;
+  color: var(--v-text);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.checks-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Value name column — names are short (e.g. EnableSmartScreen), let
+   them stay on one line and the column auto-sizes. */
+.checks-table td:nth-child(2),
+.checks-table th:nth-child(2) {
+  white-space: nowrap;
+}
+
+.checks-table .muted-italic {
+  font-style: italic;
+  color: var(--v-text-subtle);
+}
+
+/* Parent `.drawer-kv dd` has specificity (0,1,1) and sets `color`, so
+   the per-status overrides need at least one extra class to win. */
+.drawer-kv dd.scan-status {
+  font-weight: 600;
+}
+.drawer-kv dd.scan-status-pass   { color: var(--v-pass); }
+.drawer-kv dd.scan-status-fail   { color: var(--v-fail); }
+.drawer-kv dd.scan-status-error  { color: var(--v-fail); }
+.drawer-kv dd.scan-status-manual { color: var(--v-manual); }
 
 .drawer-help {
   font-size: 12px;

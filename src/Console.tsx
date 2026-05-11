@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -15,6 +16,7 @@ import type {
   Note,
   Recommendation,
   Scan,
+  ScanResult,
   UserState,
 } from "./bindings";
 import {
@@ -674,6 +676,8 @@ function DetailDrawer({
                 </section>
               )}
 
+              <ScanResultSection result={scan.results[rec.id]} />
+
               <section className="drawer-section">
                 <h4 className="section-eyebrow">Exception</h4>
                 <p className="muted drawer-help">
@@ -787,4 +791,86 @@ function DetailDrawer({
       </aside>
     </div>
   );
+}
+
+/**
+ * Shows the scan verdict for the open rec. When `result.checks` is
+ * populated (real scans), renders a per-check table — one row per
+ * registry value or conceptual check, with full path + value name +
+ * expected predicate + actual reading + pass/fail. Falls back to the
+ * flat `expected` / `currentValue` strings when checks aren't
+ * available (mock scans, errors that short-circuited before
+ * enumerating).
+ */
+function ScanResultSection({ result }: { result: ScanResult | undefined }) {
+  if (!result) return null;
+  const hasChecks = result.checks && result.checks.length > 0;
+  return (
+    <section className="drawer-section">
+      <h4 className="section-eyebrow">Scan result</h4>
+      <dl className="drawer-kv">
+        <dt>Status</dt>
+        <dd className={`scan-status scan-status-${result.status.toLowerCase()}`}>
+          {result.status}
+        </dd>
+        {result.error && (
+          <>
+            <dt>Error</dt>
+            <dd className="mono">{result.error}</dd>
+          </>
+        )}
+        {!hasChecks && result.expected && (
+          <>
+            <dt>Expected</dt>
+            <dd className="mono">{result.expected}</dd>
+          </>
+        )}
+        {!hasChecks && result.currentValue && (
+          <>
+            <dt>Found</dt>
+            <dd className="mono">{result.currentValue}</dd>
+          </>
+        )}
+      </dl>
+      {hasChecks && (
+        <table className="checks-table mono">
+          <thead>
+            <tr>
+              <th>Path</th>
+              <th>Value</th>
+              <th>Expected</th>
+              <th>Found</th>
+            </tr>
+          </thead>
+          <tbody>
+            {result.checks!.map((c, i) => (
+              <tr key={i}>
+                <td>{breakableRegistryPath(c.path)}</td>
+                <td>{c.valueName}</td>
+                <td>{c.expected}</td>
+                <td>
+                  {c.actual ?? <span className="muted-italic">absent</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Inserts `<wbr>` after each backslash so long registry paths wrap at
+ * segment boundaries (HKLM: / SOFTWARE / Policies / …) rather than
+ * mid-token. Short paths stay on one line; long ones break readably.
+ */
+function breakableRegistryPath(path: string): ReactNode {
+  const parts = path.split(/(?<=\\)/);
+  return parts.map((part, i) => (
+    <Fragment key={i}>
+      {part}
+      {i < parts.length - 1 && <wbr />}
+    </Fragment>
+  ));
 }

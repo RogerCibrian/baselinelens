@@ -11,12 +11,16 @@ export type EffectiveStatus =
   | "fail"
   | "manual"
   | "error"
-  | "exception";
+  | "exception"
+  | "pending";
 
 /**
  * Returns the display status for `rec` against the scan and user state.
  * A Fail with a matching entry in `userState.exceptions` is reported as
  * "exception" — counts as a pass for the In-scope score per HANDOFF.
+ * A missing result for an in-progress scan (no `finishedAt`) is
+ * reported as "pending" so the UI can render it distinctly from
+ * "manual" while results stream in.
  */
 export function effectiveStatus(
   rec: Recommendation,
@@ -24,9 +28,11 @@ export function effectiveStatus(
   userState: UserState,
 ): EffectiveStatus {
   const result = scan.results[rec.id];
-  // Defensive — every rec should have a result, but a missing one is
-  // closer to "manual" (we don't know) than to a hard error.
-  if (!result) return "manual";
+  if (!result) {
+    // No result yet. If the scan is still running we know more is
+    // coming; once it's done, treat a missing result as Manual.
+    return scan.finishedAt === null ? "pending" : "manual";
+  }
   if (result.status === "Fail" && userState.exceptions[rec.id]) {
     return "exception";
   }
@@ -50,7 +56,10 @@ export type LevelScore = {
   manual: number;
   error: number;
   exception: number;
-  /** (pass + exception) / (total - manual). Null when nothing is in scope. */
+  pending: number;
+  /** (pass + exception) / (total - manual - pending). Null when
+   * nothing is in scope yet. Excludes pending so the percentage
+   * reflects only the recs whose verdict is settled. */
   inScopePct: number | null;
   /** pass / total. */
   fullPct: number;
@@ -82,6 +91,7 @@ function scoreForRecs(
   let manual = 0;
   let error = 0;
   let exception = 0;
+  let pending = 0;
   for (const rec of recs) {
     switch (effectiveStatus(rec, scan, userState)) {
       case "pass":
@@ -99,10 +109,13 @@ function scoreForRecs(
       case "exception":
         exception++;
         break;
+      case "pending":
+        pending++;
+        break;
     }
   }
   const total = recs.length;
-  const inScopeDenom = total - manual;
+  const inScopeDenom = total - manual - pending;
   return {
     level,
     total,
@@ -111,6 +124,7 @@ function scoreForRecs(
     manual,
     error,
     exception,
+    pending,
     inScopePct: inScopeDenom > 0 ? (pass + exception) / inScopeDenom : null,
     fullPct: total > 0 ? pass / total : 0,
   };
@@ -156,7 +170,7 @@ export function weakestCategories(
     let inScope = 0;
     for (const rec of recs) {
       const status = effectiveStatus(rec, scan, userState);
-      if (status === "manual") continue;
+      if (status === "manual" || status === "pending") continue;
       inScope++;
       if (status === "pass" || status === "exception") pass++;
     }

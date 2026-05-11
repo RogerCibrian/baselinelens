@@ -85,7 +85,10 @@ function LevelCard({
   onJump: () => void;
 }) {
   const tone = toneFor(score.inScopePct);
-  const inScopeDenom = score.total - score.manual;
+  // In-scope excludes both Manual recs (no automated check) and Pending
+  // ones (haven't been scanned yet) so the % reflects only settled
+  // verdicts. Pending count surfaces separately in the note when > 0.
+  const inScopeDenom = score.total - score.manual - score.pending;
   const inScopePct =
     score.inScopePct === null ? null : Math.round(score.inScopePct * 100);
   return (
@@ -119,6 +122,7 @@ function LevelCard({
       </div>
       <p className="level-card-note muted mono">
         {score.pass + score.exception} of {inScopeDenom} in scope
+        {score.pending > 0 && ` · ${score.pending} pending`}
       </p>
       <div className={`threshold-bar tone-${tone}`}>
         <div
