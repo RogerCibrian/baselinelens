@@ -5,11 +5,15 @@ use specta::Type;
 use tauri::async_runtime;
 use tauri::ipc::Channel;
 
+use crate::audit::generator;
+use crate::audit::merge::ScanCollector;
+use crate::audit::model::{Scan, ScanRecord};
+use crate::audit::runner::{self, AuditEvent};
 use crate::parser;
 use crate::parser::model::Baseline;
 use crate::parser::{ParserProgress, PARSER_VERSION};
 use crate::storage::model::{AppState, UserState};
-use crate::storage::persist;
+use crate::storage::{paths, persist};
 
 /// Wraps a cached `Baseline` with a staleness flag so the frontend can
 /// surface a re-parse prompt without making a second IPC round-trip.
@@ -97,6 +101,15 @@ pub(crate) fn save_user_state(state: UserState) -> Result<(), String> {
     persist::save_user_state(&state).map_err(|err| err.to_string())
 }
 
+/// Returns the chronologically-latest `Scan` saved for `baseline_sha`,
+/// or `null` when no scans have run yet. Lets the dashboard rehydrate
+/// the user's last results on launch without forcing a rescan.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn load_most_recent_scan(baseline_sha: String) -> Result<Option<Scan>, String> {
+    persist::load_most_recent_scan(&baseline_sha).map_err(|err| err.to_string())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub(crate) fn load_cached_baseline(sha: String) -> Result<Option<CachedBaseline>, String> {
@@ -105,4 +118,50 @@ pub(crate) fn load_cached_baseline(sha: String) -> Result<Option<CachedBaseline>
         let is_stale = baseline.source.parser_version != PARSER_VERSION;
         CachedBaseline { baseline, is_stale }
     }))
+}
+
+/// Runs the audit pipeline against the device this dashboard is on:
+/// generates (or reuses) a cached `audit.ps1` from `baseline`, spawns
+/// `powershell.exe` to execute it, and streams each `ScanRecord` over
+/// `on_record` as it lands. Returns the assembled `Scan` once the script
+/// finishes, after persisting it to disk.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn start_scan(
+    baseline: Baseline,
+    on_record: Channel<ScanRecord>,
+) -> Result<Scan, String> {
+    let baseline_sha = baseline.source.pdf_sha256.clone();
+    // Persist the baseline to its cache path so the PS script can read
+    // the same JSON the rest of the app already trusts as the source of
+    // truth. Re-saving is cheap and protects against the case where the
+    // in-memory baseline is ahead of disk (e.g. a save-cached-baseline
+    // failure earlier in the session).
+    persist::save_cached_baseline(&baseline).map_err(|err| err.to_string())?;
+    let baseline_path = paths::baseline_cache_path(&baseline_sha)
+        .map_err(|err| err.to_string())?;
+    let scan = async_runtime::spawn_blocking(move || -> Result<Scan, String> {
+        let script_path = generator::ensure_script().map_err(|err| err.to_string())?;
+        let mut collector = ScanCollector::new(baseline_sha);
+        runner::run(&script_path, &baseline_path, |event| match event {
+            AuditEvent::Device(device) => collector.set_device(device),
+            AuditEvent::Result(record) => {
+                // Forward to the UI before storing; channel send is
+                // best-effort, but a closed channel just means the user
+                // closed the window — keep collecting either way.
+                let _ = on_record.send(record.clone());
+                collector.record(record);
+            }
+        })
+        .map_err(|err| err.to_string())?;
+        Ok(collector.finish(None))
+    })
+    .await
+    .map_err(|err| format!("scan task panicked: {err}"))??;
+
+    // Scan id is the start timestamp — sortable, unique enough for a
+    // single-device app, and human-readable in the file system.
+    let scan_id = scan.started_at.format("%Y%m%dT%H%M%S%3fZ").to_string();
+    persist::save_scan(&scan, &scan_id).map_err(|err| err.to_string())?;
+    Ok(scan)
 }

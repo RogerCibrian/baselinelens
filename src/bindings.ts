@@ -32,6 +32,27 @@ export const commands = {
 	 */
 	isStale: boolean,
 } | null, string>(__TAURI_INVOKE("load_cached_baseline", { sha })),
+	/**
+	 *  Returns the chronologically-latest `Scan` saved for `baseline_sha`,
+	 *  or `null` when no scans have run yet. Lets the dashboard rehydrate
+	 *  the user's last results on launch without forcing a rescan.
+	 */
+	loadMostRecentScan: (baselineSha: string) => typedError<{
+	baselineSha256: string,
+	startedAt: string,
+	finishedAt: string | null,
+	device: DeviceInfo,
+	results: { [key in string]: ScanResult },
+	error: string | null,
+} | null, string>(__TAURI_INVOKE("load_most_recent_scan", { baselineSha })),
+	/**
+	 *  Runs the audit pipeline against the device this dashboard is on:
+	 *  generates (or reuses) a cached `audit.ps1` from `baseline`, spawns
+	 *  `powershell.exe` to execute it, and streams each `ScanRecord` over
+	 *  `on_record` as it lands. Returns the assembled `Scan` once the script
+	 *  finishes, after persisting it to disk.
+	 */
+	startScan: (baseline: Baseline, onRecord: Channel<ScanRecord>) => typedError<Scan, string>(__TAURI_INVOKE("start_scan", { baseline, onRecord })),
 };
 
 /* Types */
@@ -93,6 +114,20 @@ export type Category = {
 	number: string,
 	name: string,
 	parent: string | null,
+};
+
+/**
+ *  One row in the per-rec check breakdown. Mirrors the `checks` array
+ *  shape emitted by `ps/audit.ps1`. `actual` is `None` when the value
+ *  was absent at scan time. `pass` is `None` for `Manual` recs where
+ *  there's no automated verdict.
+ */
+export type CheckDetail = {
+	path: string,
+	valueName: string,
+	expected: string,
+	actual: string | null,
+	pass: boolean | null,
 };
 
 export type DeviceInfo = {
@@ -205,9 +240,36 @@ export type Scan = {
 	error: string | null,
 };
 
+/**
+ *  One line from the audit script's NDJSON stdout. Parsed by the runner
+ *  and forwarded to merge + frontend before being collapsed into a
+ *  `ScanResult` keyed by `id`.
+ */
+export type ScanRecord = {
+	id: string,
+	status: Status,
+	measuredAt: string,
+	currentValue: string | null,
+	expected: string | null,
+	checks: CheckDetail[] | null,
+	error: string | null,
+};
+
 export type ScanResult = {
 	status: Status,
 	currentValue: string | null,
+	/**
+	 *  Human-readable description of what the check expected, formatted
+	 *  by the PS script. Surfaced alongside `current_value` in the UI so
+	 *  users can see "wanted X, got Y" without opening the baseline JSON.
+	 */
+	expected: string | null,
+	/**
+	 *  Per-check structured breakdown: one entry per `RegistryCheck` for
+	 *  Registry recs, or a single conceptual row for the other variants.
+	 *  The drawer renders this as a Path / Value / Expected / Found table.
+	 */
+	checks: CheckDetail[] | null,
 	error: string | null,
 	measuredAt: string,
 };

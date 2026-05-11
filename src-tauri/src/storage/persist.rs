@@ -4,11 +4,12 @@
 //! "first run" from a real I/O failure.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use crate::audit::model::Scan;
 use crate::parser::model::Baseline;
 use crate::storage::error::StorageError;
 use crate::storage::model::{AppState, UserState};
@@ -80,4 +81,31 @@ pub(crate) fn save_cached_baseline(baseline: &Baseline) -> Result<(), StorageErr
         &paths::baseline_cache_path(&baseline.source.pdf_sha256)?,
         baseline,
     )
+}
+
+pub(crate) fn save_scan(scan: &Scan, scan_id: &str) -> Result<(), StorageError> {
+    write_json(&paths::scan_path(&scan.baseline_sha256, scan_id)?, scan)
+}
+
+/// Loads the chronologically-latest `Scan` for a baseline, or `Ok(None)`
+/// when no scans exist yet. Scan files are named with ISO-style
+/// timestamps so a lexicographic sort matches actual scan order.
+pub(crate) fn load_most_recent_scan(baseline_sha: &str) -> Result<Option<Scan>, StorageError> {
+    let dir = paths::scans_dir_for_baseline(baseline_sha)?;
+    if !dir.exists() {
+        return Ok(None);
+    }
+    let mut entries: Vec<PathBuf> = fs::read_dir(&dir)
+        .map_err(|source| StorageError::Io {
+            path: dir.clone(),
+            source,
+        })?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
+        .collect();
+    entries.sort();
+    match entries.last() {
+        Some(latest) => read_json(latest),
+        None => Ok(None),
+    }
 }

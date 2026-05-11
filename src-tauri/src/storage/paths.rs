@@ -37,3 +37,24 @@ pub(crate) fn user_state_path(baseline_sha: &str) -> Result<PathBuf, StorageErro
 pub(crate) fn baseline_cache_path(sha: &str) -> Result<PathBuf, StorageError> {
     Ok(data_dir()?.join("baselines").join(format!("{sha}.json")))
 }
+
+/// Path to the cached `audit.ps1` for a given audit-script schema
+/// version. The script body is the same for every baseline (it reads
+/// baseline JSON at runtime), so the version is the only thing that
+/// could vary the on-disk file — bumping it produces a fresh cache
+/// entry automatically.
+pub(crate) fn audit_script_path(audit_script_version: &str) -> Result<PathBuf, StorageError> {
+    Ok(data_dir()?.join(format!("audit_v{audit_script_version}.ps1")))
+}
+
+/// Path to a scan record for a given baseline SHA and scan-start timestamp.
+/// The timestamp doubles as the scan id so we can keep history forever
+/// (until/unless retention becomes a concern).
+pub(crate) fn scan_path(baseline_sha: &str, scan_id: &str) -> Result<PathBuf, StorageError> {
+    Ok(scans_dir_for_baseline(baseline_sha)?.join(format!("{scan_id}.json")))
+}
+
+/// Directory holding every saved `Scan` for a given baseline.
+pub(crate) fn scans_dir_for_baseline(baseline_sha: &str) -> Result<PathBuf, StorageError> {
+    Ok(data_dir()?.join("scans").join(baseline_sha))
+}

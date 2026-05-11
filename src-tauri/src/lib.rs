@@ -1,11 +1,9 @@
 mod audit;
+pub mod bindings;
 mod commands;
 mod error;
 mod parser;
 mod storage;
-
-#[cfg(test)]
-mod bindings;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,6 +18,8 @@ pub fn run() {
             commands::load_user_state,
             commands::save_user_state,
             commands::load_cached_baseline,
+            commands::load_most_recent_scan,
+            commands::start_scan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
