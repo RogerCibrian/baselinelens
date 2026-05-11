@@ -480,14 +480,16 @@ function ConfirmRow({
 }
 
 /**
- * Renders a filename with `<wbr>` tags before each underscore, hyphen,
- * or dot — those are the natural break points users perceive in PDF
- * filenames (`CIS_Microsoft_..._v4.0.0.pdf`). Combined with
- * `overflow-wrap: break-word`, the browser will prefer breaking at
- * separators and only fall back to mid-segment breaks if none fit.
+ * Renders a filename with `<wbr>` tags at natural break points so long
+ * filenames wrap on separators rather than mid-token. Breaks are offered
+ * before underscores, hyphens, and dots, with one exception: a dot
+ * sitting between two digits (e.g. the `.` in `4.0.0`) is left alone
+ * because version numbers should stay intact. Combined with
+ * `overflow-wrap: break-word`, the browser falls back to mid-segment
+ * breaks only if no preferred break point fits.
  */
 function breakableFilename(name: string): ReactNode {
-  const parts = name.split(/(?=[_\-.])/);
+  const parts = name.split(/(?=[_\-])|(?<!\d)(?=\.)|(?<=\d)(?=\.)(?!\d)/);
   return parts.map((part, i) => (
     <Fragment key={i}>
       {i > 0 && <wbr />}
