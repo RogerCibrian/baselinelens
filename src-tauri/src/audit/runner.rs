@@ -108,11 +108,17 @@ where
     }
 
     let status = child.wait().map_err(AuditError::Spawn)?;
-    let _stderr_text = stderr_join.join().unwrap_or_default();
+    let stderr_text = stderr_join.join().unwrap_or_default();
 
     if !status.success() {
+        let trimmed = stderr_text.trim();
         return Err(AuditError::NonZeroExit {
             status: status.code().unwrap_or(-1),
+            stderr: if trimmed.is_empty() {
+                None
+            } else {
+                Some(stderr_text)
+            },
         });
     }
     Ok(())
@@ -142,20 +148,36 @@ where
 
     let ps_command = build_runas_command(script_path, baseline_path, &output_path);
 
-    let outer_child = Command::new("powershell.exe")
+    let mut outer_child = Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps_command])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        // Discard stderr — any non-zero exit here is an elevation
+        // failure (UAC denied, dismissed, no admin available, etc.),
+        // and we surface that with a fixed message rather than the
+        // raw PowerShell stack trace. Errors that happen *inside* the
+        // elevated child run come back via the NDJSON output file, so
+        // we don't lose script-level diagnostics by ignoring stderr.
+        .stderr(Stdio::null())
         .spawn()
         .map_err(AuditError::Spawn)?;
 
-    let result = tail_output_file(&output_path, outer_child, &mut on_event);
+    let tail_result = tail_output_file(&output_path, &mut outer_child, &mut on_event);
 
     // Best-effort cleanup; if it fails (file lock, permission) the next
     // scan reuses a fresh timestamped path anyway.
     let _ = fs::remove_file(&output_path);
-    result
+
+    // Outer-PS non-zero is always an elevation problem here — the
+    // outer PS only does `Start-Process -Verb RunAs -Wait`, which
+    // returns 0 once the elevated child launches regardless of how
+    // that child exits. So a non-zero outer exit means
+    // `Start-Process` itself threw.
+    match tail_result {
+        Ok(()) => Ok(()),
+        Err(AuditError::NonZeroExit { .. }) => Err(AuditError::ElevationDenied),
+        Err(other) => Err(other),
+    }
 }
 
 /// Generates a per-run temp-file path. Process id + millisecond
@@ -197,7 +219,7 @@ fn build_runas_command(script: &Path, baseline: &Path, output: &Path) -> String 
 /// dispatches one parsed event per complete line.
 fn tail_output_file<F>(
     path: &Path,
-    mut outer_child: Child,
+    outer_child: &mut Child,
     on_event: &mut F,
 ) -> Result<(), AuditError>
 where
@@ -221,8 +243,11 @@ where
                 drain_available(&mut file, &mut chunk, &mut pending, path)?;
                 emit_complete_lines(&mut pending, on_event)?;
                 if !status.success() {
+                    // Caller re-classifies with stderr text in hand —
+                    // we only have the exit code here.
                     return Err(AuditError::NonZeroExit {
                         status: status.code().unwrap_or(-1),
+                        stderr: None,
                     });
                 }
                 return Ok(());
@@ -273,3 +298,4 @@ fn parse_event(line: &str) -> Result<AuditEvent, AuditError> {
         source,
     })
 }
+

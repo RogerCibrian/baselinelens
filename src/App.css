@@ -150,6 +150,19 @@
   color: var(--v-text-muted);
 }
 
+.empty-scan-error {
+  margin: 0 0 1rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--v-fail);
+  background: rgba(184, 48, 45, 0.06);
+  border: 1px solid rgba(184, 48, 45, 0.18);
+  border-radius: 4px;
+  text-align: left;
+  word-break: break-word;
+}
+
 .tab-content {
   flex: 1;
   padding: 2rem;

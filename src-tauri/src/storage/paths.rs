@@ -47,14 +47,26 @@ pub(crate) fn audit_script_path(audit_script_version: &str) -> Result<PathBuf, S
     Ok(data_dir()?.join(format!("audit_v{audit_script_version}.ps1")))
 }
 
-/// Path to a scan record for a given baseline SHA and scan-start timestamp.
-/// The timestamp doubles as the scan id so we can keep history forever
-/// (until/unless retention becomes a concern).
-pub(crate) fn scan_path(baseline_sha: &str, scan_id: &str) -> Result<PathBuf, StorageError> {
-    Ok(scans_dir_for_baseline(baseline_sha)?.join(format!("{scan_id}.json")))
-}
-
-/// Directory holding every saved `Scan` for a given baseline.
+/// Directory holding the scan-related files for one baseline.
 pub(crate) fn scans_dir_for_baseline(baseline_sha: &str) -> Result<PathBuf, StorageError> {
     Ok(data_dir()?.join("scans").join(baseline_sha))
+}
+
+/// Path to the most recent full `Scan` for a baseline. Overwritten on
+/// each completed scan; the prior content (if any) feeds change-event
+/// recording before being replaced.
+pub(crate) fn latest_scan_path(baseline_sha: &str) -> Result<PathBuf, StorageError> {
+    Ok(scans_dir_for_baseline(baseline_sha)?.join("latest.json"))
+}
+
+/// Path to the per-baseline change log — JSONL of `ChangeEvent`s,
+/// append-only.
+pub(crate) fn changes_path(baseline_sha: &str) -> Result<PathBuf, StorageError> {
+    Ok(scans_dir_for_baseline(baseline_sha)?.join("changes.jsonl"))
+}
+
+/// Path to the per-baseline scan-summary file — a JSON array of
+/// `ScanSummary` records, rewritten on each scan.
+pub(crate) fn summaries_path(baseline_sha: &str) -> Result<PathBuf, StorageError> {
+    Ok(scans_dir_for_baseline(baseline_sha)?.join("summaries.json"))
 }

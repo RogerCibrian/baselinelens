@@ -18,7 +18,7 @@ pub fn run() {
             commands::load_user_state,
             commands::save_user_state,
             commands::load_cached_baseline,
-            commands::load_most_recent_scan,
+            commands::load_scan_context,
             commands::start_scan,
         ])
         .run(tauri::generate_context!())

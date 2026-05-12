@@ -23,14 +23,18 @@ pub fn export_to(out_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             crate::commands::load_user_state,
             crate::commands::save_user_state,
             crate::commands::load_cached_baseline,
-            crate::commands::load_most_recent_scan,
+            crate::commands::load_scan_context,
             crate::commands::start_scan,
         ])
         .typ::<crate::commands::CachedBaseline>()
+        .typ::<crate::commands::ScanContextLoad>()
         .typ::<crate::parser::model::Baseline>()
         .typ::<crate::parser::ParserProgress>()
         .typ::<crate::audit::model::Scan>()
         .typ::<crate::audit::model::ScanRecord>()
+        .typ::<crate::audit::model::ScanContext>()
+        .typ::<crate::audit::model::ScanSummary>()
+        .typ::<crate::audit::model::ChangeEvent>()
         .typ::<crate::audit::model::CheckDetail>()
         .typ::<crate::storage::model::UserState>()
         .typ::<crate::storage::model::AppState>();

@@ -12,15 +12,23 @@ use crate::audit::model::{DeviceInfo, Management, Scan, ScanRecord, ScanResult};
 
 pub(crate) struct ScanCollector {
     baseline_sha256: String,
+    parser_version: String,
+    audit_script_version: String,
     started_at: DateTime<Utc>,
     device: Option<DeviceInfo>,
     results: HashMap<String, ScanResult>,
 }
 
 impl ScanCollector {
-    pub(crate) fn new(baseline_sha256: String) -> Self {
+    pub(crate) fn new(
+        baseline_sha256: String,
+        parser_version: String,
+        audit_script_version: String,
+    ) -> Self {
         Self {
             baseline_sha256,
+            parser_version,
+            audit_script_version,
             started_at: Utc::now(),
             device: None,
             results: HashMap::new(),
@@ -53,6 +61,8 @@ impl ScanCollector {
             device: self.device.unwrap_or_else(unknown_device),
             results: self.results,
             error,
+            parser_version: self.parser_version,
+            audit_script_version: self.audit_script_version,
         }
     }
 }

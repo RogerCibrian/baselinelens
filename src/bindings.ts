@@ -33,18 +33,12 @@ export const commands = {
 	isStale: boolean,
 } | null, string>(__TAURI_INVOKE("load_cached_baseline", { sha })),
 	/**
-	 *  Returns the chronologically-latest `Scan` saved for `baseline_sha`,
-	 *  or `null` when no scans have run yet. Lets the dashboard rehydrate
-	 *  the user's last results on launch without forcing a rescan.
+	 *  Returns the dashboard's scan-related state for a baseline: the
+	 *  most-recent full `Scan`, the per-rec change log, and the
+	 *  per-scan summary history. Each sub-file is loaded independently;
+	 *  failures land in `errors` instead of taking down the whole load.
 	 */
-	loadMostRecentScan: (baselineSha: string) => typedError<{
-	baselineSha256: string,
-	startedAt: string,
-	finishedAt: string | null,
-	device: DeviceInfo,
-	results: { [key in string]: ScanResult },
-	error: string | null,
-} | null, string>(__TAURI_INVOKE("load_most_recent_scan", { baselineSha })),
+	loadScanContext: (baselineSha: string) => typedError<ScanContextLoad, string>(__TAURI_INVOKE("load_scan_context", { baselineSha })),
 	/**
 	 *  Runs the audit pipeline against the device this dashboard is on:
 	 *  generates (or reuses) a cached `audit.ps1` from `baseline`, spawns
@@ -114,6 +108,24 @@ export type Category = {
 	number: string,
 	name: string,
 	parent: string | null,
+};
+
+/**
+ *  One status flip detected at scan time. Appended to `changes.jsonl`
+ *  whenever a rec's status differs from its prior recorded value.
+ *  `from_status` is `None` for the first observation of a rec (no prior
+ *  value to compare against). The frontend reads the most recent event
+ *  per rec to drive persistent delta indicators — the flag stays
+ *  "regressed" or "improved" until another event for the same rec
+ *  supersedes it, regardless of how many no-op rescans happen between.
+ */
+export type ChangeEvent = {
+	recId: string,
+	fromStatus: Status | null,
+	toStatus: Status,
+	observedAt: string,
+	parserVersion: string,
+	auditScriptVersion: string,
 };
 
 /**
@@ -238,6 +250,55 @@ export type Scan = {
 	device: DeviceInfo,
 	results: { [key in string]: ScanResult },
 	error: string | null,
+	/**
+	 *  Snapshot of `PARSER_VERSION` at scan time. Lets the UI detect when
+	 *  a saved scan was produced under a different parser/script schema
+	 *  before drawing cross-scan comparisons (deltas, trend chart).
+	 */
+	parserVersion: string,
+	/**
+	 *  Snapshot of `AUDIT_SCRIPT_VERSION` at scan time. Same intent as
+	 *  `parser_version` — captures the schema half that the audit script
+	 *  owns (status enum, check shape, NDJSON contract).
+	 */
+	auditScriptVersion: string,
+};
+
+/**
+ *  Bundles the scan-related state for a baseline as the dashboard
+ *  needs it. `latest` drives current-scan rendering; `changes` powers
+ *  per-rec delta indicators with persistence (a flag stays until the
+ *  rec actually flips again, not just until the next no-op rescan);
+ *  `summaries` feeds the trend chart and headline-strip math.
+ */
+export type ScanContext = {
+	latest: Scan | null,
+	changes: ChangeEvent[],
+	summaries: ScanSummary[],
+};
+
+/**
+ *  IPC return shape for `load_scan_context`. Combines the loaded
+ *  scan-related state with per-sub-file load errors so the frontend can
+ *  degrade per-surface (empty state for a missing latest scan, inline
+ *  notice on the trend chart for a broken summaries file, etc.) rather
+ *  than going dark on a single bad file.
+ */
+export type ScanContextLoad = {
+	context: ScanContext,
+	errors: ScanLoadErrors,
+};
+
+/**
+ *  Per-sub-file load outcome for `load_scan_context`. Each field is
+ *  `None` when the corresponding file loaded clean (or didn't exist) and
+ *  `Some(message)` when it failed — the frontend uses this to render
+ *  per-surface failure notices instead of one global banner.
+ */
+export type ScanLoadErrors = {
+	latest: string | null,
+	changes: string | null,
+	summaries: string | null,
 };
 
 /**
@@ -272,6 +333,24 @@ export type ScanResult = {
 	checks: CheckDetail[] | null,
 	error: string | null,
 	measuredAt: string,
+};
+
+/**
+ *  Lightweight per-scan record for the trend chart and headline-strip
+ *  math. Kept separate from full `Scan` files so we can show months of
+ *  history without growing storage materially — counts mean the same
+ *  thing across schema versions, so old summaries stay readable even
+ *  when the underlying scan format evolves.
+ */
+export type ScanSummary = {
+	startedAt: string,
+	finishedAt: string | null,
+	pass: number,
+	fail: number,
+	manual: number,
+	error: number,
+	parserVersion: string,
+	auditScriptVersion: string,
 };
 
 export type SeceditSection = 

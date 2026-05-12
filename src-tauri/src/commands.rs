@@ -7,12 +7,14 @@ use tauri::ipc::Channel;
 
 use crate::audit::generator;
 use crate::audit::merge::ScanCollector;
-use crate::audit::model::{Scan, ScanRecord};
+use crate::audit::model::{Scan, ScanContext, ScanRecord};
 use crate::audit::runner::{self, AuditEvent};
+use crate::audit::AUDIT_SCRIPT_VERSION;
 use crate::parser;
 use crate::parser::model::Baseline;
 use crate::parser::{ParserProgress, PARSER_VERSION};
 use crate::storage::model::{AppState, UserState};
+use crate::storage::persist::ScanLoadErrors;
 use crate::storage::{paths, persist};
 
 /// Wraps a cached `Baseline` with a staleness flag so the frontend can
@@ -101,13 +103,28 @@ pub(crate) fn save_user_state(state: UserState) -> Result<(), String> {
     persist::save_user_state(&state).map_err(|err| err.to_string())
 }
 
-/// Returns the chronologically-latest `Scan` saved for `baseline_sha`,
-/// or `null` when no scans have run yet. Lets the dashboard rehydrate
-/// the user's last results on launch without forcing a rescan.
+/// IPC return shape for `load_scan_context`. Combines the loaded
+/// scan-related state with per-sub-file load errors so the frontend can
+/// degrade per-surface (empty state for a missing latest scan, inline
+/// notice on the trend chart for a broken summaries file, etc.) rather
+/// than going dark on a single bad file.
+#[derive(Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScanContextLoad {
+    pub(crate) context: ScanContext,
+    pub(crate) errors: ScanLoadErrors,
+}
+
+/// Returns the dashboard's scan-related state for a baseline: the
+/// most-recent full `Scan`, the per-rec change log, and the
+/// per-scan summary history. Each sub-file is loaded independently;
+/// failures land in `errors` instead of taking down the whole load.
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn load_most_recent_scan(baseline_sha: String) -> Result<Option<Scan>, String> {
-    persist::load_most_recent_scan(&baseline_sha).map_err(|err| err.to_string())
+pub(crate) fn load_scan_context(baseline_sha: String) -> Result<ScanContextLoad, String> {
+    let (context, errors) =
+        persist::load_scan_context(&baseline_sha).map_err(|err| err.to_string())?;
+    Ok(ScanContextLoad { context, errors })
 }
 
 #[tauri::command]
@@ -142,7 +159,11 @@ pub(crate) async fn start_scan(
         .map_err(|err| err.to_string())?;
     let scan = async_runtime::spawn_blocking(move || -> Result<Scan, String> {
         let script_path = generator::ensure_script().map_err(|err| err.to_string())?;
-        let mut collector = ScanCollector::new(baseline_sha);
+        let mut collector = ScanCollector::new(
+            baseline_sha,
+            PARSER_VERSION.to_string(),
+            AUDIT_SCRIPT_VERSION.to_string(),
+        );
         runner::run(&script_path, &baseline_path, |event| match event {
             AuditEvent::Device(device) => collector.set_device(device),
             AuditEvent::Result(record) => {
@@ -159,9 +180,6 @@ pub(crate) async fn start_scan(
     .await
     .map_err(|err| format!("scan task panicked: {err}"))??;
 
-    // Scan id is the start timestamp — sortable, unique enough for a
-    // single-device app, and human-readable in the file system.
-    let scan_id = scan.started_at.format("%Y%m%dT%H%M%S%3fZ").to_string();
-    persist::save_scan(&scan, &scan_id).map_err(|err| err.to_string())?;
+    persist::save_scan_with_diff(&scan).map_err(|err| err.to_string())?;
     Ok(scan)
 }

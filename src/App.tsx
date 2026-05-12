@@ -14,6 +14,8 @@ import {
   type Baseline,
   type ParserProgress,
   type Scan,
+  type ScanContext,
+  type ScanLoadErrors,
   type ScanRecord,
   type ScanResult,
   type UserState,
@@ -238,10 +240,11 @@ async function loadOrInitUserState(sha: string): Promise<UserState> {
 
 /**
  * Post-load shell: top bar with tabs and the currently-active panel.
- * Owns the Scan state — loaded from the most recent persisted scan on
- * mount, then live-filled per-rec when the user clicks Rescan. The
- * baseline and userState come from the parent so persistence stays the
- * source of truth.
+ * Owns the Scan history — loaded from disk on mount, appended on
+ * rescan. `latest` drives the dashboard rendering; `prior` (if any) is
+ * the comparison point for delta computation. The baseline and
+ * userState come from the parent so persistence stays the source of
+ * truth.
  */
 function Dashboard({
   baseline,
@@ -266,19 +269,34 @@ function Dashboard({
   onConsoleFilterChange: (next: ConsoleFilter) => void;
   onJumpToConsole: (filter: Partial<ConsoleFilter>) => void;
 }) {
-  const [scan, setScan] = useState<Scan | null>(null);
+  const [context, setContext] = useState<ScanContext>(emptyScanContext);
+  const [loadErrors, setLoadErrors] = useState<ScanLoadErrors>(emptyLoadErrors);
   const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
 
-  // Pull the most recent persisted scan for this baseline on mount and
-  // whenever the baseline switches. A returning user lands on their last
-  // results without having to re-run; a fresh baseline gets `null` and
-  // falls through to the empty state.
+  const latest = context.latest;
+
+  // Load scan context for this baseline on mount and whenever the
+  // baseline switches. Each sub-file's load status lands in `loadErrors`
+  // so failures degrade per-surface (empty state for a broken `latest`,
+  // inline notice on the trend chart for broken `summaries`, etc.) — no
+  // dashboard-wide banner.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const result = await commands.loadMostRecentScan(baseline.source.pdfSha256);
+      const result = await commands.loadScanContext(baseline.source.pdfSha256);
       if (cancelled) return;
-      setScan(result.status === "ok" ? (result.data ?? null) : null);
+      if (result.status === "ok") {
+        setContext(result.data.context);
+        setLoadErrors(result.data.errors);
+      } else {
+        setContext(emptyScanContext);
+        setLoadErrors({
+          latest: result.error,
+          changes: result.error,
+          summaries: result.error,
+        });
+      }
     })();
     return () => {
       cancelled = true;
@@ -288,36 +306,62 @@ function Dashboard({
   async function rescan() {
     if (scanning) return;
     setScanning(true);
-    // Seed an empty Scan so the dashboard switches out of the empty state
-    // immediately; channel messages then fill `results` row-by-row.
-    setScan(makePartialScan(baseline));
+    setScanError(null);
+    // Capture the current latest so a failed run can restore it. The
+    // backend doesn't write anything until the scan succeeds, so the
+    // pre-rescan `latest` is still the source of truth on disk; we just
+    // need to mirror that in memory if the run aborts.
+    const previousLatest = context.latest;
+    // Drop into a partial Scan immediately so the dashboard switches
+    // out of the empty state; channel messages fill `results`
+    // row-by-row. Once the scan completes we re-fetch the whole context
+    // for a clean sync.
+    setContext((prev) => ({ ...prev, latest: makePartialScan(baseline) }));
     const channel = new Channel<ScanRecord>();
     channel.onmessage = (record) => {
-      setScan((prev) =>
-        prev
-          ? {
-              ...prev,
-              results: {
-                ...prev.results,
-                [record.id]: scanRecordToResult(record),
-              },
-            }
-          : prev,
-      );
+      setContext((prev) => {
+        if (!prev.latest) return prev;
+        return {
+          ...prev,
+          latest: {
+            ...prev.latest,
+            results: {
+              ...prev.latest.results,
+              [record.id]: scanRecordToResult(record),
+            },
+          },
+        };
+      });
     };
     const result = await commands.startScan(baseline, channel);
     if (result.status === "ok") {
-      // Final Scan from the backend has the canonical device info and
-      // finishedAt; replace the partial one so the top bar stops showing
-      // the placeholder host.
-      setScan(result.data);
+      // Re-fetch context so latest, changes, and summaries are all in
+      // sync with what the backend just persisted. Cheap on a
+      // single-device app; saves us reproducing the diff logic
+      // client-side.
+      const refreshed = await commands.loadScanContext(baseline.source.pdfSha256);
+      if (refreshed.status === "ok") {
+        setContext(refreshed.data.context);
+        setLoadErrors(refreshed.data.errors);
+      } else {
+        // Backend wrote successfully but reload failed — leave the
+        // partial in place so the user still sees their just-completed
+        // scan, and surface the reload error so they know history
+        // didn't refresh.
+        setLoadErrors((prev) => ({ ...prev, latest: refreshed.error }));
+      }
     } else {
       console.error("Scan failed:", result.error);
+      // Restore the prior latest — backend never wrote, so on-disk
+      // truth is unchanged and the user shouldn't lose visibility on
+      // their last successful scan just because this attempt failed.
+      setContext((prev) => ({ ...prev, latest: previousLatest }));
+      setScanError(result.error);
     }
     setScanning(false);
   }
 
-  const completed = scan ? Object.keys(scan.results).length : 0;
+  const completed = latest ? Object.keys(latest.results).length : 0;
   const total = baseline.recommendations.length;
   const buttonLabel = scanning
     ? `Scanning ${completed}/${total}`
@@ -346,14 +390,14 @@ function Dashboard({
           </button>
         </nav>
         <span className="top-bar-spacer" />
-        {scan && (
+        {latest && (
           <>
-            <span className="host-pill mono">{scan.device.hostname}</span>
+            <span className="host-pill mono">{latest.device.hostname}</span>
             <time
               className="last-scan-timestamp mono"
-              dateTime={scan.startedAt}
+              dateTime={latest.startedAt}
             >
-              {formatTimestamp(scan.startedAt)}
+              {formatTimestamp(latest.startedAt)}
             </time>
           </>
         )}
@@ -369,21 +413,31 @@ function Dashboard({
       </header>
 
       {isStale && <StaleBanner onReparse={onReparse} />}
+      {scanError && (
+        <ScanErrorBanner
+          message={scanError}
+          onDismiss={() => setScanError(null)}
+        />
+      )}
 
       <main className="tab-content">
-        {!scan ? (
-          <EmptyScanState onScan={() => void rescan()} disabled={scanning} />
+        {!latest ? (
+          <EmptyScanState
+            onScan={() => void rescan()}
+            disabled={scanning}
+            loadError={loadErrors.latest}
+          />
         ) : tab === "overview" ? (
           <Overview
             baseline={baseline}
-            scan={scan}
+            scan={latest}
             userState={userState}
             onJumpToConsole={onJumpToConsole}
           />
         ) : (
           <Console
             baseline={baseline}
-            scan={scan}
+            scan={latest}
             userState={userState}
             filter={consoleFilter}
             onFilterChange={onConsoleFilterChange}
@@ -395,11 +449,29 @@ function Dashboard({
   );
 }
 
+const emptyScanContext: ScanContext = {
+  latest: null,
+  changes: [],
+  summaries: [],
+};
+
+const emptyLoadErrors: ScanLoadErrors = {
+  latest: null,
+  changes: null,
+  summaries: null,
+};
+
 /**
  * Renders an empty Scan with placeholder device info — used as the
  * starting point for a live-filled scan. The top-bar host pill shows
  * the local mock hostname during the run until the backend's real
  * device info lands on completion.
+ *
+ * `parserVersion` mirrors the loaded baseline; `auditScriptVersion` is
+ * empty until the backend's final Scan replaces this partial — the
+ * partial isn't persisted, and any cross-scan UI (deltas, trend) gates
+ * on `finishedAt` so the empty placeholder is never visible to derived
+ * logic.
  */
 function makePartialScan(baseline: Baseline): Scan {
   return {
@@ -415,6 +487,8 @@ function makePartialScan(baseline: Baseline): Scan {
     },
     results: {},
     error: null,
+    parserVersion: baseline.source.parserVersion,
+    auditScriptVersion: "",
   };
 }
 
@@ -432,17 +506,24 @@ function scanRecordToResult(record: ScanRecord): ScanResult {
 function EmptyScanState({
   onScan,
   disabled,
+  loadError,
 }: {
   onScan: () => void;
   disabled: boolean;
+  /** When the most-recent scan file failed to load, surface the error
+   * inline so the user knows running a scan will overwrite it rather
+   * than letting the failure stay invisible. */
+  loadError?: string | null;
 }) {
+  const title = loadError ? "Last scan couldn't be loaded" : "No scan yet";
+  const body = loadError
+    ? "Running a new scan will replace the unreadable file on disk."
+    : "Run a scan to evaluate this device against the loaded baseline. Results stay on the device and are saved between launches.";
   return (
     <div className="empty-scan">
-      <h2 className="empty-scan-title">No scan yet</h2>
-      <p className="empty-scan-body">
-        Run a scan to evaluate this device against the loaded baseline.
-        Results stay on the device and are saved between launches.
-      </p>
+      <h2 className="empty-scan-title">{title}</h2>
+      <p className="empty-scan-body">{body}</p>
+      {loadError && <p className="empty-scan-error mono">{loadError}</p>}
       <button
         type="button"
         className="button-primary"
@@ -535,6 +616,26 @@ function GearIcon() {
 function formatTimestamp(iso: string): string {
   // YYYY-MM-DD HH:MM — terse, mono, sortable.
   return iso.slice(0, 16).replace("T", " ");
+}
+
+function ScanErrorBanner({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="stale-banner" role="alert">
+      <WarnIcon />
+      <span className="stale-banner-message">
+        Scan aborted: {message}
+      </span>
+      <button className="stale-banner-action" onClick={onDismiss}>
+        Dismiss
+      </button>
+    </div>
+  );
 }
 
 function StaleBanner({ onReparse }: { onReparse: () => void }) {

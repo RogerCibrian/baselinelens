@@ -14,6 +14,14 @@ pub(crate) struct Scan {
     pub(crate) device: DeviceInfo,
     pub(crate) results: HashMap<String, ScanResult>,
     pub(crate) error: Option<String>,
+    /// Snapshot of `PARSER_VERSION` at scan time. Lets the UI detect when
+    /// a saved scan was produced under a different parser/script schema
+    /// before drawing cross-scan comparisons (deltas, trend chart).
+    pub(crate) parser_version: String,
+    /// Snapshot of `AUDIT_SCRIPT_VERSION` at scan time. Same intent as
+    /// `parser_version` — captures the schema half that the audit script
+    /// owns (status enum, check shape, NDJSON contract).
+    pub(crate) audit_script_version: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -85,4 +93,81 @@ pub(crate) struct ScanRecord {
     pub(crate) expected: Option<String>,
     pub(crate) checks: Option<Vec<CheckDetail>>,
     pub(crate) error: Option<String>,
+}
+
+/// One status flip detected at scan time. Appended to `changes.jsonl`
+/// whenever a rec's status differs from its prior recorded value.
+/// `from_status` is `None` for the first observation of a rec (no prior
+/// value to compare against). The frontend reads the most recent event
+/// per rec to drive persistent delta indicators — the flag stays
+/// "regressed" or "improved" until another event for the same rec
+/// supersedes it, regardless of how many no-op rescans happen between.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChangeEvent {
+    pub(crate) rec_id: String,
+    pub(crate) from_status: Option<Status>,
+    pub(crate) to_status: Status,
+    pub(crate) observed_at: DateTime<Utc>,
+    pub(crate) parser_version: String,
+    pub(crate) audit_script_version: String,
+}
+
+/// Lightweight per-scan record for the trend chart and headline-strip
+/// math. Kept separate from full `Scan` files so we can show months of
+/// history without growing storage materially — counts mean the same
+/// thing across schema versions, so old summaries stay readable even
+/// when the underlying scan format evolves.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScanSummary {
+    pub(crate) started_at: DateTime<Utc>,
+    pub(crate) finished_at: Option<DateTime<Utc>>,
+    pub(crate) pass: u32,
+    pub(crate) fail: u32,
+    pub(crate) manual: u32,
+    pub(crate) error: u32,
+    pub(crate) parser_version: String,
+    pub(crate) audit_script_version: String,
+}
+
+/// Bundles the scan-related state for a baseline as the dashboard
+/// needs it. `latest` drives current-scan rendering; `changes` powers
+/// per-rec delta indicators with persistence (a flag stays until the
+/// rec actually flips again, not just until the next no-op rescan);
+/// `summaries` feeds the trend chart and headline-strip math.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScanContext {
+    pub(crate) latest: Option<Scan>,
+    pub(crate) changes: Vec<ChangeEvent>,
+    pub(crate) summaries: Vec<ScanSummary>,
+}
+
+impl ScanSummary {
+    /// Derives a summary from a full `Scan` by tallying its results.
+    pub(crate) fn from_scan(scan: &Scan) -> Self {
+        let mut pass = 0u32;
+        let mut fail = 0u32;
+        let mut manual = 0u32;
+        let mut error = 0u32;
+        for result in scan.results.values() {
+            match result.status {
+                Status::Pass => pass += 1,
+                Status::Fail => fail += 1,
+                Status::Manual => manual += 1,
+                Status::Error => error += 1,
+            }
+        }
+        Self {
+            started_at: scan.started_at,
+            finished_at: scan.finished_at,
+            pass,
+            fail,
+            manual,
+            error,
+            parser_version: scan.parser_version.clone(),
+            audit_script_version: scan.audit_script_version.clone(),
+        }
+    }
 }

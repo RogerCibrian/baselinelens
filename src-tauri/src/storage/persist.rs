@@ -4,12 +4,15 @@
 //! "first run" from a real I/O failure.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use specta::Type;
 
-use crate::audit::model::Scan;
+use crate::audit::model::{ChangeEvent, Scan, ScanContext, ScanSummary};
 use crate::parser::model::Baseline;
 use crate::storage::error::StorageError;
 use crate::storage::model::{AppState, UserState};
@@ -83,29 +86,222 @@ pub(crate) fn save_cached_baseline(baseline: &Baseline) -> Result<(), StorageErr
     )
 }
 
-pub(crate) fn save_scan(scan: &Scan, scan_id: &str) -> Result<(), StorageError> {
-    write_json(&paths::scan_path(&scan.baseline_sha256, scan_id)?, scan)
+/// Per-sub-file load outcome for `load_scan_context`. Each field is
+/// `None` when the corresponding file loaded clean (or didn't exist) and
+/// `Some(message)` when it failed — the frontend uses this to render
+/// per-surface failure notices instead of one global banner.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScanLoadErrors {
+    pub(crate) latest: Option<String>,
+    pub(crate) changes: Option<String>,
+    pub(crate) summaries: Option<String>,
 }
 
-/// Loads the chronologically-latest `Scan` for a baseline, or `Ok(None)`
-/// when no scans exist yet. Scan files are named with ISO-style
-/// timestamps so a lexicographic sort matches actual scan order.
-pub(crate) fn load_most_recent_scan(baseline_sha: &str) -> Result<Option<Scan>, StorageError> {
-    let dir = paths::scans_dir_for_baseline(baseline_sha)?;
-    if !dir.exists() {
-        return Ok(None);
+/// Persists a finished `Scan` and updates the surrounding bookkeeping:
+/// appends a `ScanSummary` to the trend-chart history, then — when the
+/// existing latest scan was measured under the same parser/script
+/// versions — diffs the new scan against it and appends `ChangeEvent`s
+/// for each per-rec status flip. Skipping the diff on a version
+/// mismatch keeps methodology updates from masquerading as device
+/// regressions in the change log.
+pub(crate) fn save_scan_with_diff(scan: &Scan) -> Result<(), StorageError> {
+    let baseline_sha = scan.baseline_sha256.as_str();
+    // Tolerate a parse failure on the existing latest — we're about to
+    // overwrite it anyway. Logging keeps the developer-visible breadcrumb;
+    // skipping the diff is the honest call when prior state is unknown.
+    let prior_latest = match read_json::<Scan>(&paths::latest_scan_path(baseline_sha)?) {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("ignoring unreadable prior latest scan: {err}");
+            None
+        }
+    };
+
+    if let Some(ref prior) = prior_latest
+        && prior.parser_version == scan.parser_version
+        && prior.audit_script_version == scan.audit_script_version
+    {
+        let events = diff_to_change_events(prior, scan);
+        if !events.is_empty() {
+            append_change_events(baseline_sha, &events)?;
+        }
     }
-    let mut entries: Vec<PathBuf> = fs::read_dir(&dir)
-        .map_err(|source| StorageError::Io {
-            path: dir.clone(),
-            source,
-        })?
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
-        .collect();
-    entries.sort();
-    match entries.last() {
-        Some(latest) => read_json(latest),
-        None => Ok(None),
-    }
+
+    append_summary(baseline_sha, &ScanSummary::from_scan(scan))?;
+    write_json_atomic(&paths::latest_scan_path(baseline_sha)?, scan)?;
+    Ok(())
 }
+
+/// Loads the dashboard's scan-related state for a baseline. Each
+/// sub-file is loaded independently — a parse failure on one returns
+/// the error in `errors` while letting the others succeed, so the
+/// dashboard can degrade per-surface (empty state for `latest`, inline
+/// notice on the trend chart for `summaries`, etc.) instead of going
+/// dark on a single bad file.
+pub(crate) fn load_scan_context(
+    baseline_sha: &str,
+) -> Result<(ScanContext, ScanLoadErrors), StorageError> {
+    let mut errors = ScanLoadErrors::default();
+
+    let latest = match read_json::<Scan>(&paths::latest_scan_path(baseline_sha)?) {
+        Ok(value) => value,
+        Err(err) => {
+            errors.latest = Some(err.to_string());
+            None
+        }
+    };
+
+    let changes = match read_change_events(baseline_sha) {
+        Ok(value) => value,
+        Err(err) => {
+            errors.changes = Some(err.to_string());
+            Vec::new()
+        }
+    };
+
+    let summaries = match read_json::<Vec<ScanSummary>>(&paths::summaries_path(baseline_sha)?) {
+        Ok(value) => value.unwrap_or_default(),
+        Err(err) => {
+            errors.summaries = Some(err.to_string());
+            Vec::new()
+        }
+    };
+
+    Ok((
+        ScanContext {
+            latest,
+            changes,
+            summaries,
+        },
+        errors,
+    ))
+}
+
+/// Compares two scans rec-by-rec and emits a `ChangeEvent` for each id
+/// whose status differs (including ids that are present in one scan but
+/// not the other — first observation or an id the new scan no longer
+/// covers).
+fn diff_to_change_events(prior: &Scan, current: &Scan) -> Vec<ChangeEvent> {
+    let mut events = Vec::new();
+    for (rec_id, current_result) in &current.results {
+        let prior_status = prior.results.get(rec_id).map(|r| r.status);
+        if prior_status != Some(current_result.status) {
+            events.push(ChangeEvent {
+                rec_id: rec_id.clone(),
+                from_status: prior_status,
+                to_status: current_result.status,
+                observed_at: current.started_at,
+                parser_version: current.parser_version.clone(),
+                audit_script_version: current.audit_script_version.clone(),
+            });
+        }
+    }
+    events
+}
+
+/// Appends one or more `ChangeEvent`s to the per-baseline JSONL file.
+/// Each event is written as a single line so a partial write at most
+/// truncates the trailing event rather than corrupting earlier history.
+fn append_change_events(
+    baseline_sha: &str,
+    events: &[ChangeEvent],
+) -> Result<(), StorageError> {
+    let path = paths::changes_path(baseline_sha)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| StorageError::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|source| StorageError::Io {
+            path: path.clone(),
+            source,
+        })?;
+    for event in events {
+        let line = serde_json::to_string(event).map_err(|source| StorageError::Json {
+            path: path.clone(),
+            source,
+        })?;
+        writeln!(file, "{line}").map_err(|source| StorageError::Io {
+            path: path.clone(),
+            source,
+        })?;
+    }
+    Ok(())
+}
+
+/// Reads the per-baseline JSONL change log into memory in file order.
+/// A blank line is skipped; any malformed line bubbles as a `Json`
+/// error so the load surface (and the user) sees the problem instead of
+/// silently dropping events.
+fn read_change_events(baseline_sha: &str) -> Result<Vec<ChangeEvent>, StorageError> {
+    let path = paths::changes_path(baseline_sha)?;
+    let raw = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => {
+            return Err(StorageError::Io {
+                path: path.clone(),
+                source,
+            });
+        }
+    };
+    let mut events = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let event: ChangeEvent =
+            serde_json::from_str(trimmed).map_err(|source| StorageError::Json {
+                path: path.clone(),
+                source,
+            })?;
+        events.push(event);
+    }
+    Ok(events)
+}
+
+/// Appends a single `ScanSummary` to the per-baseline summaries array.
+/// Reads the existing array (or starts an empty one), pushes, and
+/// rewrites atomically. The file stays a JSON array (not JSONL) so the
+/// frontend can deserialize it in one shot for the trend chart.
+fn append_summary(baseline_sha: &str, summary: &ScanSummary) -> Result<(), StorageError> {
+    let path = paths::summaries_path(baseline_sha)?;
+    let mut existing: Vec<ScanSummary> = read_json(&path)?.unwrap_or_default();
+    existing.push(summary.clone());
+    write_json_atomic(&path, &existing)
+}
+
+/// Writes `value` to `path` via a same-directory tempfile + rename so
+/// a crash mid-write can't leave a partially-written file in place.
+/// `fs::rename` is atomic on the same filesystem on both Windows and
+/// Unix, and replaces the destination if it exists.
+fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), StorageError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| StorageError::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let body = serde_json::to_string_pretty(value).map_err(|source| StorageError::Json {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, body).map_err(|source| StorageError::Io {
+        path: tmp.clone(),
+        source,
+    })?;
+    fs::rename(&tmp, path).map_err(|source| StorageError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Ok(())
+}
+
