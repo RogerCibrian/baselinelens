@@ -40,6 +40,23 @@ export const commands = {
 	 */
 	loadScanContext: (baselineSha: string) => typedError<ScanContextLoad, string>(__TAURI_INVOKE("load_scan_context", { baselineSha })),
 	/**
+	 *  Deletes the most-recent full `Scan` file for `baseline_sha`. Used
+	 *  by the recovery flow when the file is unreadable or the user wants
+	 *  to clear it manually from settings. Missing file is treated as
+	 *  success so the call is idempotent.
+	 */
+	resetLatestScan: (baselineSha: string) => typedError<null, string>(__TAURI_INVOKE("reset_latest_scan", { baselineSha })),
+	/**
+	 *  Deletes the trend-chart summary history for `baseline_sha`. The
+	 *  next scan starts a fresh history.
+	 */
+	resetSummaries: (baselineSha: string) => typedError<null, string>(__TAURI_INVOKE("reset_summaries", { baselineSha })),
+	/**
+	 *  Deletes the per-rec change log for `baseline_sha`. The next scan
+	 *  that flips a rec records the first event under the fresh log.
+	 */
+	resetChanges: (baselineSha: string) => typedError<null, string>(__TAURI_INVOKE("reset_changes", { baselineSha })),
+	/**
 	 *  Runs the audit pipeline against the device this dashboard is on:
 	 *  generates (or reuses) a cached `audit.ps1` from `baseline`, spawns
 	 *  `powershell.exe` to execute it, and streams each `ScanRecord` over
@@ -349,6 +366,13 @@ export type ScanSummary = {
 	fail: number,
 	manual: number,
 	error: number,
+	/**
+	 *  Count of Fail results that carry a matching entry in the user's
+	 *  exception list at scan time. Held separately from `fail` so the
+	 *  trend math can credit closed-by-paperwork recs the same way the
+	 *  level cards do (In-scope methodology counts exception as pass).
+	 */
+	exception: number,
 	parserVersion: string,
 	auditScriptVersion: string,
 };

@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -127,6 +127,11 @@ pub(crate) struct ScanSummary {
     pub(crate) fail: u32,
     pub(crate) manual: u32,
     pub(crate) error: u32,
+    /// Count of Fail results that carry a matching entry in the user's
+    /// exception list at scan time. Held separately from `fail` so the
+    /// trend math can credit closed-by-paperwork recs the same way the
+    /// level cards do (In-scope methodology counts exception as pass).
+    pub(crate) exception: u32,
     pub(crate) parser_version: String,
     pub(crate) audit_script_version: String,
 }
@@ -146,15 +151,25 @@ pub(crate) struct ScanContext {
 
 impl ScanSummary {
     /// Derives a summary from a full `Scan` by tallying its results.
-    pub(crate) fn from_scan(scan: &Scan) -> Self {
+    /// A Fail whose `rec_id` appears in `exception_ids` is counted toward
+    /// `exception` instead of `fail`, mirroring the frontend's
+    /// `effectiveStatus` so trend math matches what the level cards show.
+    pub(crate) fn from_scan(scan: &Scan, exception_ids: &HashSet<&str>) -> Self {
         let mut pass = 0u32;
         let mut fail = 0u32;
         let mut manual = 0u32;
         let mut error = 0u32;
-        for result in scan.results.values() {
+        let mut exception = 0u32;
+        for (rec_id, result) in &scan.results {
             match result.status {
                 Status::Pass => pass += 1,
-                Status::Fail => fail += 1,
+                Status::Fail => {
+                    if exception_ids.contains(rec_id.as_str()) {
+                        exception += 1;
+                    } else {
+                        fail += 1;
+                    }
+                }
                 Status::Manual => manual += 1,
                 Status::Error => error += 1,
             }
@@ -166,6 +181,7 @@ impl ScanSummary {
             fail,
             manual,
             error,
+            exception,
             parser_version: scan.parser_version.clone(),
             audit_script_version: scan.audit_script_version.clone(),
         }

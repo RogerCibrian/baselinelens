@@ -24,6 +24,9 @@ pub fn export_to(out_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             crate::commands::save_user_state,
             crate::commands::load_cached_baseline,
             crate::commands::load_scan_context,
+            crate::commands::reset_latest_scan,
+            crate::commands::reset_summaries,
+            crate::commands::reset_changes,
             crate::commands::start_scan,
         ])
         .typ::<crate::commands::CachedBaseline>()

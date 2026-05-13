@@ -19,6 +19,9 @@ pub fn run() {
             commands::save_user_state,
             commands::load_cached_baseline,
             commands::load_scan_context,
+            commands::reset_latest_scan,
+            commands::reset_summaries,
+            commands::reset_changes,
             commands::start_scan,
         ])
         .run(tauri::generate_context!())

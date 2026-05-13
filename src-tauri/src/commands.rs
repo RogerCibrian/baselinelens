@@ -127,6 +127,32 @@ pub(crate) fn load_scan_context(baseline_sha: String) -> Result<ScanContextLoad,
     Ok(ScanContextLoad { context, errors })
 }
 
+/// Deletes the most-recent full `Scan` file for `baseline_sha`. Used
+/// by the recovery flow when the file is unreadable or the user wants
+/// to clear it manually from settings. Missing file is treated as
+/// success so the call is idempotent.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn reset_latest_scan(baseline_sha: String) -> Result<(), String> {
+    persist::reset_latest_scan(&baseline_sha).map_err(|err| err.to_string())
+}
+
+/// Deletes the trend-chart summary history for `baseline_sha`. The
+/// next scan starts a fresh history.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn reset_summaries(baseline_sha: String) -> Result<(), String> {
+    persist::reset_summaries(&baseline_sha).map_err(|err| err.to_string())
+}
+
+/// Deletes the per-rec change log for `baseline_sha`. The next scan
+/// that flips a rec records the first event under the fresh log.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn reset_changes(baseline_sha: String) -> Result<(), String> {
+    persist::reset_changes(&baseline_sha).map_err(|err| err.to_string())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub(crate) fn load_cached_baseline(sha: String) -> Result<Option<CachedBaseline>, String> {
@@ -180,6 +206,19 @@ pub(crate) async fn start_scan(
     .await
     .map_err(|err| format!("scan task panicked: {err}"))??;
 
-    persist::save_scan_with_diff(&scan).map_err(|err| err.to_string())?;
+    // Load the saved exceptions so the trend summary credits closed-by-
+    // paperwork recs the same way the level cards do. Missing or
+    // unreadable user state degrades to "no exceptions" — the scan
+    // succeeded, an exception-count blip is a much smaller failure mode
+    // than failing the user-visible scan over an annotation read.
+    let exceptions = match persist::load_user_state(&scan.baseline_sha256) {
+        Ok(Some(state)) => state.exceptions,
+        Ok(None) => Default::default(),
+        Err(err) => {
+            eprintln!("failed to load user state for scan summary: {err}");
+            Default::default()
+        }
+    };
+    persist::save_scan_with_diff(&scan, &exceptions).map_err(|err| err.to_string())?;
     Ok(scan)
 }

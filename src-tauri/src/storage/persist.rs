@@ -3,6 +3,7 @@
 //! reported as `Ok(None)` rather than an error so callers can distinguish
 //! "first run" from a real I/O failure.
 
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -15,7 +16,7 @@ use specta::Type;
 use crate::audit::model::{ChangeEvent, Scan, ScanContext, ScanSummary};
 use crate::parser::model::Baseline;
 use crate::storage::error::StorageError;
-use crate::storage::model::{AppState, UserState};
+use crate::storage::model::{AppState, Exception, UserState};
 use crate::storage::paths;
 
 /// Reads a JSON file into `T`. Returns `Ok(None)` if the file is missing
@@ -99,13 +100,17 @@ pub(crate) struct ScanLoadErrors {
 }
 
 /// Persists a finished `Scan` and updates the surrounding bookkeeping:
-/// appends a `ScanSummary` to the trend-chart history, then — when the
-/// existing latest scan was measured under the same parser/script
-/// versions — diffs the new scan against it and appends `ChangeEvent`s
-/// for each per-rec status flip. Skipping the diff on a version
-/// mismatch keeps methodology updates from masquerading as device
-/// regressions in the change log.
-pub(crate) fn save_scan_with_diff(scan: &Scan) -> Result<(), StorageError> {
+/// appends a `ScanSummary` to the trend-chart history (counting
+/// exceptions as exception, not fail), then — when the existing latest
+/// scan was measured under the same parser/script versions — diffs the
+/// new scan against it and appends `ChangeEvent`s for each per-rec
+/// status flip. Skipping the diff on a version mismatch keeps
+/// methodology updates from masquerading as device regressions in the
+/// change log.
+pub(crate) fn save_scan_with_diff(
+    scan: &Scan,
+    exceptions: &HashMap<String, Exception>,
+) -> Result<(), StorageError> {
     let baseline_sha = scan.baseline_sha256.as_str();
     // Tolerate a parse failure on the existing latest — we're about to
     // overwrite it anyway. Logging keeps the developer-visible breadcrumb;
@@ -128,7 +133,8 @@ pub(crate) fn save_scan_with_diff(scan: &Scan) -> Result<(), StorageError> {
         }
     }
 
-    append_summary(baseline_sha, &ScanSummary::from_scan(scan))?;
+    let exception_ids: HashSet<&str> = exceptions.keys().map(String::as_str).collect();
+    append_summary(baseline_sha, &ScanSummary::from_scan(scan, &exception_ids))?;
     write_json_atomic(&paths::latest_scan_path(baseline_sha)?, scan)?;
     Ok(())
 }
@@ -276,6 +282,38 @@ fn append_summary(baseline_sha: &str, summary: &ScanSummary) -> Result<(), Stora
     let mut existing: Vec<ScanSummary> = read_json(&path)?.unwrap_or_default();
     existing.push(summary.clone());
     write_json_atomic(&path, &existing)
+}
+
+/// Removes `path` if it exists. A missing file is reported as `Ok(())`
+/// so callers can use this as an idempotent "reset" primitive without
+/// special-casing the first-call path.
+fn remove_if_exists(path: &Path) -> Result<(), StorageError> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(StorageError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+/// Deletes the most-recent full `Scan` for a baseline. Used by the
+/// in-app recovery flow when `latest.json` can't be deserialized.
+pub(crate) fn reset_latest_scan(baseline_sha: &str) -> Result<(), StorageError> {
+    remove_if_exists(&paths::latest_scan_path(baseline_sha)?)
+}
+
+/// Deletes the trend-chart summary history for a baseline. The next
+/// scan starts a fresh history.
+pub(crate) fn reset_summaries(baseline_sha: &str) -> Result<(), StorageError> {
+    remove_if_exists(&paths::summaries_path(baseline_sha)?)
+}
+
+/// Deletes the per-rec change log for a baseline. The next scan that
+/// flips a rec records the first event under the fresh log.
+pub(crate) fn reset_changes(baseline_sha: &str) -> Result<(), StorageError> {
+    remove_if_exists(&paths::changes_path(baseline_sha)?)
 }
 
 /// Writes `value` to `path` via a same-directory tempfile + rename so

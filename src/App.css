@@ -87,6 +87,20 @@
   background: var(--v-paper-2);
 }
 
+.settings-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--v-line);
+}
+
+.settings-item-destructive {
+  color: var(--v-fail);
+}
+
+.settings-item-destructive:hover {
+  background: var(--v-fail-bg);
+}
+
 .brand {
   font-size: 13px;
   font-weight: 600;
@@ -160,7 +174,13 @@
   border: 1px solid rgba(184, 48, 45, 0.18);
   border-radius: 4px;
   text-align: left;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.empty-scan-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
 }
 
 .tab-content {
@@ -189,7 +209,17 @@
 }
 
 .stale-banner-message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.stale-banner-detail {
+  font-size: 11px;
+  opacity: 0.75;
 }
 
 .stale-banner-action {
@@ -199,6 +229,15 @@
   border-radius: var(--v-radius-sm);
   font-size: 12px;
   font-weight: 500;
+}
+
+.stale-banner-action-secondary {
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--v-warn);
+  border: 1px solid currentColor;
+  border-radius: var(--v-radius-sm);
+  font-size: 12px;
 }
 
 /* Welcome (pre-load) */
@@ -484,6 +523,173 @@
   overflow: hidden;
 }
 
+.headline-strip {
+  display: flex;
+  align-items: baseline;
+  gap: 0.875rem;
+  flex-wrap: wrap;
+  margin: 0 0 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--v-line-soft);
+  color: var(--v-text-muted);
+  font-size: 13px;
+}
+
+.headline-first {
+  font-style: italic;
+}
+
+.headline-lead {
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.012em;
+  color: var(--v-text);
+}
+
+.headline-trend {
+  font-style: italic;
+}
+
+.headline-trend-improving {
+  color: var(--v-pass);
+}
+
+.headline-trend-declining {
+  color: var(--v-fail);
+}
+
+.headline-trend-stable {
+  color: var(--v-text);
+}
+
+.headline-divider {
+  width: 1px;
+  height: 0.75rem;
+  background: var(--v-line-strong);
+  display: inline-block;
+}
+
+.headline-fact {
+  font-size: 12px;
+}
+
+.trend-chart-figure {
+  margin: 0;
+  padding: 1.25rem 0.5rem 0.5rem;
+  background: var(--v-paper);
+  border: 1px solid var(--v-line);
+  border-radius: 4px;
+}
+
+.trend-chart {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.trend-chart-axis {
+  font-size: 10px;
+  fill: var(--v-text-subtle);
+}
+
+.trend-chart-caption {
+  margin: 0.5rem 0 0;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--v-text-subtle);
+  padding: 0 0.5rem;
+}
+
+.trend-empty {
+  margin: 0;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.recently-changed {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 2rem;
+}
+
+.recently-changed-col {
+  min-width: 0;
+}
+
+.recently-changed-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.5rem;
+}
+
+.recently-changed-head.tone-pass {
+  color: var(--v-pass);
+}
+
+.recently-changed-head.tone-fail {
+  color: var(--v-fail);
+}
+
+.recently-changed-count {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.recently-changed-empty {
+  font-size: 12px;
+  font-style: italic;
+  margin: 0;
+  padding: 0.5rem 0;
+}
+
+.recently-changed-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.recently-changed-list li {
+  border-top: 1px solid var(--v-line);
+}
+
+.recently-changed-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.625rem 0;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.recently-changed-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.recently-changed-id {
+  font-size: 10px;
+  color: var(--v-text-subtle);
+}
+
+.recently-changed-title {
+  font-size: 12px;
+  color: var(--v-text-2);
+  line-height: 1.4;
+}
+
+.recently-changed-row:hover .recently-changed-title {
+  color: var(--v-text);
+}
+
 .overview-footer {
   display: flex;
   justify-content: space-between;
@@ -698,6 +904,57 @@
   font-size: 11px;
   font-weight: 600;
   text-transform: capitalize;
+}
+
+.rec-table-delta-col {
+  width: 32px;
+  text-align: center;
+}
+
+.delta-marker {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.delta-improved {
+  color: var(--v-pass);
+}
+
+.delta-regressed {
+  color: var(--v-fail);
+}
+
+.surface-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0;
+  padding: 0.4rem 0.75rem;
+  font-size: 12px;
+  color: var(--v-text-muted);
+  background: var(--v-paper-2);
+  border: 1px solid var(--v-line);
+  border-radius: 4px;
+}
+
+.surface-notice > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.surface-notice-action {
+  padding: 3px 10px;
+  background: transparent;
+  color: var(--v-fail);
+  border: 1px solid currentColor;
+  border-radius: var(--v-radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.surface-notice-action:hover {
+  background: var(--v-fail-bg);
 }
 
 .empty-state {

@@ -303,6 +303,39 @@ function Dashboard({
     };
   }, [baseline]);
 
+  async function refreshContext() {
+    const result = await commands.loadScanContext(baseline.source.pdfSha256);
+    if (result.status === "ok") {
+      setContext(result.data.context);
+      setLoadErrors(result.data.errors);
+    } else {
+      setLoadErrors({
+        latest: result.error,
+        changes: result.error,
+        summaries: result.error,
+      });
+    }
+  }
+
+  // Deletes one of the regenerable scan-history files for the active
+  // baseline and reloads the surface. The scan-aborted banner is
+  // cleared on the way out — taking a recovery action implies the user
+  // wants to move past the error message that prompted it.
+  async function resetScanFile(target: "latest" | "summaries" | "changes") {
+    const sha = baseline.source.pdfSha256;
+    const result =
+      target === "latest"
+        ? await commands.resetLatestScan(sha)
+        : target === "summaries"
+          ? await commands.resetSummaries(sha)
+          : await commands.resetChanges(sha);
+    if (result.status !== "ok") {
+      console.error(`Reset ${target} failed:`, result.error);
+    }
+    setScanError(null);
+    await refreshContext();
+  }
+
   async function rescan() {
     if (scanning) return;
     setScanning(true);
@@ -409,13 +442,19 @@ function Dashboard({
         >
           {buttonLabel}
         </button>
-        <SettingsMenu onChangeBaseline={onReparse} />
+        <SettingsMenu
+          onChangeBaseline={onReparse}
+          onResetLatest={() => void resetScanFile("latest")}
+          onResetSummaries={() => void resetScanFile("summaries")}
+          onResetChanges={() => void resetScanFile("changes")}
+        />
       </header>
 
       {isStale && <StaleBanner onReparse={onReparse} />}
       {scanError && (
         <ScanErrorBanner
           message={scanError}
+          onResetSummaries={() => void resetScanFile("summaries")}
           onDismiss={() => setScanError(null)}
         />
       )}
@@ -426,22 +465,31 @@ function Dashboard({
             onScan={() => void rescan()}
             disabled={scanning}
             loadError={loadErrors.latest}
+            onResetLatest={() => void resetScanFile("latest")}
           />
         ) : tab === "overview" ? (
           <Overview
             baseline={baseline}
             scan={latest}
+            changes={context.changes}
+            summaries={context.summaries}
+            loadErrors={loadErrors}
             userState={userState}
             onJumpToConsole={onJumpToConsole}
+            onResetSummaries={() => void resetScanFile("summaries")}
+            onResetChanges={() => void resetScanFile("changes")}
           />
         ) : (
           <Console
             baseline={baseline}
             scan={latest}
+            changes={context.changes}
+            loadErrors={loadErrors}
             userState={userState}
             filter={consoleFilter}
             onFilterChange={onConsoleFilterChange}
             onUpdateUserState={onUpdateUserState}
+            onResetChanges={() => void resetScanFile("changes")}
           />
         )}
       </main>
@@ -507,6 +555,7 @@ function EmptyScanState({
   onScan,
   disabled,
   loadError,
+  onResetLatest,
 }: {
   onScan: () => void;
   disabled: boolean;
@@ -514,34 +563,62 @@ function EmptyScanState({
    * inline so the user knows running a scan will overwrite it rather
    * than letting the failure stay invisible. */
   loadError?: string | null;
+  /** Removes the unreadable scan file so the user doesn't have to open
+   * the data folder to recover. Triggered from the inline action when
+   * `loadError` is set. */
+  onResetLatest: () => void;
 }) {
   const title = loadError ? "Last scan couldn't be loaded" : "No scan yet";
   const body = loadError
-    ? "Running a new scan will replace the unreadable file on disk."
+    ? "The most-recent scan file for this baseline can't be read. Reset it (or run a new scan, which overwrites it) to continue."
     : "Run a scan to evaluate this device against the loaded baseline. Results stay on the device and are saved between launches.";
   return (
     <div className="empty-scan">
       <h2 className="empty-scan-title">{title}</h2>
       <p className="empty-scan-body">{body}</p>
       {loadError && <p className="empty-scan-error mono">{loadError}</p>}
-      <button
-        type="button"
-        className="button-primary"
-        onClick={onScan}
-        disabled={disabled}
-      >
-        Run scan
-      </button>
+      <div className="empty-scan-actions">
+        <button
+          type="button"
+          className="button-primary"
+          onClick={onScan}
+          disabled={disabled}
+        >
+          Run scan
+        </button>
+        {loadError && (
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={onResetLatest}
+          >
+            Reset last scan
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 /**
- * Settings popover anchored to the gear button in the top bar. For now
- * the only item is "Change baseline"; future preferences (theme, etc.)
- * will land here too. Closes on click-outside, Esc, or selecting an item.
+ * Settings popover anchored to the gear button in the top bar. Hosts
+ * baseline-switching and the destructive reset actions for the active
+ * baseline's scan-history files. Closes on click-outside, Esc, or
+ * selecting an item. Reset items prompt for confirmation since the
+ * user reaches them outside of an error context — without the prompt
+ * a stray click could clear a working trend history.
  */
-function SettingsMenu({ onChangeBaseline }: { onChangeBaseline: () => void }) {
+function SettingsMenu({
+  onChangeBaseline,
+  onResetLatest,
+  onResetSummaries,
+  onResetChanges,
+}: {
+  onChangeBaseline: () => void;
+  onResetLatest: () => void;
+  onResetSummaries: () => void;
+  onResetChanges: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -562,6 +639,13 @@ function SettingsMenu({ onChangeBaseline }: { onChangeBaseline: () => void }) {
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
+
+  function confirmAndRun(message: string, action: () => void) {
+    setOpen(false);
+    if (window.confirm(message)) {
+      action();
+    }
+  }
 
   return (
     <div className="settings-wrapper" ref={wrapperRef}>
@@ -587,6 +671,46 @@ function SettingsMenu({ onChangeBaseline }: { onChangeBaseline: () => void }) {
             }}
           >
             Change baseline
+          </button>
+          <div className="settings-divider" role="separator" />
+          <button
+            type="button"
+            role="menuitem"
+            className="settings-item settings-item-destructive"
+            onClick={() =>
+              confirmAndRun(
+                "Delete the most-recent scan for this baseline? The next scan will replace it.",
+                onResetLatest,
+              )
+            }
+          >
+            Reset last scan
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="settings-item settings-item-destructive"
+            onClick={() =>
+              confirmAndRun(
+                "Delete the trend history for this baseline? Past summary points will be lost; the next scan starts a fresh history.",
+                onResetSummaries,
+              )
+            }
+          >
+            Reset trend history
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="settings-item settings-item-destructive"
+            onClick={() =>
+              confirmAndRun(
+                "Delete the change log for this baseline? Δ indicators clear until a future scan flips a rec again.",
+                onResetChanges,
+              )
+            }
+          >
+            Reset change history
           </button>
         </div>
       )}
@@ -620,18 +744,34 @@ function formatTimestamp(iso: string): string {
 
 function ScanErrorBanner({
   message,
+  onResetSummaries,
   onDismiss,
 }: {
   message: string;
+  onResetSummaries: () => void;
   onDismiss: () => void;
 }) {
+  // Today, summaries is the only file in the save path that's read
+  // before being rewritten — so a save-time abort that names it is the
+  // schema-drift case where "Reset trend history" recovers. Any other
+  // cause (UAC denial, disk full, script failure, etc.) gets a plain
+  // banner with no misleading recovery action. If more read-then-write
+  // paths land later, extend this detection rather than asserting a
+  // cause in the header.
+  const isSummariesError = message.includes("summaries.json");
   return (
     <div className="stale-banner" role="alert">
       <WarnIcon />
-      <span className="stale-banner-message">
-        Scan aborted: {message}
-      </span>
-      <button className="stale-banner-action" onClick={onDismiss}>
+      <div className="stale-banner-message">
+        <span>Scan aborted.</span>
+        <span className="stale-banner-detail mono">{message}</span>
+      </div>
+      {isSummariesError && (
+        <button className="stale-banner-action" onClick={onResetSummaries}>
+          Reset trend history
+        </button>
+      )}
+      <button className="stale-banner-action-secondary" onClick={onDismiss}>
         Dismiss
       </button>
     </div>

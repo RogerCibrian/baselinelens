@@ -11,14 +11,21 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type {
   Baseline,
+  ChangeEvent,
   Exception,
   Level,
   Note,
   Recommendation,
   Scan,
+  ScanLoadErrors,
   ScanResult,
   UserState,
 } from "./bindings";
+import {
+  computeDelta,
+  indexLatestChanges,
+  type Delta,
+} from "./data/changes";
 import {
   defaultConsoleFilter,
   type ConsoleFilter,
@@ -34,21 +41,33 @@ const defaultSort: Sort = { key: "id", direction: "asc" };
 export default function Console({
   baseline,
   scan,
+  changes,
+  loadErrors,
   userState,
   filter,
   onFilterChange,
   onUpdateUserState,
+  onResetChanges,
 }: {
   baseline: Baseline;
   scan: Scan;
+  /** Per-rec scan-time status flips, oldest first. */
+  changes: ChangeEvent[];
+  /** Per-sub-file load failures keyed by sub-file. */
+  loadErrors: ScanLoadErrors;
   userState: UserState;
   filter: ConsoleFilter;
   onFilterChange: (next: ConsoleFilter) => void;
   onUpdateUserState: (next: UserState) => void;
+  /** Deletes the per-rec change log and reloads. Invoked from the inline
+   * recovery action when `loadErrors.changes` is set. */
+  onResetChanges: () => void;
 }) {
   const [openRecId, setOpenRecId] = useState<string | null>(null);
   const [selectedRecId, setSelectedRecId] = useState<string | null>(null);
   const [sort, setSort] = useState<Sort>(defaultSort);
+
+  const changesIndex = useMemo(() => indexLatestChanges(changes), [changes]);
 
   const filtered = useMemo(() => {
     const needle = filter.search.trim().toLowerCase();
@@ -137,6 +156,18 @@ export default function Console({
           total={baseline.recommendations.length}
           shown={sorted.length}
         />
+        {loadErrors.changes && (
+          <p className="surface-notice">
+            <span>Change history can't be read — Δ indicators disabled.</span>
+            <button
+              type="button"
+              className="surface-notice-action"
+              onClick={onResetChanges}
+            >
+              Reset change history
+            </button>
+          </p>
+        )}
         {sorted.length === 0 ? (
           <EmptyResults
             onClear={() => onFilterChange(defaultConsoleFilter)}
@@ -145,6 +176,7 @@ export default function Console({
           <RecTable
             recs={sorted}
             scan={scan}
+            changesIndex={changesIndex}
             userState={userState}
             sort={sort}
             onSortChange={setSort}
@@ -418,6 +450,7 @@ function FilterBar({
 function RecTable({
   recs,
   scan,
+  changesIndex,
   userState,
   sort,
   onSortChange,
@@ -426,6 +459,7 @@ function RecTable({
 }: {
   recs: Recommendation[];
   scan: Scan;
+  changesIndex: Map<string, ChangeEvent>;
   userState: UserState;
   sort: Sort;
   onSortChange: (next: Sort) => void;
@@ -441,11 +475,13 @@ function RecTable({
           <th><SortHeader sort={sort} onChange={onSortChange} keyName="level">Level</SortHeader></th>
           <th><SortHeader sort={sort} onChange={onSortChange} keyName="title">Title</SortHeader></th>
           <th><SortHeader sort={sort} onChange={onSortChange} keyName="category">Category</SortHeader></th>
+          <th className="rec-table-delta-col" aria-label="Change">Δ</th>
         </tr>
       </thead>
       <tbody>
         {recs.map((rec) => {
           const status = effectiveStatus(rec, scan, userState);
+          const delta = computeDelta(rec, changesIndex, scan, userState);
           const selected = rec.id === selectedRecId;
           return (
             <tr
@@ -465,6 +501,9 @@ function RecTable({
               </td>
               <td>{rec.title}</td>
               <td className="muted mono">{rec.categoryNumber}</td>
+              <td className="rec-table-delta-col">
+                <DeltaCell delta={delta} />
+              </td>
             </tr>
           );
         })}
@@ -512,6 +551,24 @@ function StatusPill({ status }: { status: EffectiveStatus }) {
   return (
     <span className={`status-pill status-${status}`}>{status}</span>
   );
+}
+
+function DeltaCell({ delta }: { delta: Delta }) {
+  if (delta === "improved") {
+    return (
+      <span className="delta-marker delta-improved" aria-label="Improved">
+        ▲
+      </span>
+    );
+  }
+  if (delta === "regressed") {
+    return (
+      <span className="delta-marker delta-regressed" aria-label="Regressed">
+        ▼
+      </span>
+    );
+  }
+  return null;
 }
 
 function EmptyResults({ onClear }: { onClear: () => void }) {

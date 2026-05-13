@@ -142,15 +142,15 @@ export type CategoryScore = {
 };
 
 /**
- * Returns the `limit` weakest categories by in-scope pass rate, restricted
- * to categories with at least three in-scope recommendations (per HANDOFF
- * — fewer than that and the percentage is too noisy).
+ * Returns one CategoryScore per recommendation category that has at
+ * least three in-scope recommendations (fewer than that and the
+ * percentage is too noisy to rank on per HANDOFF). Order is
+ * insertion-by-iteration; callers sort/filter as needed.
  */
-export function weakestCategories(
+export function categoryScores(
   baseline: Baseline,
   scan: Scan,
   userState: UserState,
-  limit: number,
 ): CategoryScore[] {
   const nameByNumber = new Map<string, string>();
   for (const cat of baseline.categories) {
@@ -186,6 +186,19 @@ export function weakestCategories(
     }
   }
 
+  return scores;
+}
+
+/**
+ * Returns the `limit` weakest categories by in-scope pass rate.
+ */
+export function weakestCategories(
+  baseline: Baseline,
+  scan: Scan,
+  userState: UserState,
+  limit: number,
+): CategoryScore[] {
+  const scores = categoryScores(baseline, scan, userState);
   scores.sort((a, b) => a.inScopePct - b.inScopePct);
   return scores.slice(0, limit);
 }
