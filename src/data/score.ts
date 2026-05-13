@@ -138,6 +138,9 @@ export type CategoryScore = {
   total: number;
   inScope: number;
   pass: number;
+  fail: number;
+  exception: number;
+  /** (pass + exception) / inScope. */
   inScopePct: number;
 };
 
@@ -167,12 +170,24 @@ export function categoryScores(
   const scores: CategoryScore[] = [];
   for (const [number, recs] of buckets) {
     let pass = 0;
+    let fail = 0;
+    let exception = 0;
     let inScope = 0;
     for (const rec of recs) {
       const status = effectiveStatus(rec, scan, userState);
       if (status === "manual" || status === "pending") continue;
       inScope++;
-      if (status === "pass" || status === "exception") pass++;
+      switch (status) {
+        case "pass":
+          pass++;
+          break;
+        case "fail":
+          fail++;
+          break;
+        case "exception":
+          exception++;
+          break;
+      }
     }
     if (inScope >= 3) {
       scores.push({
@@ -181,7 +196,9 @@ export function categoryScores(
         total: recs.length,
         inScope,
         pass,
-        inScopePct: pass / inScope,
+        fail,
+        exception,
+        inScopePct: (pass + exception) / inScope,
       });
     }
   }
@@ -190,7 +207,74 @@ export function categoryScores(
 }
 
 /**
- * Returns the `limit` weakest categories by in-scope pass rate.
+ * Returns one CategoryScore per top-level category (the first dotted
+ * segment of each recommendation's category number) in dotted-numeric
+ * order. The `number` field is the top-level segment (`"1"`, not
+ * `"1.2.3"`), and `name` is filled from the matching parent-less
+ * `Category` entry when the parser supplied it.
+ */
+export function topLevelCategoryScores(
+  baseline: Baseline,
+  scan: Scan,
+  userState: UserState,
+): CategoryScore[] {
+  const topLevelNames = new Map<string, string>();
+  for (const cat of baseline.categories) {
+    if (cat.parent === null) topLevelNames.set(cat.number, cat.name);
+  }
+
+  const buckets = new Map<string, Recommendation[]>();
+  for (const rec of baseline.recommendations) {
+    const top = rec.categoryNumber.split(".")[0];
+    if (!top) continue;
+    const arr = buckets.get(top) ?? [];
+    arr.push(rec);
+    buckets.set(top, arr);
+  }
+
+  const scores: CategoryScore[] = [];
+  for (const [number, recs] of buckets) {
+    let pass = 0;
+    let fail = 0;
+    let exception = 0;
+    let inScope = 0;
+    for (const rec of recs) {
+      const status = effectiveStatus(rec, scan, userState);
+      if (status === "manual" || status === "pending") continue;
+      inScope++;
+      switch (status) {
+        case "pass":
+          pass++;
+          break;
+        case "fail":
+          fail++;
+          break;
+        case "exception":
+          exception++;
+          break;
+      }
+    }
+    scores.push({
+      number,
+      name: topLevelNames.get(number) ?? "",
+      total: recs.length,
+      inScope,
+      pass,
+      fail,
+      exception,
+      inScopePct: inScope > 0 ? (pass + exception) / inScope : 0,
+    });
+  }
+
+  scores.sort((a, b) => Number(a.number) - Number(b.number));
+  return scores;
+}
+
+/**
+ * Returns the `limit` weakest categories by in-scope pass rate. Ties
+ * (common at 0% on a fresh scan) are broken by raw fail count
+ * descending — a category with 12 failing recs ranks above one with 3
+ * even though both read "0%".
  */
 export function weakestCategories(
   baseline: Baseline,
@@ -199,6 +283,9 @@ export function weakestCategories(
   limit: number,
 ): CategoryScore[] {
   const scores = categoryScores(baseline, scan, userState);
-  scores.sort((a, b) => a.inScopePct - b.inScopePct);
+  scores.sort((a, b) => {
+    if (a.inScopePct !== b.inScopePct) return a.inScopePct - b.inScopePct;
+    return b.fail - a.fail;
+  });
   return scores.slice(0, limit);
 }

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import type {
   Baseline,
@@ -108,7 +108,7 @@ export default function Overview({
 
       <section className="overview-section">
         <HeadlineStrip headline={headline} />
-        <h2 className="section-eyebrow">Score by level</h2>
+        <h2 className="section-eyebrow">§ Score by level</h2>
         <div className="level-cards">
           {levels.map((score) => (
             <LevelCard
@@ -120,8 +120,11 @@ export default function Overview({
         </div>
       </section>
 
-      <section className="overview-section">
-        <h2 className="section-eyebrow">Trend</h2>
+      <DocSection num={1} title="Trend">
+        <p className="section-lead">
+          In-scope pass rate across recent scans. Each point is one full
+          benchmark run; the rightmost is the most recent.
+        </p>
         {loadErrors.summaries ? (
           <p className="surface-notice">
             <span>Trend history can't be read.</span>
@@ -141,15 +144,18 @@ export default function Overview({
           <figure className="trend-chart-figure">
             <TrendChart points={trendPoints} />
             <figcaption className="trend-chart-caption">
-              Pass rate across the last {trendPoints.length} scan
-              {trendPoints.length === 1 ? "" : "s"}.
+              Fig. 1 — In-scope pass rate, unweighted across recommendations
+              with a settled verdict.
             </figcaption>
           </figure>
         )}
-      </section>
+      </DocSection>
 
-      <section className="overview-section">
-        <h2 className="section-eyebrow">Weakest categories</h2>
+      <DocSection num={2} title="Weakest categories">
+        <p className="section-lead">
+          Up to six categories with the lowest in-scope pass rates. These
+          are where remediation work is most concentrated.
+        </p>
         {weakest.length === 0 ? (
           <p className="muted">
             No categories with at least three in-scope recommendations.
@@ -165,10 +171,12 @@ export default function Overview({
             ))}
           </ul>
         )}
-      </section>
+      </DocSection>
 
-      <section className="overview-section">
-        <h2 className="section-eyebrow">Recently changed</h2>
+      <DocSection num={3} title="Recently changed">
+        <p className="section-lead">
+          Recommendations whose status flipped against the prior scan.
+        </p>
         {loadErrors.changes ? (
           <p className="surface-notice">
             <span>Change history can't be read.</span>
@@ -198,7 +206,7 @@ export default function Overview({
             />
           </div>
         )}
-      </section>
+      </DocSection>
 
       <footer className="overview-footer">
         <span className="mono">{baseline.source.benchmarkVersion}</span>
@@ -275,15 +283,27 @@ function CategoryRow({
   onJump: () => void;
 }) {
   const tone = toneFor(score.inScopePct);
-  // Until the parser extracts category names, `name` is empty and we fall
-  // back to the number — same render path either way.
-  const label = score.name || score.number;
+  // The parser's `name` is a full hierarchical path joined with " - "
+  // (e.g. "Account Policies - Account Lockout Policy - Account lockout
+  // duration"). Show only the leaf in the row label — full path stays
+  // available as the tooltip.
+  const localName = score.name ? score.name.split(" - ").pop() : null;
   return (
     <li>
-      <button type="button" className="category-row" onClick={onJump}>
-        <span className="category-label">{label}</span>
-        <span className="category-pct mono">
-          {score.pass} / {score.inScope}
+      <button
+        type="button"
+        className="category-row"
+        onClick={onJump}
+        title={score.name || score.number}
+      >
+        <span className="category-row-head">
+          <span className="category-label">
+            <span className="category-number mono">{score.number}</span>
+            {localName && <span className="category-name">{localName}</span>}
+          </span>
+          <span className={`category-pct mono tone-${tone}`}>
+            {Math.round(score.inScopePct * 100)}%
+          </span>
         </span>
         <span className={`category-bar tone-${tone}`}>
           <span
@@ -291,8 +311,42 @@ function CategoryRow({
             style={{ width: `${score.inScopePct * 100}%` }}
           />
         </span>
+        <span className="category-row-breakdown muted">
+          <span>{score.fail} failing</span>
+          <span aria-hidden="true">·</span>
+          <span>{score.pass} passing</span>
+          {score.exception > 0 && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>
+                {score.exception} exception
+                {score.exception === 1 ? "" : "s"}
+              </span>
+            </>
+          )}
+        </span>
       </button>
     </li>
+  );
+}
+
+function DocSection({
+  num,
+  title,
+  children,
+}: {
+  num: number;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="doc-section">
+      <h2 className="doc-section-heading serif">
+        <span className="doc-section-num mono">§ {num}</span>
+        {title}
+      </h2>
+      {children}
+    </section>
   );
 }
 

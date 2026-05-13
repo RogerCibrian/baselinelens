@@ -30,7 +30,12 @@ import {
   defaultConsoleFilter,
   type ConsoleFilter,
 } from "./data/consoleFilter";
-import { effectiveStatus, type EffectiveStatus } from "./data/score";
+import {
+  effectiveStatus,
+  topLevelCategoryScores,
+  type CategoryScore,
+  type EffectiveStatus,
+} from "./data/score";
 
 type SortKey = "id" | "status" | "level" | "title" | "category";
 type SortDirection = "asc" | "desc";
@@ -73,7 +78,9 @@ export default function Console({
     const needle = filter.search.trim().toLowerCase();
     return baseline.recommendations.filter((rec) => {
       if (filter.level !== "all" && rec.level !== filter.level) return false;
-      if (filter.category && rec.categoryNumber !== filter.category) return false;
+      if (filter.category && !matchesCategory(rec.categoryNumber, filter.category)) {
+        return false;
+      }
       if (filter.status !== "all") {
         if (effectiveStatus(rec, scan, userState) !== filter.status) return false;
       }
@@ -99,6 +106,16 @@ export default function Console({
   const openRec = openRecId
     ? (baseline.recommendations.find((r) => r.id === openRecId) ?? null)
     : null;
+
+  // Resolved chip label for the active category filter — the local name
+  // (last segment of the parsed full path) when available, otherwise the
+  // chip falls back to just the number.
+  const categoryName = useMemo(() => {
+    if (!filter.category) return null;
+    const cat = baseline.categories.find((c) => c.number === filter.category);
+    if (!cat || !cat.name) return null;
+    return cat.name.split(" - ").pop() ?? cat.name;
+  }, [baseline, filter.category]);
 
   // Keyboard navigation. ArrowUp/ArrowDown move the selected row; Enter
   // opens the drawer for it. Skipped while the drawer is already open or
@@ -155,6 +172,7 @@ export default function Console({
           onFilterChange={onFilterChange}
           total={baseline.recommendations.length}
           shown={sorted.length}
+          categoryName={categoryName}
         />
         {loadErrors.changes && (
           <p className="surface-notice">
@@ -186,14 +204,23 @@ export default function Console({
         )}
       </div>
       <DetailDrawer
+        baseline={baseline}
         rec={openRec}
         scan={scan}
         userState={userState}
+        changesIndex={changesIndex}
         onClose={() => setOpenRecId(null)}
         onUpdate={onUpdateUserState}
       />
     </div>
   );
+}
+
+/** Returns true when `recCategory` falls under the prefix `selected` —
+ * matches either the exact number or anything below it (`"1"` matches
+ * `"1.2.3"`). */
+function matchesCategory(recCategory: string, selected: string): boolean {
+  return recCategory === selected || recCategory.startsWith(selected + ".");
 }
 
 const LEVEL_RANK: Record<Level, number> = { L1: 1, L2: 2, BL: 3 };
@@ -320,6 +347,11 @@ function SavedViewRail({
     return result;
   }, [baseline, scan, userState]);
 
+  const categories = useMemo(
+    () => topLevelCategoryScores(baseline, scan, userState),
+    [baseline, scan, userState],
+  );
+
   return (
     <aside className="saved-view-rail">
       <h3 className="rail-eyebrow">Views</h3>
@@ -351,8 +383,65 @@ function SavedViewRail({
           );
         })}
       </ul>
+
+      <h3 className="rail-eyebrow rail-eyebrow-secondary">Categories</h3>
+      <ul className="saved-views">
+        {categories.map((cat) => (
+          <CategoryRailRow
+            key={cat.number}
+            score={cat}
+            active={filter.category === cat.number}
+            onClick={() =>
+              onFilterChange({
+                ...filter,
+                category: filter.category === cat.number ? null : cat.number,
+              })
+            }
+          />
+        ))}
+      </ul>
     </aside>
   );
+}
+
+function CategoryRailRow({
+  score,
+  active,
+  onClick,
+}: {
+  score: CategoryScore;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const tone = toneFor(score.inScopePct);
+  const label = score.name ? `${score.number} ${score.name}` : score.number;
+  return (
+    <li>
+      <button
+        type="button"
+        className={`saved-view category-rail-row${active ? " saved-view-active" : ""}`}
+        onClick={onClick}
+        title={label}
+      >
+        <span className="category-rail-label">{label}</span>
+        {score.inScope > 0 && (
+          <span className={`category-rail-bar tone-${tone}`}>
+            <span
+              className="category-bar-fill"
+              style={{ width: `${score.inScopePct * 100}%` }}
+            />
+          </span>
+        )}
+        <span className="saved-view-count mono">{score.total}</span>
+      </button>
+    </li>
+  );
+}
+
+function toneFor(pct: number): "pass" | "warn" | "fail" {
+  if (pct >= 0.8) return "pass";
+  if (pct >= 0.5) return "warn";
+  return "fail";
 }
 
 function isViewActive(view: SavedView, current: ConsoleFilter): boolean {
@@ -383,67 +472,104 @@ function FilterBar({
   onFilterChange,
   total,
   shown,
+  categoryName,
 }: {
   filter: ConsoleFilter;
   onFilterChange: (next: ConsoleFilter) => void;
   total: number;
   shown: number;
+  /** Local name of the active category, or `null` when no name is known
+   * (parser couldn't extract a heading). Shown alongside the number in
+   * the chip; absence means the chip falls back to the bare number. */
+  categoryName: string | null;
 }) {
   return (
     <div className="filter-bar">
-      <span className="muted mono filter-count">
-        {shown} of {total}
-      </span>
-      <select
-        value={filter.status}
-        onChange={(e) =>
-          onFilterChange({
-            ...filter,
-            status: e.target.value as ConsoleFilter["status"],
-          })
-        }
-        aria-label="Status filter"
-      >
-        <option value="all">All statuses</option>
-        <option value="pass">Pass</option>
-        <option value="fail">Fail</option>
-        <option value="manual">Manual</option>
-        <option value="error">Error</option>
-        <option value="exception">Exception</option>
-      </select>
-      <select
-        value={filter.level}
-        onChange={(e) =>
-          onFilterChange({
-            ...filter,
-            level: e.target.value as ConsoleFilter["level"],
-          })
-        }
-        aria-label="Level filter"
-      >
-        <option value="all">All levels</option>
-        <option value="L1">L1</option>
-        <option value="L2">L2</option>
-        <option value="BL">BL</option>
-      </select>
       <input
         type="search"
+        className="filter-search"
         placeholder="Search id or title…"
         value={filter.search}
         onChange={(e) => onFilterChange({ ...filter, search: e.target.value })}
+      />
+      <FilterPill
+        label="Status"
+        value={filter.status}
+        onChange={(v) =>
+          onFilterChange({ ...filter, status: v as ConsoleFilter["status"] })
+        }
+        options={[
+          { value: "all", label: "Any status" },
+          { value: "pass", label: "Pass" },
+          { value: "fail", label: "Fail" },
+          { value: "exception", label: "Exception" },
+          { value: "manual", label: "Manual" },
+          { value: "error", label: "Error" },
+        ]}
+      />
+      <FilterPill
+        label="Level"
+        value={filter.level}
+        onChange={(v) =>
+          onFilterChange({ ...filter, level: v as ConsoleFilter["level"] })
+        }
+        options={[
+          { value: "all", label: "Any level" },
+          { value: "L1", label: "L1" },
+          { value: "L2", label: "L2" },
+          { value: "BL", label: "BL" },
+        ]}
       />
       {filter.category && (
         <button
           type="button"
           className="filter-chip"
           onClick={() => onFilterChange({ ...filter, category: null })}
-          aria-label="Clear category filter"
+          aria-label={`Clear category filter (${categoryName ?? filter.category})`}
+          title={categoryName ? `${filter.category} — ${categoryName}` : filter.category}
         >
-          <span className="mono">{filter.category}</span>
+          <span className="mono filter-chip-num">{filter.category}</span>
+          {categoryName && (
+            <span className="filter-chip-name">{categoryName}</span>
+          )}
           <span aria-hidden="true">×</span>
         </button>
       )}
+      <span className="filter-bar-spacer" />
+      <span className="muted mono filter-count">
+        {shown} of {total}
+      </span>
     </div>
+  );
+}
+
+function FilterPill({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  const active = value !== "all";
+  return (
+    <label className={`filter-pill${active ? " filter-pill-active" : ""}`}>
+      <span className="filter-pill-label">{label}</span>
+      <select
+        className="filter-pill-select"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -589,15 +715,22 @@ function EmptyResults({ onClear }: { onClear: () => void }) {
  * whenever `rec` changes so switching rows doesn't bleed values.
  */
 function DetailDrawer({
+  baseline,
   rec,
   scan,
   userState,
+  changesIndex,
   onClose,
   onUpdate,
 }: {
+  baseline: Baseline;
   rec: Recommendation | null;
   scan: Scan;
   userState: UserState;
+  /** Latest ChangeEvent per rec; lets the drawer compute "Failing for"
+   * / "Passing for" by reading when the rec last flipped into its
+   * current scan-time status. */
+  changesIndex: Map<string, ChangeEvent>;
   onClose: () => void;
   onUpdate: (next: UserState) => void;
 }) {
@@ -691,6 +824,25 @@ function DetailDrawer({
   const hasException = rec ? userState.exceptions[rec.id] !== undefined : false;
   const hasNote = rec ? userState.notes[rec.id] !== undefined : false;
 
+  // Duration since the rec last flipped into its current status. Only
+  // computed for pass/fail — Manual/Error/Pending have no meaningful
+  // duration, and Exception is shadowed by the user's accept-decision
+  // (the Exception section below shows when that was granted).
+  const stateAge = useMemo(() => {
+    if (!rec || (status !== "fail" && status !== "pass")) return null;
+    const latest = changesIndex.get(rec.id);
+    if (!latest) return null;
+    const targetToStatus = status === "fail" ? "Fail" : "Pass";
+    // Skip when the latest change event's toStatus doesn't match the
+    // current scan-time status — the index and the live scan disagree
+    // (e.g. mid-stream rescan); avoid stitching a misleading duration.
+    if (latest.toStatus !== targetToStatus) return null;
+    return {
+      label: status === "fail" ? "Failing for" : "Passing for",
+      since: latest.observedAt,
+    };
+  }, [rec, status, changesIndex]);
+
   return (
     <div className={`drawer-overlay${isOpen ? " drawer-overlay-open" : ""}`}>
       <div
@@ -702,38 +854,48 @@ function DetailDrawer({
         {rec && (
           <>
             <header className="drawer-head">
-              <span className="mono drawer-id">{rec.id}</span>
-              <span className={`level-chip level-${rec.level.toLowerCase()}`}>
-                {rec.level}
-              </span>
-              {status && <StatusPill status={status} />}
-              <button
-                ref={closeRef}
-                type="button"
-                className="drawer-close"
-                onClick={onClose}
-                aria-label="Close drawer"
-              >
-                ×
-              </button>
+              <div className="drawer-head-row">
+                <span className="mono drawer-id">{rec.id}</span>
+                <button
+                  ref={closeRef}
+                  type="button"
+                  className="drawer-close"
+                  onClick={onClose}
+                  aria-label="Close drawer"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="drawer-chips">
+                <span className={`level-chip level-${rec.level.toLowerCase()}`}>
+                  {rec.level}
+                </span>
+                {status && <StatusPill status={status} />}
+                <span className="chip-neutral">
+                  {rec.assessment === "Automated"
+                    ? "Automated"
+                    : "Manual check"}
+                </span>
+              </div>
+              <h2 className="drawer-title">{rec.title}</h2>
+              <DrawerCategoryMeta
+                baseline={baseline}
+                number={rec.categoryNumber}
+              />
             </header>
 
             <div className="drawer-body">
-              <h3 className="drawer-title">{rec.title}</h3>
-              <p className="drawer-meta muted mono">{rec.categoryNumber}</p>
-
               {rec.description && (
-                <section className="drawer-section">
-                  <h4 className="section-eyebrow">Description</h4>
-                  {paragraphs(rec.description).map((para, i) => (
-                    <p key={i} className="drawer-text">
-                      {para}
-                    </p>
-                  ))}
-                </section>
+                <DrawerText title="Description" text={rec.description} />
+              )}
+              {rec.rationale && (
+                <DrawerText title="Rationale" text={rec.rationale} />
               )}
 
-              <ScanResultSection result={scan.results[rec.id]} />
+              <ScanResultSection
+                result={scan.results[rec.id]}
+                stateAge={stateAge}
+              />
 
               <section className="drawer-section">
                 <h4 className="section-eyebrow">Exception</h4>
@@ -851,6 +1013,47 @@ function DetailDrawer({
 }
 
 /**
+ * Renders one text section of the drawer body — a heading and one
+ * `<p>` per paragraph parsed out of `text`.
+ */
+function DrawerText({ title, text }: { title: string; text: string }) {
+  return (
+    <section className="drawer-section">
+      <h4 className="section-eyebrow">{title}</h4>
+      {paragraphs(text).map((para, i) => (
+        <p key={i} className="drawer-text">
+          {para}
+        </p>
+      ))}
+    </section>
+  );
+}
+
+/**
+ * Renders the small "{number} {local name}" context line beneath the
+ * drawer's title. Falls back to the bare number when the parser
+ * couldn't extract a heading for that section.
+ */
+function DrawerCategoryMeta({
+  baseline,
+  number,
+}: {
+  baseline: Baseline;
+  number: string;
+}) {
+  const cat = baseline.categories.find((c) => c.number === number);
+  // `cat.name` is the parser's full hierarchical path joined with " - ";
+  // the leaf segment is the local section heading.
+  const localName = cat?.name ? (cat.name.split(" - ").pop() ?? null) : null;
+  return (
+    <p className="drawer-meta">
+      <span className="mono drawer-meta-num">{number}</span>
+      {localName && <span className="drawer-meta-name">{localName}</span>}
+    </p>
+  );
+}
+
+/**
  * Shows the scan verdict for the open rec. When `result.checks` is
  * populated (real scans), renders a per-check table — one row per
  * registry value or conceptual check, with full path + value name +
@@ -859,7 +1062,13 @@ function DetailDrawer({
  * available (mock scans, errors that short-circuited before
  * enumerating).
  */
-function ScanResultSection({ result }: { result: ScanResult | undefined }) {
+function ScanResultSection({
+  result,
+  stateAge,
+}: {
+  result: ScanResult | undefined;
+  stateAge: { label: string; since: string } | null;
+}) {
   if (!result) return null;
   const hasChecks = result.checks && result.checks.length > 0;
   return (
@@ -870,6 +1079,14 @@ function ScanResultSection({ result }: { result: ScanResult | undefined }) {
         <dd className={`scan-status scan-status-${result.status.toLowerCase()}`}>
           {result.status}
         </dd>
+        <dt>Last scanned</dt>
+        <dd className="mono">{formatScanTimestamp(result.measuredAt)}</dd>
+        {stateAge && (
+          <>
+            <dt>{stateAge.label}</dt>
+            <dd className="mono">{formatAge(stateAge.since)}</dd>
+          </>
+        )}
         {result.error && (
           <>
             <dt>Error</dt>
@@ -915,6 +1132,29 @@ function ScanResultSection({ result }: { result: ScanResult | undefined }) {
       )}
     </section>
   );
+}
+
+/** YYYY-MM-DD HH:MM — terse, mono, sortable. Mirrors the top bar's
+ * timestamp style for consistency. */
+function formatScanTimestamp(iso: string): string {
+  return iso.slice(0, 16).replace("T", " ");
+}
+
+/** Coarse duration from `fromIso` to now, in the largest unit that
+ * still reads cleanly: "12 days", "3 hours", "5 months". */
+function formatAge(fromIso: string): string {
+  const elapsedMs = Date.now() - Date.parse(fromIso);
+  const minutes = Math.floor(elapsedMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"}`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} month${months === 1 ? "" : "s"}`;
+  const years = Math.floor(days / 365);
+  return `${years} year${years === 1 ? "" : "s"}`;
 }
 
 /**
