@@ -101,12 +101,16 @@ pub(crate) struct ScanLoadErrors {
 
 /// Persists a finished `Scan` and updates the surrounding bookkeeping:
 /// appends a `ScanSummary` to the trend-chart history (counting
-/// exceptions as exception, not fail), then — when the existing latest
-/// scan was measured under the same parser/script versions — diffs the
-/// new scan against it and appends `ChangeEvent`s for each per-rec
-/// status flip. Skipping the diff on a version mismatch keeps
-/// methodology updates from masquerading as device regressions in the
-/// change log.
+/// exceptions as exception, not fail), then writes `ChangeEvent`s to
+/// the change log. The events vary by prior state:
+///
+/// - No prior scan on disk — writes a first-observation event
+///   (`from_status: None`) for every rec in the new scan so per-rec
+///   "Failing for" / "Passing for" durations have a stable anchor.
+/// - Prior scan with matching parser/script versions — writes one
+///   event per rec whose status differs from the prior.
+/// - Prior scan with version skew — skips event writing so methodology
+///   updates don't masquerade as device regressions in the change log.
 pub(crate) fn save_scan_with_diff(
     scan: &Scan,
     exceptions: &HashMap<String, Exception>,
@@ -123,14 +127,18 @@ pub(crate) fn save_scan_with_diff(
         }
     };
 
-    if let Some(ref prior) = prior_latest
-        && prior.parser_version == scan.parser_version
-        && prior.audit_script_version == scan.audit_script_version
-    {
-        let events = diff_to_change_events(prior, scan);
-        if !events.is_empty() {
-            append_change_events(baseline_sha, &events)?;
+    let events = match prior_latest.as_ref() {
+        None => first_observation_events(scan),
+        Some(prior)
+            if prior.parser_version == scan.parser_version
+                && prior.audit_script_version == scan.audit_script_version =>
+        {
+            diff_to_change_events(prior, scan)
         }
+        Some(_) => Vec::new(),
+    };
+    if !events.is_empty() {
+        append_change_events(baseline_sha, &events)?;
     }
 
     let exception_ids: HashSet<&str> = exceptions.keys().map(String::as_str).collect();
@@ -182,6 +190,25 @@ pub(crate) fn load_scan_context(
         },
         errors,
     ))
+}
+
+/// Emits a `ChangeEvent` per rec in `scan` with `from_status: None`,
+/// stamping each one with the scan's start time. Used the very first
+/// time a baseline is scanned so per-rec "Failing for" / "Passing for"
+/// durations downstream have an anchor from the start, rather than
+/// waiting for an eventual status flip to record one.
+fn first_observation_events(scan: &Scan) -> Vec<ChangeEvent> {
+    scan.results
+        .iter()
+        .map(|(rec_id, result)| ChangeEvent {
+            rec_id: rec_id.clone(),
+            from_status: None,
+            to_status: result.status,
+            observed_at: scan.started_at,
+            parser_version: scan.parser_version.clone(),
+            audit_script_version: scan.audit_script_version.clone(),
+        })
+        .collect()
 }
 
 /// Compares two scans rec-by-rec and emits a `ChangeEvent` for each id
