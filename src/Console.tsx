@@ -972,7 +972,7 @@ function DetailDrawer({
               <section className="drawer-section">
                 <h4 className="section-eyebrow">Note</h4>
                 <label>
-                  Free-form context — doesn't affect status
+                  Investigation notes, links, decisions — won't change pass/fail.
                   <textarea
                     rows={4}
                     value={noteText}

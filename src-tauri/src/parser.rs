@@ -29,13 +29,15 @@ use crate::parser::model::{
 pub(crate) const PARSER_VERSION: &str = "2";
 
 /// Stages emitted by `parse_with_progress` so the UI can render a status
-/// label and progress bar.
+/// label and progress bar. `ExtractingText` and `Classifying` carry
+/// `(done, total)` so the bar can move continuously through the slow
+/// phases; the other stages are instantaneous.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "stage", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub(crate) enum ParserProgress {
     ReadingFile,
     ComputingChecksum,
-    ExtractingText,
+    ExtractingText { done: u32, total: u32 },
     SlicingRecommendations,
     Classifying { done: u32, total: u32 },
     Complete,
@@ -70,8 +72,13 @@ pub(crate) fn parse_with_progress(
         .unwrap_or("")
         .to_string();
 
-    on_progress(ParserProgress::ExtractingText);
-    let text = pdf_extract::extract_text_from_mem(&bytes)?;
+    // Emit the first ExtractingText event at 0/0 so the UI swaps to
+    // the progress-bar phase immediately; the per-page callback then
+    // refines `total` as soon as lopdf has parsed the document.
+    on_progress(ParserProgress::ExtractingText { done: 0, total: 0 });
+    let text = pdf::extract_with_progress(&bytes, |done, total| {
+        on_progress(ParserProgress::ExtractingText { done, total });
+    })?;
     let (benchmark_name, benchmark_version) = extract_benchmark_metadata(&text);
 
     on_progress(ParserProgress::SlicingRecommendations);

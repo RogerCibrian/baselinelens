@@ -218,9 +218,11 @@ export type Note = {
 
 /**
  *  Stages emitted by `parse_with_progress` so the UI can render a status
- *  label and progress bar.
+ *  label and progress bar. `ExtractingText` and `Classifying` carry
+ *  `(done, total)` so the bar can move continuously through the slow
+ *  phases; the other stages are instantaneous.
  */
-export type ParserProgress = { stage: "readingFile" } | { stage: "computingChecksum" } | { stage: "extractingText" } | { stage: "slicingRecommendations" } | { stage: "classifying"; done: number; total: number } | { stage: "complete" };
+export type ParserProgress = { stage: "readingFile" } | { stage: "computingChecksum" } | { stage: "extractingText"; done: number; total: number } | { stage: "slicingRecommendations" } | { stage: "classifying"; done: number; total: number } | { stage: "complete" };
 
 export type PolicyScope = "Device" | "User";
 

@@ -209,6 +209,45 @@
   color: var(--v-text-subtle);
 }
 
+/* Parse progress bar — replaces the drop-sub during the parsing phase */
+
+.ob-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.ob-progress-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--v-text-muted);
+}
+
+.ob-progress-percent {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--v-text-subtle);
+}
+
+.ob-progress-track {
+  display: block;
+  width: 100%;
+  height: 3px;
+  background: var(--v-line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.ob-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--v-text);
+  transition: width 200ms ease-out;
+}
+
 /* Support note + error */
 
 .ob-support {

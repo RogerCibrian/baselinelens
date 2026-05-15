@@ -58,6 +58,11 @@ type AppState =
       /** True when the cached baseline's parser_version doesn't match the
        * running parser's PARSER_VERSION — surfaces a re-parse prompt. */
       isStale: boolean;
+      /** One-shot signal: kick off a scan as soon as the dashboard
+       * mounts. Set by the onboarding "Scan this device" button so the
+       * user doesn't have to click again on the empty state. Dashboard
+       * guards against repeated firing via a ref. */
+      autoScan?: boolean;
     };
 
 type Tab = "overview" | "console";
@@ -118,6 +123,7 @@ function App() {
         baseline={appState.baseline}
         userState={appState.userState}
         isStale={appState.isStale}
+        autoScan={appState.autoScan ?? false}
         deviceInfo={deviceInfo}
         tab={tab}
         onTabChange={setTab}
@@ -144,6 +150,7 @@ function App() {
           baseline: appState.baseline,
           userState: appState.userState,
           isStale: false,
+          autoScan: true,
         });
       }}
       onCancel={() => setAppState({ kind: "onboarding" })}
@@ -262,6 +269,7 @@ function Dashboard({
   baseline,
   userState,
   isStale,
+  autoScan,
   deviceInfo,
   tab,
   onTabChange,
@@ -274,6 +282,10 @@ function Dashboard({
   baseline: Baseline;
   userState: UserState;
   isStale: boolean;
+  /** When true, kicks off a scan as soon as the dashboard mounts — set
+   * by the onboarding confirm so the user doesn't see the empty state
+   * before their first scan. Guarded by a ref so it only fires once. */
+  autoScan: boolean;
   /** Real device identity for the partial-scan placeholder. Null while
    * the initial fetch is in-flight; in practice the fetch finishes long
    * before the user can trigger a scan, so the fallback values are
@@ -294,19 +306,28 @@ function Dashboard({
 
   const latest = context.latest;
 
+  // One-shot guard so `autoScan` only fires the kick-off rescan once
+  // per loaded session, even if `autoScan` stays true across re-renders.
+  const autoScanFired = useRef(false);
+
   // Load scan context for this baseline on mount and whenever the
   // baseline switches. Each sub-file's load status lands in `loadErrors`
   // so failures degrade per-surface (empty state for a broken `latest`,
   // inline notice on the trend chart for broken `summaries`, etc.) — no
-  // dashboard-wide banner.
+  // dashboard-wide banner. When `autoScan` is set (onboarding's "Scan
+  // this device" path), the same effect kicks off a scan once the load
+  // completes, so the empty state never flashes between confirm and
+  // the live-filling scan view.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const result = await commands.loadScanContext(baseline.source.pdfSha256);
       if (cancelled) return;
+      let hasLatest = false;
       if (result.status === "ok") {
         setContext(result.data.context);
         setLoadErrors(result.data.errors);
+        hasLatest = result.data.context.latest !== null;
       } else {
         setContext(emptyScanContext);
         setLoadErrors({
@@ -315,11 +336,19 @@ function Dashboard({
           summaries: result.error,
         });
       }
+      if (autoScan && !autoScanFired.current && !hasLatest) {
+        autoScanFired.current = true;
+        void rescan();
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [baseline]);
+  // rescan is declared in the same function body via `function` and
+  // captures current state via closure; we intentionally fire it only
+  // when baseline or autoScan changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseline, autoScan]);
 
   async function refreshContext() {
     const result = await commands.loadScanContext(baseline.source.pdfSha256);

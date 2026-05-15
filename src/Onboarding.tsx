@@ -259,20 +259,13 @@ function DropZone({
         {activeFile ? (
           <>
             <span className="ob-drop-label">{activeFile}</span>
-            <span className="ob-drop-sub">
-              {parsing ? (
-                <>
-                  parsing
-                  <ParseEllipsis
-                    progress={
-                      state.kind === "parsing" ? state.progress : null
-                    }
-                  />
-                </>
-              ) : (
-                <>Couldn't parse</>
-              )}
-            </span>
+            {parsing ? (
+              <ParseProgress
+                progress={state.kind === "parsing" ? state.progress : null}
+              />
+            ) : (
+              <span className="ob-drop-sub">Couldn't parse</span>
+            )}
           </>
         ) : (
           <>
@@ -309,38 +302,89 @@ function DropZone({
   );
 }
 
-function ParseEllipsis({ progress }: { progress: ParserProgress | null }) {
-  if (!progress) return <>…</>;
-  if (progress.stage === "classifying" && progress.total > 0) {
-    return (
-      <>
-        {" "}
-        ({progress.done}/{progress.total})…
-      </>
-    );
+/**
+ * Renders a determinate progress bar plus stage label for the parsing
+ * phase. The bar uses a single 0–100 percentage aggregated across all
+ * pipeline stages — extraction is the dominant slow phase (~90% of
+ * the time), so it owns most of the bar; the post-extraction stages
+ * fill the last sliver.
+ */
+function ParseProgress({ progress }: { progress: ParserProgress | null }) {
+  const percent = progressPercent(progress);
+  return (
+    <span className="ob-progress">
+      <span className="ob-progress-row">
+        <span className="ob-progress-label">{stageLabel(progress)}</span>
+        <span className="ob-progress-percent mono">{Math.round(percent)}%</span>
+      </span>
+      <span className="ob-progress-track" aria-hidden="true">
+        <span className="ob-progress-fill" style={{ width: `${percent}%` }} />
+      </span>
+    </span>
+  );
+}
+
+function stageLabel(p: ParserProgress | null): string {
+  if (!p) return "Starting…";
+  switch (p.stage) {
+    case "readingFile":
+      return "Reading file…";
+    case "computingChecksum":
+      return "Hashing…";
+    case "extractingText":
+      return "Extracting text…";
+    case "slicingRecommendations":
+    case "classifying":
+      return "Building catalog…";
+    case "complete":
+      return "Done";
   }
-  return <>…</>;
+}
+
+/**
+ * Maps a `ParserProgress` event to a monotonic 0–100 progress
+ * percentage. Extraction owns 5–95 (it's the dominant phase and has
+ * per-page granularity); the post-extraction stages walk through
+ * 95–100. The instant pre-extraction stages bump the bar off 0% so
+ * the user sees motion immediately.
+ */
+function progressPercent(p: ParserProgress | null): number {
+  if (!p) return 0;
+  switch (p.stage) {
+    case "readingFile":
+      return 0;
+    case "computingChecksum":
+      return 3;
+    case "extractingText":
+      return p.total === 0 ? 5 : 5 + (p.done / p.total) * 90;
+    case "slicingRecommendations":
+      return 95;
+    case "classifying":
+      return p.total === 0 ? 95 : 95 + (p.done / p.total) * 5;
+    case "complete":
+      return 100;
+  }
 }
 
 function Steps() {
   const steps = [
     {
       n: "01",
-      title: "Parse the PDF",
+      title: "Compare",
       body:
-        "Extract recommendations, expected values, and remediation guidance from the benchmark document.",
+        "Match this device's settings against every control in the benchmark.",
     },
     {
       n: "02",
-      title: "Scan this device",
+      title: "Triage",
       body:
-        "Read registry, GPO, and policy state to evaluate each control against its expected value.",
+        "See what's failing, grouped by category and level, with the expected value for each.",
     },
     {
       n: "03",
-      title: "Show the report",
+      title: "Remediate",
       body:
-        "A per-control pass / fail breakdown, weakest categories, and remediation work organized by level.",
+        "Fix gaps using the cited registry paths; re-scan to verify.",
     },
   ];
   return (
