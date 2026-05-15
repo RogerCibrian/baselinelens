@@ -47,6 +47,13 @@ pub(crate) fn audit_script_path(audit_script_version: &str) -> Result<PathBuf, S
     Ok(data_dir()?.join(format!("audit_v{audit_script_version}.ps1")))
 }
 
+/// Path to the cached `device-info.ps1`. Sits next to `audit.ps1` so
+/// the audit script can dot-source it via `$PSScriptRoot`, and so the
+/// onboarding `get_device_info` command can invoke it directly.
+pub(crate) fn device_info_script_path() -> Result<PathBuf, StorageError> {
+    Ok(data_dir()?.join("device-info.ps1"))
+}
+
 /// Directory holding the scan-related files for one baseline.
 pub(crate) fn scans_dir_for_baseline(baseline_sha: &str) -> Result<PathBuf, StorageError> {
     Ok(data_dir()?.join("scans").join(baseline_sha))

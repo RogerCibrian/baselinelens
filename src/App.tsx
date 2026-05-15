@@ -12,6 +12,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
   commands,
   type Baseline,
+  type DeviceInfo,
   type ParserProgress,
   type Scan,
   type ScanContext,
@@ -25,7 +26,6 @@ import {
   defaultConsoleFilter,
   type ConsoleFilter,
 } from "./data/consoleFilter";
-import { TARGET_MACHINE } from "./data/host";
 import Onboarding from "./Onboarding";
 import Overview from "./Overview";
 
@@ -70,9 +70,19 @@ function App() {
   const [consoleFilter, setConsoleFilter] = useState<ConsoleFilter>(
     defaultConsoleFilter,
   );
+  // Device identity (hostname, OS, management state) for the onboarding
+  // "Will scan" strip and the partial-scan placeholder. Loaded async on
+  // mount; falls back to empty fields while in-flight so the strip
+  // layout stays stable instead of popping when data arrives.
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
 
   useEffect(() => {
     void restoreFromCache(setAppState);
+    void (async () => {
+      const result = await commands.getDeviceInfo();
+      if (result.status === "ok") setDeviceInfo(result.data);
+      else console.error("Failed to read device info:", result.error);
+    })();
   }, []);
 
   // Applies a UserState change locally and persists it. The optimistic
@@ -108,6 +118,7 @@ function App() {
         baseline={appState.baseline}
         userState={appState.userState}
         isStale={appState.isStale}
+        deviceInfo={deviceInfo}
         tab={tab}
         onTabChange={setTab}
         onReparse={() => void selectAndParse(setAppState)}
@@ -121,6 +132,7 @@ function App() {
   return (
     <Onboarding
       state={appState}
+      deviceInfo={deviceInfo}
       onPickPath={(path) => void parseAtPath(path, setAppState)}
       onError={(message, fileName) =>
         setAppState({ kind: "error", message, fileName: fileName ?? null })
@@ -250,6 +262,7 @@ function Dashboard({
   baseline,
   userState,
   isStale,
+  deviceInfo,
   tab,
   onTabChange,
   onReparse,
@@ -261,6 +274,11 @@ function Dashboard({
   baseline: Baseline;
   userState: UserState;
   isStale: boolean;
+  /** Real device identity for the partial-scan placeholder. Null while
+   * the initial fetch is in-flight; in practice the fetch finishes long
+   * before the user can trigger a scan, so the fallback values are
+   * almost never seen. */
+  deviceInfo: DeviceInfo | null;
   tab: Tab;
   onTabChange: (tab: Tab) => void;
   onReparse: () => void;
@@ -349,7 +367,7 @@ function Dashboard({
     // out of the empty state; channel messages fill `results`
     // row-by-row. Once the scan completes we re-fetch the whole context
     // for a clean sync.
-    setContext((prev) => ({ ...prev, latest: makePartialScan(baseline) }));
+    setContext((prev) => ({ ...prev, latest: makePartialScan(baseline, deviceInfo) }));
     const channel = new Channel<ScanRecord>();
     channel.onmessage = (record) => {
       setContext((prev) => {
@@ -510,10 +528,11 @@ const emptyLoadErrors: ScanLoadErrors = {
 };
 
 /**
- * Renders an empty Scan with placeholder device info — used as the
- * starting point for a live-filled scan. The top-bar host pill shows
- * the local mock hostname during the run until the backend's real
- * device info lands on completion.
+ * Renders an empty Scan as the starting point for a live-filled scan.
+ * Uses `deviceInfo` (from the app's initial `get_device_info` fetch) so
+ * the top-bar host pill shows the real hostname during the run. Falls
+ * back to empty fields if the device-info fetch hasn't landed yet — in
+ * practice it has, since the fetch starts on app mount.
  *
  * `parserVersion` mirrors the loaded baseline; `auditScriptVersion` is
  * empty until the backend's final Scan replaces this partial — the
@@ -521,16 +540,16 @@ const emptyLoadErrors: ScanLoadErrors = {
  * on `finishedAt` so the empty placeholder is never visible to derived
  * logic.
  */
-function makePartialScan(baseline: Baseline): Scan {
+function makePartialScan(baseline: Baseline, deviceInfo: DeviceInfo | null): Scan {
   return {
     baselineSha256: baseline.source.pdfSha256,
     startedAt: new Date().toISOString(),
     finishedAt: null,
-    device: {
-      hostname: TARGET_MACHINE.hostname,
-      osName: TARGET_MACHINE.osName,
-      osVersion: TARGET_MACHINE.osVersion,
-      osBuild: TARGET_MACHINE.osBuild,
+    device: deviceInfo ?? {
+      hostname: "",
+      osName: "",
+      osVersion: "",
+      osBuild: "",
       managedBy: { intune: false, groupPolicy: false },
     },
     results: {},

@@ -2,6 +2,7 @@ mod audit;
 pub mod bindings;
 mod commands;
 mod error;
+mod host;
 mod parser;
 mod storage;
 
@@ -11,7 +12,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            commands::hello,
+            commands::get_device_info,
             commands::parse_baseline,
             commands::load_app_state,
             commands::save_app_state,

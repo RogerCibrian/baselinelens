@@ -335,7 +335,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(247, 246, 243, 0.92);
+  padding: 24px;
+  background: rgba(28, 28, 30, 0.32);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
   pointer-events: none;
@@ -348,48 +349,70 @@
 }
 
 .ob-dragover-inner {
-  max-width: 520px;
-  padding: 56px 80px;
+  width: 100%;
+  max-width: 480px;
+  padding: 28px 28px 22px;
   background: var(--v-paper);
-  border: 1.5px dashed var(--v-text);
-  border-radius: 12px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.08);
-  text-align: center;
+  border: 1px solid var(--v-line-strong);
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+  transform: translateY(6px);
+  transition: transform 180ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
-.ob-dragover-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  margin-bottom: 24px;
-  background: var(--v-paper-2);
-  border: 1px solid var(--v-line);
-  border-radius: 6px;
-  color: var(--v-text);
+.ob-dragover-visible .ob-dragover-inner {
+  transform: translateY(0);
+}
+
+.ob-dragover-eyebrow {
+  margin-bottom: 14px;
+  font-family: var(--v-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--v-text-subtle);
 }
 
 .ob-dragover-h {
-  margin: 0;
+  margin: 0 0 12px;
   font-family: var(--v-font-serif);
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 400;
-  letter-spacing: -0.012em;
+  letter-spacing: -0.01em;
   color: var(--v-text);
 }
 
-.ob-dragover-invalid .ob-dragover-inner {
-  border-color: var(--v-fail);
+.ob-dragover-file {
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  background: var(--v-paper-2);
+  border: 1px solid var(--v-line);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--v-text);
+  overflow-wrap: break-word;
 }
 
-.ob-dragover-invalid .ob-dragover-icon {
-  background: var(--v-fail-bg);
-  border-color: var(--v-fail);
+.ob-dragover-sub {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--v-text-muted);
+}
+
+.ob-dragover-invalid .ob-dragover-eyebrow {
   color: var(--v-fail);
 }
 
 .ob-dragover-invalid .ob-dragover-h {
+  color: var(--v-fail);
+}
+
+.ob-dragover-invalid .ob-dragover-file {
+  border-color: var(--v-fail);
+  background: var(--v-fail-bg);
   color: var(--v-fail);
 }
 

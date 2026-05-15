@@ -1,9 +1,13 @@
-//! Ensures the static `audit.ps1` is on disk and returns its path. The
-//! script body is the same for every baseline — it reads the baseline
-//! JSON at runtime and dispatches per recommendation — so there's no
-//! per-baseline rendering step. Versioning the filename means a script
-//! edit naturally invalidates the cache without each call having to
-//! compare contents.
+//! Ensures the static `audit.ps1` and its sibling `device-info.ps1` are
+//! on disk and returns the audit-script path. The audit body is the same
+//! for every baseline — it reads the baseline JSON at runtime and
+//! dispatches per recommendation — so there's no per-baseline rendering
+//! step. Versioning the audit filename means a script edit naturally
+//! invalidates the cache without each call having to compare contents.
+//!
+//! `device-info.ps1` lives next to the audit script (so the audit
+//! script can dot-source it via `$PSScriptRoot`) and is also the
+//! standalone entry point for the onboarding `get_device_info` command.
 
 use std::fs;
 use std::path::PathBuf;
@@ -13,27 +17,46 @@ use crate::audit::error::AuditError;
 use crate::storage::error::StorageError;
 use crate::storage::paths;
 
-/// Static script content, baked into the binary so the runtime doesn't
-/// have to discover a `ps/` directory on disk.
-const AUDIT_SCRIPT: &str = include_str!("../../../ps/audit.ps1");
+/// Static audit-script content, baked into the binary so the runtime
+/// doesn't have to discover a `ps/` directory on disk.
+const AUDIT_SCRIPT: &str = include_str!("../../ps/audit.ps1");
 
-/// Writes `audit.ps1` to a versioned cache path and returns it.
-/// Overwrites unconditionally on every call — the embedded script is a
-/// few kilobytes, the write is microseconds, and "always current" is
-/// worth more than the saved I/O.
+/// Static device-info script content. Same baking rationale as the
+/// audit script.
+const DEVICE_INFO_SCRIPT: &str = include_str!("../../ps/device-info.ps1");
+
+/// Writes both `audit.ps1` and `device-info.ps1` to disk and returns
+/// the audit-script path. Overwrites unconditionally on every call —
+/// the embedded scripts are a few kilobytes, the writes are
+/// microseconds, and "always current" is worth more than the saved I/O.
 pub(crate) fn ensure_script() -> Result<PathBuf, AuditError> {
+    ensure_device_info_script()?;
     let path = paths::audit_script_path(AUDIT_SCRIPT_VERSION).map_err(map_storage_err)?;
+    write_script(&path, AUDIT_SCRIPT)?;
+    Ok(path)
+}
+
+/// Writes `device-info.ps1` to disk and returns its path. Used by the
+/// onboarding `get_device_info` command (which needs the script
+/// standalone) and by `ensure_script` (which co-locates it next to
+/// `audit.ps1` so dot-sourcing works).
+pub(crate) fn ensure_device_info_script() -> Result<PathBuf, AuditError> {
+    let path = paths::device_info_script_path().map_err(map_storage_err)?;
+    write_script(&path, DEVICE_INFO_SCRIPT)?;
+    Ok(path)
+}
+
+fn write_script(path: &PathBuf, body: &str) -> Result<(), AuditError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|source| AuditError::Io {
             path: parent.to_path_buf(),
             source,
         })?;
     }
-    fs::write(&path, AUDIT_SCRIPT).map_err(|source| AuditError::Io {
+    fs::write(path, body).map_err(|source| AuditError::Io {
         path: path.clone(),
         source,
-    })?;
-    Ok(path)
+    })
 }
 
 fn map_storage_err(err: StorageError) -> AuditError {
@@ -58,7 +81,6 @@ mod tests {
     /// rename to the file path is also caught.
     fn read_audit_script() -> String {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
             .join("ps")
             .join("audit.ps1");
         fs::read_to_string(&path).expect("ps/audit.ps1 should be readable from the source tree")

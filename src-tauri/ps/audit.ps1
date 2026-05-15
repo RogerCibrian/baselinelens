@@ -22,6 +22,11 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+# Dot-source the shared device-info reader so the same logic feeds both
+# this scan and the onboarding 'Will scan' strip. Rust writes both .ps1
+# files to the same directory before invoking us.
+. (Join-Path $PSScriptRoot 'device-info.ps1')
+
 # Lazy-opened sink used when -OutputPath is set. AutoFlush=true so the
 # Rust parent can tail the file line-by-line as recs complete instead of
 # waiting for the whole scan to finish.
@@ -71,34 +76,13 @@ function Write-NdjsonResult {
     Emit-Line -Line $json
 }
 
-# Emits the device-info line. Best-effort: any field we can't read falls
-# back to an empty string / false rather than failing the whole scan.
+# Emits the NDJSON device line by wrapping Get-BlDeviceInfo (defined in
+# device-info.ps1) with the 'type' discriminator the Rust runner expects.
 function Write-NdjsonDevice {
-    $cv = $null
-    try { $cv = Get-ItemProperty 'HKLM:\Software\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop } catch {}
-
-    $intune = $false
-    try {
-        $intune = [bool](Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Enrollments' -ErrorAction Stop |
-            Where-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).EnrollmentState -eq 1 })
-    } catch {}
-
-    $gp = $false
-    try { $gp = [bool](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).PartOfDomain } catch {}
-
-    $build_major = [Environment]::OSVersion.Version.Build
-    $build_ubr = if ($cv -and $cv.PSObject.Properties['UBR']) { $cv.UBR } else { 0 }
-
-    $payload = [ordered]@{
-        type      = 'device'
-        hostname  = $env:COMPUTERNAME
-        osName    = if ($cv -and $cv.PSObject.Properties['ProductName']) { [string]$cv.ProductName } else { '' }
-        osVersion = if ($cv -and $cv.PSObject.Properties['DisplayVersion']) { [string]$cv.DisplayVersion } else { '' }
-        osBuild   = "$build_major.$build_ubr"
-        managedBy = [ordered]@{ intune = $intune; groupPolicy = $gp }
-    }
-    $json = $payload | ConvertTo-Json -Compress -Depth 4
-    Emit-Line -Line $json
+    $info = Get-BlDeviceInfo
+    $payload = [ordered]@{ type = 'device' }
+    foreach ($key in $info.Keys) { $payload[$key] = $info[$key] }
+    Emit-Line -Line ($payload | ConvertTo-Json -Compress -Depth 4)
 }
 
 # ============================================================================

@@ -147,9 +147,9 @@ baselinelens/
 ├── src-tauri/            # Rust backend
 │   ├── Cargo.toml, tauri.conf.json, build.rs
 │   ├── src/
+│   ├── ps/               # PowerShell scripts baked into the binary via include_str!
 │   ├── capabilities/
 │   ├── icons/
 │   └── tests/fixtures/   # synthetic prose required; real OS setting paths/values OK
-├── ps/                   # PowerShell template fragments + helpers (to be created)
 └── design/               # design reference; HTML/JSX prototype + tokens
 ```

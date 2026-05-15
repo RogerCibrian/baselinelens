@@ -4,8 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import type { Baseline, ParserProgress } from "./bindings";
-import { TARGET_MACHINE } from "./data/host";
+import type { Baseline, DeviceInfo, ParserProgress } from "./bindings";
 
 import "./Onboarding.css";
 
@@ -19,24 +18,31 @@ type DragState = "none" | "valid" | "invalid";
 
 export default function Onboarding({
   state,
+  deviceInfo,
   onPickPath,
   onError,
   onConfirm,
   onCancel,
 }: {
   state: OnboardingState;
+  /** Real device identity for the "Will scan" strip and the confirm
+   * modal's target line. Null while the initial fetch is in-flight;
+   * the strip renders empty fields rather than placeholders so the
+   * layout stays stable when values arrive. */
+  deviceInfo: DeviceInfo | null;
   onPickPath: (path: string) => void;
   onError: (message: string, fileName?: string) => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   const [dragState, setDragState] = useState<DragState>("none");
-  // Remember the last "active" variant so the overlay's content stays
-  // stable while it fades out — otherwise a non-PDF drop would flash
-  // back to "valid" styling for one frame as it disappears.
+  // Remember the last "active" variant and filename so the overlay's
+  // content stays stable while it fades out — otherwise a leave/drop
+  // would flash back to empty content for one frame as it disappears.
   const [overlayVariant, setOverlayVariant] = useState<"valid" | "invalid">(
     "valid",
   );
+  const [dragFileName, setDragFileName] = useState<string | null>(null);
   useEffect(() => {
     if (dragState !== "none") setOverlayVariant(dragState);
   }, [dragState]);
@@ -58,6 +64,7 @@ export default function Onboarding({
           const path = payload.paths[0];
           const valid = path ? path.toLowerCase().endsWith(".pdf") : false;
           setDragState(valid ? "valid" : "invalid");
+          setDragFileName(path ? (path.split(/[\\/]/).pop() ?? path) : null);
         } else if (payload.type === "leave") {
           setDragState("none");
         } else if (payload.type === "drop") {
@@ -100,19 +107,24 @@ export default function Onboarding({
       <main className="ob-main">
         <article className="ob-article">
           <Hero />
-          <Action state={state} onBrowse={browse} />
+          <Action state={state} deviceInfo={deviceInfo} onBrowse={browse} />
           <Steps />
         </article>
       </main>
 
       <Footer />
 
-      <DragOverlay variant={overlayVariant} visible={dragState !== "none"} />
+      <DragOverlay
+        variant={overlayVariant}
+        visible={dragState !== "none"}
+        fileName={dragFileName}
+      />
 
       {state.kind === "pendingConfirm" && (
         <ConfirmModal
           baseline={state.baseline}
           fileName={state.fileName}
+          deviceInfo={deviceInfo}
           onConfirm={onConfirm}
           onCancel={onCancel}
         />
@@ -141,14 +153,16 @@ function Hero() {
 
 function Action({
   state,
+  deviceInfo,
   onBrowse,
 }: {
   state: OnboardingState;
+  deviceInfo: DeviceInfo | null;
   onBrowse: () => void;
 }) {
   return (
     <section className="ob-action">
-      <MachineStrip />
+      <MachineStrip deviceInfo={deviceInfo} />
       <DropZone state={state} onBrowse={onBrowse} />
       {state.kind === "error" ? (
         <div className="ob-error" role="alert">
@@ -166,7 +180,8 @@ function Action({
   );
 }
 
-function MachineStrip() {
+function MachineStrip({ deviceInfo }: { deviceInfo: DeviceInfo | null }) {
+  const management = managementLabel(deviceInfo);
   return (
     <div className="ob-machine">
       <div className="ob-machine-icon" aria-hidden="true">
@@ -175,17 +190,41 @@ function MachineStrip() {
       <div>
         <div className="ob-machine-label">Will scan</div>
         <div>
-          <span className="ob-machine-host">{TARGET_MACHINE.hostname}</span>
+          <span className="ob-machine-host">{deviceInfo?.hostname ?? ""}</span>
           <span className="ob-machine-meta">
-            {" · "}
-            {TARGET_MACHINE.osName} {TARGET_MACHINE.osVersion}
-            {" · "}
-            Build {TARGET_MACHINE.osBuild}
+            {deviceInfo && (
+              <>
+                {" · "}
+                {deviceInfo.osName} {deviceInfo.osVersion}
+                {" · "}
+                Build {deviceInfo.osBuild}
+                {management && (
+                  <>
+                    {" · "}
+                    {management}
+                  </>
+                )}
+              </>
+            )}
           </span>
         </div>
       </div>
     </div>
   );
+}
+
+/**
+ * Translates the two managedBy booleans into a single display label.
+ * Returns null while device info is still loading so the strip doesn't
+ * flash "Unmanaged" before real values arrive.
+ */
+function managementLabel(deviceInfo: DeviceInfo | null): string | null {
+  if (!deviceInfo) return null;
+  const { intune, groupPolicy } = deviceInfo.managedBy;
+  if (intune && groupPolicy) return "Intune + Group Policy Managed";
+  if (intune) return "Intune Managed";
+  if (groupPolicy) return "Group Policy Managed";
+  return "Unmanaged";
 }
 
 function DropZone({
@@ -325,7 +364,7 @@ function Footer() {
   return (
     <footer className="ob-footer">
       <div>
-        {/* Placeholder hrefs until docs/repo URLs are wired. */}
+        {/* Documentation URL is TBD; leave inert until decided. */}
         <a
           href="#"
           onClick={(e) => e.preventDefault()}
@@ -334,7 +373,10 @@ function Footer() {
         </a>
         <a
           href="#"
-          onClick={(e) => e.preventDefault()}
+          onClick={(e) => {
+            e.preventDefault();
+            void openUrl("https://github.com/RogerCibrian/baselinelens");
+          }}
         >
           View on GitHub
         </a>
@@ -349,9 +391,14 @@ function Footer() {
 function DragOverlay({
   variant,
   visible,
+  fileName,
 }: {
   variant: "valid" | "invalid";
   visible: boolean;
+  /** The dragged file's name, captured on the `enter` event so the
+   * overlay can echo it back. Persists across `leave`/`drop` so the
+   * overlay's content doesn't blank out during the fade. */
+  fileName: string | null;
 }) {
   const invalid = variant === "invalid";
   const classes = [
@@ -361,15 +408,20 @@ function DragOverlay({
   ]
     .filter(Boolean)
     .join(" ");
+  const eyebrow = invalid ? "§ Not a PDF" : "§ Incoming file";
+  const heading = invalid ? "PDF files only" : "Drop to parse";
+  const subtitle = invalid
+    ? "Drop a CIS Benchmark PDF to continue."
+    : "We'll extract recommendations and confirm before scanning.";
   return (
     <div className={classes} aria-hidden="true">
       <div className="ob-dragover-inner">
-        <div className="ob-dragover-icon">
-          {invalid ? <BlockIcon size={24} /> : <DownloadIcon size={24} />}
-        </div>
-        <div className="ob-dragover-h">
-          {invalid ? "PDF files only" : "Drop benchmark PDF anywhere"}
-        </div>
+        <div className="ob-dragover-eyebrow">{eyebrow}</div>
+        <h2 className="ob-dragover-h">{heading}</h2>
+        {fileName && (
+          <div className="ob-dragover-file mono">{breakableFilename(fileName)}</div>
+        )}
+        <p className="ob-dragover-sub">{subtitle}</p>
       </div>
     </div>
   );
@@ -378,11 +430,13 @@ function DragOverlay({
 function ConfirmModal({
   baseline,
   fileName,
+  deviceInfo,
   onConfirm,
   onCancel,
 }: {
   baseline: Baseline;
   fileName: string;
+  deviceInfo: DeviceInfo | null;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -421,7 +475,11 @@ function ConfirmModal({
           />
           <ConfirmRow
             k="Target"
-            v={`${TARGET_MACHINE.hostname} · ${TARGET_MACHINE.osName} ${TARGET_MACHINE.osVersion}`}
+            v={
+              deviceInfo
+                ? `${deviceInfo.hostname} · ${deviceInfo.osName} ${deviceInfo.osVersion}`
+                : ""
+            }
             mono
           />
         </div>
@@ -480,16 +538,19 @@ function ConfirmRow({
 }
 
 /**
- * Renders a filename with `<wbr>` tags at natural break points so long
- * filenames wrap on separators rather than mid-token. Breaks are offered
- * before underscores, hyphens, and dots, with one exception: a dot
- * sitting between two digits (e.g. the `.` in `4.0.0`) is left alone
- * because version numbers should stay intact. Combined with
- * `overflow-wrap: break-word`, the browser falls back to mid-segment
- * breaks only if no preferred break point fits.
+ * Renders a filename with `<wbr>` tags at separator boundaries so long
+ * filenames wrap on punctuation rather than mid-token. The trailing
+ * version + extension suffix (e.g. `_v4.0.0.pdf`) is kept atomic so the
+ * wrap point lands *before* the version, not inside it — browsers pick
+ * the latest fitting `<wbr>`, and an internal dot break would land
+ * somewhere like `..._v4.0` / `.0.pdf`.
  */
 function breakableFilename(name: string): ReactNode {
-  const parts = name.split(/(?=[_\-])|(?<!\d)(?=\.)|(?<=\d)(?=\.)(?!\d)/);
+  const suffixMatch = name.match(/(?:[_-]v\d+(?:\.\d+)*)?\.[A-Za-z0-9]+$/i);
+  const suffix = suffixMatch ? suffixMatch[0] : "";
+  const base = suffix ? name.slice(0, -suffix.length) : name;
+  const parts = base ? base.split(/(?=[_\-.])/) : [];
+  if (suffix) parts.push(suffix);
   return parts.map((part, i) => (
     <Fragment key={i}>
       {i > 0 && <wbr />}
@@ -538,20 +599,3 @@ function DownloadIcon({ size = 18 }: { size?: number }) {
   );
 }
 
-function BlockIcon({ size = 18 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-    </svg>
-  );
-}

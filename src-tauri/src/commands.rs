@@ -7,9 +7,10 @@ use tauri::ipc::Channel;
 
 use crate::audit::generator;
 use crate::audit::merge::ScanCollector;
-use crate::audit::model::{Scan, ScanContext, ScanRecord};
+use crate::audit::model::{DeviceInfo, Scan, ScanContext, ScanRecord};
 use crate::audit::runner::{self, AuditEvent};
 use crate::audit::AUDIT_SCRIPT_VERSION;
+use crate::host;
 use crate::parser;
 use crate::parser::model::Baseline;
 use crate::parser::{ParserProgress, PARSER_VERSION};
@@ -28,17 +29,21 @@ pub(crate) struct CachedBaseline {
     pub(crate) is_stale: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Type)]
-pub(crate) struct Hello {
-    pub(crate) msg: String,
-}
-
+/// Reads device identity and management state from the local machine
+/// for the onboarding "Will scan" strip. Runs the same
+/// `device-info.ps1` that the audit pipeline dot-sources, so the
+/// pre-scan strip and the post-scan top bar agree on what they show.
+///
+/// Wrapped in `spawn_blocking` because the PowerShell spawn blocks the
+/// thread — the Tauri runtime stays free to serve other IPC during the
+/// few-hundred-millisecond startup.
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn hello() -> Hello {
-    Hello {
-        msg: "world".into(),
-    }
+pub(crate) async fn get_device_info() -> Result<DeviceInfo, String> {
+    async_runtime::spawn_blocking(host::read_device_info)
+        .await
+        .map_err(|err| format!("device-info task panicked: {err}"))?
+        .map_err(|err| err.to_string())
 }
 
 /// Parses the CIS benchmark PDF at `path` and returns a fully-populated

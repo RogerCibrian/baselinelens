@@ -4,7 +4,17 @@ import { invoke as __TAURI_INVOKE, Channel } from "@tauri-apps/api/core";
 
 /** Commands */
 export const commands = {
-	hello: () => __TAURI_INVOKE<Hello>("hello"),
+	/**
+	 *  Reads device identity and management state from the local machine
+	 *  for the onboarding "Will scan" strip. Runs the same
+	 *  `device-info.ps1` that the audit pipeline dot-sources, so the
+	 *  pre-scan strip and the post-scan top bar agree on what they show.
+	 * 
+	 *  Wrapped in `spawn_blocking` because the PowerShell spawn blocks the
+	 *  thread — the Tauri runtime stays free to serve other IPC during the
+	 *  few-hundred-millisecond startup.
+	 */
+	getDeviceInfo: () => typedError<DeviceInfo, string>(__TAURI_INVOKE("get_device_info")),
 	/**
 	 *  Parses the CIS benchmark PDF at `path` and returns a fully-populated
 	 *  `Baseline` for the frontend to render.
@@ -179,10 +189,6 @@ export type Exception = {
 };
 
 export type ExpectedValue = { type: "Equals"; value: Value } | { type: "NotEquals"; value: Value } | { type: "AtLeast"; value: number } | { type: "AtMost"; value: number } | { type: "OneOf"; values: Value[] } | { type: "Contains"; substring: string } | { type: "ContainsAll"; substrings: string[] } | { type: "Absent" } | { type: "AbsentOr"; inner: ExpectedValue } | { type: "All"; values: ExpectedValue[] } | { type: "Any"; values: ExpectedValue[] };
-
-export type Hello = {
-	msg: string,
-};
 
 export type Level = "L1" | "L2" | "BL";
 

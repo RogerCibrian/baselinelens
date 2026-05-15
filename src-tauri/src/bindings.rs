@@ -16,7 +16,7 @@ use tauri_specta::{Builder, collect_commands};
 pub fn export_to(out_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let builder = Builder::<tauri::Wry>::new()
         .commands(collect_commands![
-            crate::commands::hello,
+            crate::commands::get_device_info,
             crate::commands::parse_baseline,
             crate::commands::load_app_state,
             crate::commands::save_app_state,
