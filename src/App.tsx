@@ -23,6 +23,10 @@ import {
 } from "./bindings";
 import Console from "./Console";
 import {
+  defaultConsoleColumns,
+  type ConsoleColumns,
+} from "./data/consoleColumns";
+import {
   defaultConsoleFilter,
   type ConsoleFilter,
 } from "./data/consoleFilter";
@@ -75,6 +79,12 @@ function App() {
   const [consoleFilter, setConsoleFilter] = useState<ConsoleFilter>(
     defaultConsoleFilter,
   );
+  const [consoleColumns, setConsoleColumns] = useState<ConsoleColumns>(
+    defaultConsoleColumns,
+  );
+  // Whether the Console's Views/Categories rail is collapsed. Lives at
+  // the App level so the user's choice survives tab switches.
+  const [consoleRailCollapsed, setConsoleRailCollapsed] = useState(false);
   // Device identity (hostname, OS, management state) for the onboarding
   // "Will scan" strip and the partial-scan placeholder. Loaded async on
   // mount; falls back to empty fields while in-flight so the strip
@@ -131,6 +141,10 @@ function App() {
         onUpdateUserState={(next) => void updateUserState(next)}
         consoleFilter={consoleFilter}
         onConsoleFilterChange={setConsoleFilter}
+        consoleColumns={consoleColumns}
+        onConsoleColumnsChange={setConsoleColumns}
+        consoleRailCollapsed={consoleRailCollapsed}
+        onConsoleRailCollapsedChange={setConsoleRailCollapsed}
         onJumpToConsole={jumpToConsole}
       />
     );
@@ -277,6 +291,10 @@ function Dashboard({
   onUpdateUserState,
   consoleFilter,
   onConsoleFilterChange,
+  consoleColumns,
+  onConsoleColumnsChange,
+  consoleRailCollapsed,
+  onConsoleRailCollapsedChange,
   onJumpToConsole,
 }: {
   baseline: Baseline;
@@ -297,6 +315,10 @@ function Dashboard({
   onUpdateUserState: (next: UserState) => void;
   consoleFilter: ConsoleFilter;
   onConsoleFilterChange: (next: ConsoleFilter) => void;
+  consoleColumns: ConsoleColumns;
+  onConsoleColumnsChange: (next: ConsoleColumns) => void;
+  consoleRailCollapsed: boolean;
+  onConsoleRailCollapsedChange: (next: boolean) => void;
   onJumpToConsole: (filter: Partial<ConsoleFilter>) => void;
 }) {
   const [context, setContext] = useState<ScanContext>(emptyScanContext);
@@ -535,6 +557,10 @@ function Dashboard({
             userState={userState}
             filter={consoleFilter}
             onFilterChange={onConsoleFilterChange}
+            columns={consoleColumns}
+            onColumnsChange={onConsoleColumnsChange}
+            railCollapsed={consoleRailCollapsed}
+            onRailCollapsedChange={onConsoleRailCollapsedChange}
             onUpdateUserState={onUpdateUserState}
             onResetChanges={() => void resetScanFile("changes")}
           />

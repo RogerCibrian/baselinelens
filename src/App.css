@@ -771,6 +771,10 @@
   position: relative;
 }
 
+.console-rail-collapsed {
+  grid-template-columns: 1fr;
+}
+
 .console-main {
   display: flex;
   flex-direction: column;
@@ -790,6 +794,36 @@
   overflow-y: auto;
 }
 
+.rail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 0.5rem;
+  padding-right: 4px;
+}
+
+.rail-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--v-text);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.rail-collapse:hover {
+  background: var(--v-paper-3);
+  border-color: var(--v-line);
+  color: var(--v-text);
+}
+
 .rail-eyebrow {
   margin: 0 0 0.5rem;
   padding: 0 10px;
@@ -798,6 +832,10 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--v-text-subtle);
+}
+
+.rail-header .rail-eyebrow {
+  margin-bottom: 0;
 }
 
 .rail-eyebrow-secondary {
@@ -1100,6 +1138,64 @@
 .rec-table-delta-col {
   width: 32px;
   text-align: center;
+}
+
+.rec-table-value-col {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Columns popover: lives in the filter bar next to the pills. */
+
+.columns-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.columns-menu-trigger {
+  font-family: inherit;
+}
+
+.columns-menu-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 180px;
+  padding: 6px;
+  background: var(--v-paper);
+  border: 1px solid var(--v-line-strong);
+  border-radius: var(--v-radius-sm);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.columns-menu-locked {
+  padding: 6px 8px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--v-line);
+  font-size: 11px;
+  color: var(--v-text-subtle);
+}
+
+.columns-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  color: var(--v-text);
+  cursor: pointer;
+}
+
+.columns-menu-item:hover {
+  background: var(--v-paper-2);
+}
+
+.columns-menu-item input[type="checkbox"] {
+  margin: 0;
 }
 
 .delta-marker {

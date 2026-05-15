@@ -26,6 +26,7 @@ import {
   indexLatestChanges,
   type Delta,
 } from "./data/changes";
+import { type ConsoleColumns } from "./data/consoleColumns";
 import {
   defaultConsoleFilter,
   type ConsoleFilter,
@@ -51,6 +52,10 @@ export default function Console({
   userState,
   filter,
   onFilterChange,
+  columns,
+  onColumnsChange,
+  railCollapsed,
+  onRailCollapsedChange,
   onUpdateUserState,
   onResetChanges,
 }: {
@@ -63,6 +68,14 @@ export default function Console({
   userState: UserState;
   filter: ConsoleFilter;
   onFilterChange: (next: ConsoleFilter) => void;
+  /** Visibility flags for the table's optional columns. */
+  columns: ConsoleColumns;
+  onColumnsChange: (next: ConsoleColumns) => void;
+  /** Whether the Views/Categories rail is collapsed (hidden). When
+   * true, the rail unmounts and the filter bar gains a "Views" button
+   * that reopens it. */
+  railCollapsed: boolean;
+  onRailCollapsedChange: (next: boolean) => void;
   onUpdateUserState: (next: UserState) => void;
   /** Deletes the per-rec change log and reloads. Invoked from the inline
    * recovery action when `loadErrors.changes` is set. */
@@ -122,6 +135,18 @@ export default function Console({
     return cat.name.split(" - ").pop() ?? cat.name;
   }, [baseline, filter.category]);
 
+  // Map of category number → local name for the table's Category cell.
+  // Pre-computed once per baseline so each row gets an O(1) lookup
+  // instead of scanning `baseline.categories` per render.
+  const categoryNamesByNumber = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const cat of baseline.categories) {
+      const localName = cat.name?.split(" - ").pop() ?? cat.name ?? "";
+      if (localName) map.set(cat.number, localName);
+    }
+    return map;
+  }, [baseline.categories]);
+
   // Keyboard navigation. ArrowUp/ArrowDown move the selected row; Enter
   // opens the drawer for it. Skipped while the drawer is already open or
   // while the user is typing in a form field.
@@ -163,19 +188,26 @@ export default function Console({
   }
 
   return (
-    <div className="console">
-      <SavedViewRail
-        baseline={baseline}
-        scan={scan}
-        userState={userState}
-        changesIndex={changesIndex}
-        filter={filter}
-        onFilterChange={onFilterChange}
-      />
+    <div className={`console${railCollapsed ? " console-rail-collapsed" : ""}`}>
+      {!railCollapsed && (
+        <SavedViewRail
+          baseline={baseline}
+          scan={scan}
+          userState={userState}
+          changesIndex={changesIndex}
+          filter={filter}
+          onFilterChange={onFilterChange}
+          onCollapse={() => onRailCollapsedChange(true)}
+        />
+      )}
       <div className="console-main">
         <FilterBar
           filter={filter}
           onFilterChange={onFilterChange}
+          columns={columns}
+          onColumnsChange={onColumnsChange}
+          showViewsButton={railCollapsed}
+          onShowViews={() => onRailCollapsedChange(false)}
           total={baseline.recommendations.length}
           shown={sorted.length}
           categoryName={categoryName}
@@ -204,6 +236,8 @@ export default function Console({
             userState={userState}
             sort={sort}
             onSortChange={setSort}
+            columns={columns}
+            categoryNames={categoryNamesByNumber}
             selectedRecId={selectedRecId}
             onOpen={selectAndOpen}
           />
@@ -340,6 +374,7 @@ function SavedViewRail({
   changesIndex,
   filter,
   onFilterChange,
+  onCollapse,
 }: {
   baseline: Baseline;
   scan: Scan;
@@ -347,6 +382,9 @@ function SavedViewRail({
   changesIndex: Map<string, ChangeEvent>;
   filter: ConsoleFilter;
   onFilterChange: (next: ConsoleFilter) => void;
+  /** Hides the rail; the filter bar gains a "Views" button to bring
+   * it back. */
+  onCollapse: () => void;
 }) {
   // Counts depend only on the data, not on the active filter — memoize
   // so flipping between views doesn't recompute every recommendation.
@@ -379,7 +417,18 @@ function SavedViewRail({
 
   return (
     <aside className="saved-view-rail">
-      <h3 className="rail-eyebrow">Views</h3>
+      <div className="rail-header">
+        <h3 className="rail-eyebrow">Views</h3>
+        <button
+          type="button"
+          className="rail-collapse"
+          onClick={onCollapse}
+          aria-label="Hide views"
+          title="Hide views"
+        >
+          <RailChevronIcon />
+        </button>
+      </div>
       <ul className="saved-views">
         {SAVED_VIEWS.map((view) => {
           const active = isViewActive(view, filter);
@@ -496,12 +545,22 @@ function paragraphs(text: string): string[] {
 function FilterBar({
   filter,
   onFilterChange,
+  columns,
+  onColumnsChange,
+  showViewsButton,
+  onShowViews,
   total,
   shown,
   categoryName,
 }: {
   filter: ConsoleFilter;
   onFilterChange: (next: ConsoleFilter) => void;
+  columns: ConsoleColumns;
+  onColumnsChange: (next: ConsoleColumns) => void;
+  /** True when the rail is collapsed; the bar shows a "Views" button
+   * on the left to bring it back. */
+  showViewsButton: boolean;
+  onShowViews: () => void;
   total: number;
   shown: number;
   /** Local name of the active category, or `null` when no name is known
@@ -511,6 +570,17 @@ function FilterBar({
 }) {
   return (
     <div className="filter-bar">
+      {showViewsButton && (
+        <button
+          type="button"
+          className="filter-pill"
+          onClick={onShowViews}
+          title="Show views"
+        >
+          <RailChevronIcon flipped />
+          <span className="filter-pill-label">Views</span>
+        </button>
+      )}
       <input
         type="search"
         className="filter-search"
@@ -561,6 +631,7 @@ function FilterBar({
           <span aria-hidden="true">×</span>
         </button>
       )}
+      <ColumnsMenu columns={columns} onChange={onColumnsChange} />
       <span className="filter-bar-spacer" />
       <span className="muted mono filter-count">
         {shown} of {total}
@@ -599,6 +670,90 @@ function FilterPill({
   );
 }
 
+/**
+ * Pill-styled popover that toggles the table's optional columns. Each
+ * column is a tri-state from the rendering side (hidden / shown), but
+ * the menu just exposes a checkbox per column. Closes on outside click
+ * and Escape to match the other dropdowns in the app.
+ */
+function ColumnsMenu({
+  columns,
+  onChange,
+}: {
+  columns: ConsoleColumns;
+  onChange: (next: ConsoleColumns) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  // Visible-column count for the trigger badge: the two always-on
+  // columns (ID + Status) plus whichever toggleable ones are checked.
+  const count =
+    2 +
+    (columns.level ? 1 : 0) +
+    (columns.title ? 1 : 0) +
+    (columns.category ? 1 : 0) +
+    (columns.expected ? 1 : 0) +
+    (columns.found ? 1 : 0);
+
+  useEffect(() => {
+    if (!open) return;
+    function onMouseDown(e: MouseEvent) {
+      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const items: { key: keyof ConsoleColumns; label: string }[] = [
+    { key: "level", label: "Level" },
+    { key: "title", label: "Title" },
+    { key: "category", label: "Category" },
+    { key: "expected", label: "Expected" },
+    { key: "found", label: "Found" },
+  ];
+
+  return (
+    <div className="columns-menu" ref={wrapperRef}>
+      <button
+        type="button"
+        className="filter-pill columns-menu-trigger"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <span className="filter-pill-label">Edit columns</span>
+        <span className="filter-pill-select">{count}</span>
+      </button>
+      {open && (
+        <div className="columns-menu-popover" role="menu">
+          <div className="columns-menu-locked" aria-hidden="true">
+            ID and Status are always shown.
+          </div>
+          {items.map(({ key, label }) => (
+            <label key={key} className="columns-menu-item">
+              <input
+                type="checkbox"
+                checked={columns[key]}
+                onChange={(e) =>
+                  onChange({ ...columns, [key]: e.target.checked })
+                }
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RecTable({
   recs,
   scan,
@@ -606,6 +761,8 @@ function RecTable({
   userState,
   sort,
   onSortChange,
+  columns,
+  categoryNames,
   selectedRecId,
   onOpen,
 }: {
@@ -615,6 +772,11 @@ function RecTable({
   userState: UserState;
   sort: Sort;
   onSortChange: (next: Sort) => void;
+  columns: ConsoleColumns;
+  /** Lookup from category number to its display name; used by the
+   * Category cell so the user sees "Account Policies" instead of
+   * "1.1.2". The number is preserved as a tooltip for reference. */
+  categoryNames: Map<string, string>;
   selectedRecId: string | null;
   onOpen: (recId: string) => void;
 }) {
@@ -624,9 +786,17 @@ function RecTable({
         <tr>
           <th><SortHeader sort={sort} onChange={onSortChange} keyName="id">ID</SortHeader></th>
           <th><SortHeader sort={sort} onChange={onSortChange} keyName="status">Status</SortHeader></th>
-          <th><SortHeader sort={sort} onChange={onSortChange} keyName="level">Level</SortHeader></th>
-          <th><SortHeader sort={sort} onChange={onSortChange} keyName="title">Title</SortHeader></th>
-          <th><SortHeader sort={sort} onChange={onSortChange} keyName="category">Category</SortHeader></th>
+          {columns.level && (
+            <th><SortHeader sort={sort} onChange={onSortChange} keyName="level">Level</SortHeader></th>
+          )}
+          {columns.title && (
+            <th><SortHeader sort={sort} onChange={onSortChange} keyName="title">Title</SortHeader></th>
+          )}
+          {columns.category && (
+            <th><SortHeader sort={sort} onChange={onSortChange} keyName="category">Category</SortHeader></th>
+          )}
+          {columns.expected && <th>Expected</th>}
+          {columns.found && <th>Found</th>}
           <th className="rec-table-delta-col" aria-label="Change">Δ</th>
         </tr>
       </thead>
@@ -635,6 +805,8 @@ function RecTable({
           const status = effectiveStatus(rec, scan, userState);
           const delta = computeDelta(rec, changesIndex, scan, userState);
           const selected = rec.id === selectedRecId;
+          const result = scan.results[rec.id];
+          const categoryLabel = categoryNames.get(rec.categoryNumber) ?? rec.categoryNumber;
           return (
             <tr
               key={rec.id}
@@ -646,13 +818,29 @@ function RecTable({
               <td>
                 <StatusPill status={status} />
               </td>
-              <td>
-                <span className={`level-chip level-${rec.level.toLowerCase()}`}>
-                  {rec.level}
-                </span>
-              </td>
-              <td>{rec.title}</td>
-              <td className="muted mono">{rec.categoryNumber}</td>
+              {columns.level && (
+                <td>
+                  <span className={`level-chip level-${rec.level.toLowerCase()}`}>
+                    {rec.level}
+                  </span>
+                </td>
+              )}
+              {columns.title && <td>{rec.title}</td>}
+              {columns.category && (
+                <td className="muted" title={rec.categoryNumber}>
+                  {categoryLabel}
+                </td>
+              )}
+              {columns.expected && (
+                <td className="muted mono rec-table-value-col">
+                  {valueCell(result?.expected)}
+                </td>
+              )}
+              {columns.found && (
+                <td className="muted mono rec-table-value-col">
+                  {valueCell(result?.currentValue)}
+                </td>
+              )}
               <td className="rec-table-delta-col">
                 <DeltaCell delta={delta} />
               </td>
@@ -662,6 +850,16 @@ function RecTable({
       </tbody>
     </table>
   );
+}
+
+/**
+ * Renders the flat Expected / Found string from a scan result, falling
+ * back to an em-dash when absent. The flat string is null for recs
+ * with multi-check structured output (registry recs with several
+ * value names) where the drawer's check table is the canonical view.
+ */
+function valueCell(value: string | null | undefined): string {
+  return value && value.trim().length > 0 ? value : "—";
 }
 
 function SortHeader({
@@ -916,6 +1114,12 @@ function DetailDrawer({
               )}
               {rec.rationale && (
                 <DrawerText title="Rationale" text={rec.rationale} />
+              )}
+              {rec.remediation?.description && (
+                <DrawerText
+                  title="Remediation"
+                  text={rec.remediation.description}
+                />
               )}
 
               <ScanResultSection
@@ -1196,4 +1400,28 @@ function breakableRegistryPath(path: string): ReactNode {
       {i < parts.length - 1 && <wbr />}
     </Fragment>
   ));
+}
+
+/**
+ * Chevron used by the rail collapse + reopen affordances. Points left
+ * by default (collapse direction). Pass `flipped` to point right
+ * (reopen direction shown on the filter-bar "Views" button).
+ */
+function RailChevronIcon({ flipped = false }: { flipped?: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={flipped ? { transform: "rotate(180deg)" } : undefined}
+    >
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
 }
