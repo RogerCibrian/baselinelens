@@ -84,6 +84,11 @@ export default function Console({
       if (filter.status !== "all") {
         if (effectiveStatus(rec, scan, userState) !== filter.status) return false;
       }
+      if (filter.delta !== "all") {
+        if (computeDelta(rec, changesIndex, scan, userState) !== filter.delta) {
+          return false;
+        }
+      }
       if (needle) {
         if (
           !rec.id.toLowerCase().includes(needle) &&
@@ -94,7 +99,7 @@ export default function Console({
       }
       return true;
     });
-  }, [baseline, scan, userState, filter]);
+  }, [baseline, scan, userState, filter, changesIndex]);
 
   const sorted = useMemo(() => {
     const out = [...filtered];
@@ -163,6 +168,7 @@ export default function Console({
         baseline={baseline}
         scan={scan}
         userState={userState}
+        changesIndex={changesIndex}
         filter={filter}
         onFilterChange={onFilterChange}
       />
@@ -309,6 +315,18 @@ const SAVED_VIEWS: SavedView[] = [
     filter: { status: "pass" },
   },
   {
+    id: "regressed",
+    name: "Regressed",
+    description: "Flipped from pass to fail",
+    filter: { delta: "regressed" },
+  },
+  {
+    id: "recently-fixed",
+    name: "Recently fixed",
+    description: "Flipped from fail to pass",
+    filter: { delta: "improved" },
+  },
+  {
     id: "bitlocker",
     name: "BitLocker only",
     filter: { level: "BL" },
@@ -319,12 +337,14 @@ function SavedViewRail({
   baseline,
   scan,
   userState,
+  changesIndex,
   filter,
   onFilterChange,
 }: {
   baseline: Baseline;
   scan: Scan;
   userState: UserState;
+  changesIndex: Map<string, ChangeEvent>;
   filter: ConsoleFilter;
   onFilterChange: (next: ConsoleFilter) => void;
 }) {
@@ -341,11 +361,16 @@ function SavedViewRail({
             return false;
           }
         }
+        if (target.delta !== "all") {
+          if (computeDelta(rec, changesIndex, scan, userState) !== target.delta) {
+            return false;
+          }
+        }
         return true;
       }).length;
     }
     return result;
-  }, [baseline, scan, userState]);
+  }, [baseline, scan, userState, changesIndex]);
 
   const categories = useMemo(
     () => topLevelCategoryScores(baseline, scan, userState),
@@ -450,6 +475,7 @@ function isViewActive(view: SavedView, current: ConsoleFilter): boolean {
     target.level === current.level &&
     target.status === current.status &&
     target.category === current.category &&
+    target.delta === current.delta &&
     target.search === current.search
   );
 }

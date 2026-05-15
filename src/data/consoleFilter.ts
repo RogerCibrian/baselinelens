@@ -11,6 +11,12 @@ export type ConsoleFilter = {
    * the weakest-categories list set this to a leaf number, which still
    * matches as an exact prefix of itself. */
   category: string | null;
+  /** Restricts to recs whose latest change-event places them in the
+   * named delta bucket against the live scan. `"unchanged"` is omitted
+   * deliberately — the saved views surface only the two flip
+   * directions, since a no-flip view would just be "everything that
+   * didn't move", which the All view already covers. */
+  delta: "all" | "improved" | "regressed";
   search: string;
 };
 
@@ -18,5 +24,6 @@ export const defaultConsoleFilter: ConsoleFilter = {
   level: "all",
   status: "all",
   category: null,
+  delta: "all",
   search: "",
 };
