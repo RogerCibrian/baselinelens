@@ -37,6 +37,9 @@ pub(crate) enum AuditError {
         #[source]
         source: serde_json::Error,
     },
+
+    #[error("Scan cancelled.")]
+    Cancelled,
 }
 
 /// Helper for the `NonZeroExit` Display impl. Renders `: <text>` when

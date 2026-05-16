@@ -35,19 +35,36 @@ pub(crate) enum AuditEvent {
 /// single-callback shape lets the caller mutate one piece of state
 /// (e.g. a `ScanCollector`) without juggling overlapping `FnMut`
 /// borrows. Returns when the audit child exits.
+/// `cancel_path` is handed to the audit script as `-CancelPath`. The
+/// script `break`s its per-rec loop the moment that file appears, so a
+/// cancelled run exits cleanly on both the in-process and elevated
+/// paths — no process needs to be killed and no elevated child is left
+/// finishing in the background. `cancel_scan` requests cancellation by
+/// creating the file; the run then resolves to [`AuditError::Cancelled`]
+/// and the caller skips persistence.
 pub(crate) fn run<F>(
     script_path: &Path,
     baseline_path: &Path,
+    cancel_path: &Path,
     on_event: F,
 ) -> Result<(), AuditError>
 where
     F: FnMut(AuditEvent),
 {
-    if elevation::is_elevated() {
-        run_in_process(script_path, baseline_path, on_event)
+    let result = if elevation::is_elevated() {
+        run_in_process(script_path, baseline_path, cancel_path, on_event)
     } else {
-        run_elevated_child(script_path, baseline_path, on_event)
+        run_elevated_child(script_path, baseline_path, cancel_path, on_event)
+    };
+    // A cancelled run exits 0 (clean loop break), so the child's exit
+    // status looks like success — the sentinel's existence is the only
+    // signal that the user asked to stop. Check it before returning so
+    // a normal completion racing a late click still reads as cancelled.
+    if cancel_path.exists() {
+        let _ = fs::remove_file(cancel_path);
+        return Err(AuditError::Cancelled);
     }
+    result
 }
 
 /// Direct path: spawn `powershell.exe` from this (already-elevated)
@@ -56,6 +73,7 @@ where
 fn run_in_process<F>(
     script_path: &Path,
     baseline_path: &Path,
+    cancel_path: &Path,
     mut on_event: F,
 ) -> Result<(), AuditError>
 where
@@ -72,6 +90,8 @@ where
         .arg(script_path)
         .arg("-BaselinePath")
         .arg(baseline_path)
+        .arg("-CancelPath")
+        .arg(cancel_path)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -133,6 +153,7 @@ where
 fn run_elevated_child<F>(
     script_path: &Path,
     baseline_path: &Path,
+    cancel_path: &Path,
     mut on_event: F,
 ) -> Result<(), AuditError>
 where
@@ -146,7 +167,8 @@ where
         source,
     })?;
 
-    let ps_command = build_runas_command(script_path, baseline_path, &output_path);
+    let ps_command =
+        build_runas_command(script_path, baseline_path, &output_path, cancel_path);
 
     let mut outer_child = Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps_command])
@@ -198,7 +220,12 @@ fn temp_ndjson_path() -> PathBuf {
 /// passed as a list to `Start-Process` so PowerShell handles the
 /// quoting through `ShellExecuteEx` without our format string having
 /// to escape per-platform shell metacharacters.
-fn build_runas_command(script: &Path, baseline: &Path, output: &Path) -> String {
+fn build_runas_command(
+    script: &Path,
+    baseline: &Path,
+    output: &Path,
+    cancel: &Path,
+) -> String {
     fn ps_squote(p: &Path) -> String {
         // Single-quoted PS strings only need `'` doubled; everything else
         // is literal, including backslashes.
@@ -207,10 +234,12 @@ fn build_runas_command(script: &Path, baseline: &Path, output: &Path) -> String 
     let script_q = ps_squote(script);
     let baseline_q = ps_squote(baseline);
     let output_q = ps_squote(output);
+    let cancel_q = ps_squote(cancel);
     format!(
         "Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -WindowStyle Hidden \
          -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',\
-         '-File','{script_q}','-BaselinePath','{baseline_q}','-OutputPath','{output_q}')"
+         '-File','{script_q}','-BaselinePath','{baseline_q}','-OutputPath','{output_q}',\
+         '-CancelPath','{cancel_q}')"
     )
 }
 

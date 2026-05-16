@@ -3,6 +3,7 @@ import {
   useRef,
   useState,
   type Dispatch,
+  type KeyboardEvent as ReactKeyboardEvent,
   type SetStateAction,
 } from "react";
 
@@ -31,6 +32,8 @@ import {
   defaultConsoleFilter,
   type ConsoleFilter,
 } from "./data/consoleFilter";
+import ConfirmDialog from "./ConfirmDialog";
+import { formatTimestamp } from "./format";
 import Onboarding from "./Onboarding";
 import Overview from "./Overview";
 import ThemeSegment from "./ThemeSegment";
@@ -151,16 +154,19 @@ function App() {
   }
 
   // Applies a UserState change locally and persists it. The optimistic
-  // update keeps the UI snappy; a save failure logs to the console and
-  // leaves the in-memory state ahead of disk until the next save retry.
-  async function updateUserState(next: UserState) {
+  // update keeps the UI snappy; the returned boolean lets the caller
+  // (the drawer) show a real outcome instead of a blanket "Saved" —
+  // a false return means the in-memory state is ahead of disk.
+  async function updateUserState(next: UserState): Promise<boolean> {
     setAppState((prev) =>
       prev.kind === "loaded" ? { ...prev, userState: next } : prev,
     );
     const result = await commands.saveUserState(next);
     if (result.status !== "ok") {
       console.error("Failed to save user state:", result.error);
+      return false;
     }
+    return true;
   }
 
   // Overview click-through: replace the current Console filter with a
@@ -188,7 +194,7 @@ function App() {
         tab={tab}
         onTabChange={setTab}
         onReparse={() => void selectAndParse(setAppState)}
-        onUpdateUserState={(next) => void updateUserState(next)}
+        onUpdateUserState={updateUserState}
         consoleFilter={consoleFilter}
         onConsoleFilterChange={setConsoleFilter}
         consoleColumns={consoleColumns}
@@ -399,7 +405,7 @@ function Dashboard({
   tab: Tab;
   onTabChange: (tab: Tab) => void;
   onReparse: () => void;
-  onUpdateUserState: (next: UserState) => void;
+  onUpdateUserState: (next: UserState) => Promise<boolean>;
   consoleFilter: ConsoleFilter;
   onConsoleFilterChange: (next: ConsoleFilter) => void;
   consoleColumns: ConsoleColumns;
@@ -414,12 +420,23 @@ function Dashboard({
   const [loadErrors, setLoadErrors] = useState<ScanLoadErrors>(emptyLoadErrors);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  // Set when the user clicks Cancel so the scan's error return is read
+  // as an intentional stop (no error banner) rather than a failure.
+  const cancelRequested = useRef(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const latest = context.latest;
 
   // One-shot guard so `autoScan` only fires the kick-off rescan once
   // per loaded session, even if `autoScan` stays true across re-renders.
   const autoScanFired = useRef(false);
+
+  // Roving-tabindex targets so ArrowLeft/Right between tabs also moves
+  // focus, per the WAI-ARIA tabs pattern.
+  const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({
+    overview: null,
+    console: null,
+  });
 
   // Load scan context for this baseline on mount and whenever the
   // baseline switches. Each sub-file's load status lands in `loadErrors`
@@ -494,10 +511,25 @@ function Dashboard({
     await refreshContext();
   }
 
+  // Asks the backend to stop the in-flight scan. The script halts at
+  // its next recommendation boundary; `rescan` then sees a cancelled
+  // result and restores the prior scan without flagging an error.
+  async function requestCancel() {
+    if (!scanning || cancelRequested.current) return;
+    cancelRequested.current = true;
+    setCancelling(true);
+    const result = await commands.cancelScan();
+    if (result.status !== "ok") {
+      console.error("Failed to signal scan cancellation:", result.error);
+    }
+  }
+
   async function rescan() {
     if (scanning) return;
     setScanning(true);
     setScanError(null);
+    cancelRequested.current = false;
+    setCancelling(false);
     // Capture the current latest so a failed run can restore it. The
     // backend doesn't write anything until the scan succeeds, so the
     // pre-rescan `latest` is still the source of truth on disk; we just
@@ -550,44 +582,80 @@ function Dashboard({
         setLoadErrors((prev) => ({ ...prev, latest: refreshed.error }));
       }
     } else {
-      console.error("Scan failed:", result.error);
       // Restore the prior latest — backend never wrote, so on-disk
       // truth is unchanged and the user shouldn't lose visibility on
       // their last successful scan just because this attempt failed.
       setContext((prev) => ({ ...prev, latest: previousLatest }));
-      setScanError(result.error);
+      if (cancelRequested.current) {
+        // User-initiated stop: not a failure, so no error banner —
+        // the dashboard just returns to the prior scan.
+        console.info("Scan cancelled by user.");
+      } else {
+        console.error("Scan failed:", result.error);
+        setScanError(result.error);
+      }
     }
+    cancelRequested.current = false;
+    setCancelling(false);
     setScanning(false);
   }
 
   const completed = latest ? Object.keys(latest.results).length : 0;
   const total = baseline.recommendations.length;
-  const buttonLabel = scanning
-    ? `Scanning ${completed}/${total}`
-    : "Rescan";
+  const tabOrder: Tab[] = ["overview", "console"];
+  const activePanelId = tab === "overview" ? "panel-overview" : "panel-console";
+  const activeTabId = tab === "overview" ? "tab-overview" : "tab-console";
+
+  function onTablistKeyDown(e: ReactKeyboardEvent) {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    e.preventDefault();
+    const index = tabOrder.indexOf(tab);
+    const step = e.key === "ArrowRight" ? 1 : -1;
+    const next =
+      tabOrder[(index + step + tabOrder.length) % tabOrder.length];
+    onTabChange(next);
+    tabRefs.current[next]?.focus();
+  }
 
   return (
     <div className="app">
       <header className="top-bar">
         <span className="brand">BaselineLens</span>
-        <nav className="tabs" role="tablist">
+        <div
+          className="tabs"
+          role="tablist"
+          aria-label="Dashboard views"
+          onKeyDown={onTablistKeyDown}
+        >
           <button
+            id="tab-overview"
+            ref={(el) => {
+              tabRefs.current.overview = el;
+            }}
             className="tab"
             role="tab"
             aria-selected={tab === "overview"}
+            aria-controls="panel-overview"
+            tabIndex={tab === "overview" ? 0 : -1}
             onClick={() => onTabChange("overview")}
           >
             Overview
           </button>
           <button
+            id="tab-console"
+            ref={(el) => {
+              tabRefs.current.console = el;
+            }}
             className="tab"
             role="tab"
             aria-selected={tab === "console"}
+            aria-controls="panel-console"
+            tabIndex={tab === "console" ? 0 : -1}
             onClick={() => onTabChange("console")}
           >
             Console
           </button>
-        </nav>
+        </div>
         <span className="top-bar-spacer" />
         {latest && (
           <>
@@ -600,16 +668,35 @@ function Dashboard({
             </time>
           </>
         )}
-        <button
-          type="button"
-          className="button-primary top-bar-action"
-          onClick={() => void rescan()}
-          disabled={scanning}
-        >
-          {buttonLabel}
-        </button>
+        {scanning ? (
+          <>
+            <span
+              className="top-bar-scan-status mono"
+              aria-live="polite"
+            >
+              {cancelling ? "Cancelling…" : `Scanning ${completed}/${total}`}
+            </span>
+            <button
+              type="button"
+              className="button-secondary top-bar-action"
+              onClick={() => void requestCancel()}
+              disabled={cancelling}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="button-primary top-bar-action"
+            onClick={() => void rescan()}
+          >
+            Rescan
+          </button>
+        )}
         <SettingsMenu
           theme={theme}
+          scanning={scanning}
           onThemeChange={onThemeChange}
           onChangeBaseline={onReparse}
           onResetLatest={() => void resetScanFile("latest")}
@@ -617,6 +704,22 @@ function Dashboard({
           onResetChanges={() => void resetScanFile("changes")}
         />
       </header>
+
+      {scanning && (
+        <div
+          className="scan-progress"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-valuenow={completed}
+          aria-label="Scan progress"
+        >
+          <div
+            className="scan-progress-fill"
+            style={{ width: `${total ? (completed / total) * 100 : 0}%` }}
+          />
+        </div>
+      )}
 
       {isStale && <StaleBanner onReparse={onReparse} />}
       {scanError && (
@@ -627,7 +730,13 @@ function Dashboard({
         />
       )}
 
-      <main className="tab-content">
+      <main
+        className="tab-content"
+        role="tabpanel"
+        id={activePanelId}
+        aria-labelledby={activeTabId}
+        tabIndex={0}
+      >
         {!latest ? (
           <EmptyScanState
             onScan={() => void rescan()}
@@ -784,8 +893,16 @@ function EmptyScanState({
  * user reaches them outside of an error context — without the prompt
  * a stray click could clear a working trend history.
  */
+type PendingConfirm = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+};
+
 function SettingsMenu({
   theme,
+  scanning,
   onThemeChange,
   onChangeBaseline,
   onResetLatest,
@@ -793,6 +910,11 @@ function SettingsMenu({
   onResetChanges,
 }: {
   theme: Theme;
+  /** While a scan runs, baseline-switch and the destructive resets are
+   * disabled — they'd race the in-flight run (re-parse swaps the
+   * baseline out from under it; a reset clears files it's about to
+   * rewrite). */
+  scanning: boolean;
   onThemeChange: (next: Theme) => void;
   onChangeBaseline: () => void;
   onResetLatest: () => void;
@@ -800,6 +922,7 @@ function SettingsMenu({
   onResetChanges: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -820,11 +943,9 @@ function SettingsMenu({
     };
   }, [open]);
 
-  function confirmAndRun(message: string, action: () => void) {
+  function askConfirm(pending: PendingConfirm) {
     setOpen(false);
-    if (window.confirm(message)) {
-      action();
-    }
+    setConfirm(pending);
   }
 
   return (
@@ -850,6 +971,7 @@ function SettingsMenu({
             type="button"
             role="menuitem"
             className="settings-item"
+            disabled={scanning}
             onClick={() => {
               setOpen(false);
               onChangeBaseline();
@@ -862,11 +984,15 @@ function SettingsMenu({
             type="button"
             role="menuitem"
             className="settings-item settings-item-destructive"
+            disabled={scanning}
             onClick={() =>
-              confirmAndRun(
-                "Delete the most-recent scan for this baseline? The next scan will replace it.",
-                onResetLatest,
-              )
+              askConfirm({
+                title: "Reset last scan",
+                message:
+                  "Delete the most-recent scan for this baseline? The next scan will replace it.",
+                confirmLabel: "Delete scan",
+                onConfirm: onResetLatest,
+              })
             }
           >
             Reset last scan
@@ -875,11 +1001,15 @@ function SettingsMenu({
             type="button"
             role="menuitem"
             className="settings-item settings-item-destructive"
+            disabled={scanning}
             onClick={() =>
-              confirmAndRun(
-                "Delete the trend history for this baseline? Past summary points will be lost; the next scan starts a fresh history.",
-                onResetSummaries,
-              )
+              askConfirm({
+                title: "Reset trend history",
+                message:
+                  "Delete the trend history for this baseline? Past summary points will be lost; the next scan starts a fresh history.",
+                confirmLabel: "Delete history",
+                onConfirm: onResetSummaries,
+              })
             }
           >
             Reset trend history
@@ -888,20 +1018,37 @@ function SettingsMenu({
             type="button"
             role="menuitem"
             className="settings-item settings-item-destructive"
+            disabled={scanning}
             onClick={() =>
-              confirmAndRun(
-                "Delete the change log for this baseline? Δ indicators clear until a future scan flips a rec again.",
-                onResetChanges,
-              )
+              askConfirm({
+                title: "Reset change history",
+                message:
+                  "Delete the change log for this baseline? Change indicators clear until a future scan flips a rec again.",
+                confirmLabel: "Delete change log",
+                onConfirm: onResetChanges,
+              })
             }
           >
             Reset change history
           </button>
         </div>
       )}
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          message={confirm.message}
+          confirmLabel={confirm.confirmLabel}
+          onConfirm={() => {
+            confirm.onConfirm();
+            setConfirm(null);
+          }}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
     </div>
   );
 }
+
 
 function GearIcon() {
   return (
@@ -920,11 +1067,6 @@ function GearIcon() {
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
-}
-
-function formatTimestamp(iso: string): string {
-  // YYYY-MM-DD HH:MM — terse, mono, sortable.
-  return iso.slice(0, 16).replace("T", " ");
 }
 
 function ScanErrorBanner({

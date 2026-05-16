@@ -75,6 +75,13 @@ export const commands = {
 	 *  finishes, after persisting it to disk.
 	 */
 	startScan: (baseline: Baseline, onRecord: Channel<ScanRecord>) => typedError<Scan, string>(__TAURI_INVOKE("start_scan", { baseline, onRecord })),
+	/**
+	 *  Requests cancellation of the in-flight scan by creating the active
+	 *  run's cooperative-cancel sentinel. The audit script stops at its
+	 *  next recommendation boundary and the run resolves as cancelled
+	 *  without persisting. A no-op when no scan is running.
+	 */
+	cancelScan: () => typedError<null, string>(__TAURI_INVOKE("cancel_scan")),
 };
 
 /* Types */
@@ -302,7 +309,7 @@ export type Scan = {
  *  needs it. `latest` drives current-scan rendering; `changes` powers
  *  per-rec delta indicators with persistence (a flag stays until the
  *  rec actually flips again, not just until the next no-op rescan);
- *  `summaries` feeds the trend chart and headline-strip math.
+ *  `summaries` feeds the trend chart and headline math.
  */
 export type ScanContext = {
 	latest: Scan | null,
@@ -369,7 +376,7 @@ export type ScanResult = {
 };
 
 /**
- *  Lightweight per-scan record for the trend chart and headline-strip
+ *  Lightweight per-scan record for the trend chart and headline
  *  math. Kept separate from full `Scan` files so we can show months of
  *  history without growing storage materially — counts mean the same
  *  thing across schema versions, so old summaries stay readable even

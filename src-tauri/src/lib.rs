@@ -11,6 +11,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .manage(commands::ScanControl::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_device_info,
             commands::parse_baseline,
@@ -24,6 +25,7 @@ pub fn run() {
             commands::reset_summaries,
             commands::reset_changes,
             commands::start_scan,
+            commands::cancel_scan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

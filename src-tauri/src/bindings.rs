@@ -28,6 +28,7 @@ pub fn export_to(out_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             crate::commands::reset_summaries,
             crate::commands::reset_changes,
             crate::commands::start_scan,
+            crate::commands::cancel_scan,
         ])
         .typ::<crate::commands::CachedBaseline>()
         .typ::<crate::commands::ScanContextLoad>()

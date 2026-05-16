@@ -15,7 +15,13 @@ param(
     # autoflush) to this file instead of stdout. Used by the
     # elevated-child code path in the Rust runner, where stdout can't be
     # piped back across the UAC boundary.
-    [string]$OutputPath
+    [string]$OutputPath,
+    # Optional cooperative-cancel sentinel. When set, the per-rec loop
+    # checks for this file before each recommendation and stops cleanly
+    # the moment it appears. The Rust runner creates it on a cancel
+    # request -- this avoids killing the (possibly elevated) child, which
+    # an unelevated parent can't do reliably.
+    [string]$CancelPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -675,7 +681,11 @@ try {
 
     Write-NdjsonDevice
 
+    $check_cancel = -not [string]::IsNullOrEmpty($CancelPath)
     foreach ($rec in $baseline.recommendations) {
+        if ($check_cancel -and (Test-Path -LiteralPath $CancelPath)) {
+            break
+        }
         Invoke-Rec $rec
     }
 }

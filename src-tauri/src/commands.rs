@@ -1,9 +1,12 @@
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::async_runtime;
 use tauri::ipc::Channel;
+use tauri::State;
 
 use crate::audit::generator;
 use crate::audit::merge::ScanCollector;
@@ -17,6 +20,43 @@ use crate::parser::{ParserProgress, PARSER_VERSION};
 use crate::storage::model::{AppState, UserState};
 use crate::storage::persist::ScanLoadErrors;
 use crate::storage::{paths, persist};
+
+/// Tauri-managed handle for cancelling the in-flight scan. Holds the
+/// path of the active scan's cooperative-cancel sentinel (see
+/// `runner::run`); `None` when no scan is running. The UI prevents
+/// concurrent scans, so a single slot is enough.
+#[derive(Default)]
+pub(crate) struct ScanControl {
+    cancel_path: Mutex<Option<PathBuf>>,
+}
+
+/// Builds a per-run sentinel path under the OS temp dir. Process id +
+/// millisecond timestamp keep back-to-back runs from colliding.
+fn cancel_sentinel_path() -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    std::env::temp_dir().join(format!("baselinelens_cancel_{pid}_{stamp}.flag"))
+}
+
+/// Retracts a finished run's cancel handle. Removes the on-disk sentinel
+/// unconditionally (best-effort — an undeletable file is a unique temp
+/// name no future run reads) and clears the in-memory slot *only* if it
+/// still points at `path`. The conditional clear means a subsequent
+/// scan that already published its own path can't be clobbered by a
+/// late-finishing prior run wiping the slot.
+fn clear_cancel_sentinel(scan_control: &ScanControl, path: &PathBuf) {
+    let _ = std::fs::remove_file(path);
+    let mut guard = scan_control
+        .cancel_path
+        .lock()
+        .expect("scan-control mutex is never held across a panic");
+    if guard.as_deref() == Some(path.as_path()) {
+        *guard = None;
+    }
+}
 
 /// Wraps a cached `Baseline` with a staleness flag so the frontend can
 /// surface a re-parse prompt without making a second IPC round-trip.
@@ -187,6 +227,7 @@ pub(crate) fn load_cached_baseline(sha: String) -> Result<Option<CachedBaseline>
 pub(crate) async fn start_scan(
     baseline: Baseline,
     on_record: Channel<ScanRecord>,
+    scan_control: State<'_, ScanControl>,
 ) -> Result<Scan, String> {
     let baseline_sha = baseline.source.pdf_sha256.clone();
     // Persist the baseline to its cache path so the PS script can read
@@ -197,28 +238,51 @@ pub(crate) async fn start_scan(
     persist::save_cached_baseline(&baseline).map_err(|err| err.to_string())?;
     let baseline_path = paths::baseline_cache_path(&baseline_sha)
         .map_err(|err| err.to_string())?;
-    let scan = async_runtime::spawn_blocking(move || -> Result<Scan, String> {
+
+    let cancel_path = cancel_sentinel_path();
+    // Drop any stale sentinel from a prior run that died before cleanup,
+    // then publish this run's path so `cancel_scan` can reach it.
+    let _ = std::fs::remove_file(&cancel_path);
+    *scan_control
+        .cancel_path
+        .lock()
+        .expect("scan-control mutex is never held across a panic") = Some(cancel_path.clone());
+
+    let run_cancel_path = cancel_path.clone();
+    let scan_result = async_runtime::spawn_blocking(move || -> Result<Scan, String> {
         let script_path = generator::ensure_script().map_err(|err| err.to_string())?;
         let mut collector = ScanCollector::new(
             baseline_sha,
             PARSER_VERSION.to_string(),
             AUDIT_SCRIPT_VERSION.to_string(),
         );
-        runner::run(&script_path, &baseline_path, |event| match event {
-            AuditEvent::Device(device) => collector.set_device(device),
-            AuditEvent::Result(record) => {
-                // Forward to the UI before storing; channel send is
-                // best-effort, but a closed channel just means the user
-                // closed the window — keep collecting either way.
-                let _ = on_record.send(record.clone());
-                collector.record(record);
-            }
-        })
+        runner::run(
+            &script_path,
+            &baseline_path,
+            &run_cancel_path,
+            |event| match event {
+                AuditEvent::Device(device) => collector.set_device(device),
+                AuditEvent::Result(record) => {
+                    // Forward to the UI before storing; channel send is
+                    // best-effort, but a closed channel just means the user
+                    // closed the window — keep collecting either way.
+                    let _ = on_record.send(record.clone());
+                    collector.record(record);
+                }
+            },
+        )
         .map_err(|err| err.to_string())?;
         Ok(collector.finish(None))
     })
-    .await
-    .map_err(|err| format!("scan task panicked: {err}"))??;
+    .await;
+
+    // Run resolved (success, error, cancel, or panic) — retract the
+    // cancel handle and clear the sentinel so a later click can't target
+    // a dead run. Runs on every exit path below since it precedes the
+    // `?` that would short-circuit on a failed/panicked task.
+    clear_cancel_sentinel(&scan_control, &cancel_path);
+
+    let scan = scan_result.map_err(|err| format!("scan task panicked: {err}"))??;
 
     // Load the saved exceptions so the trend summary credits closed-by-
     // paperwork recs the same way the level cards do. Missing or
@@ -235,4 +299,22 @@ pub(crate) async fn start_scan(
     };
     persist::save_scan_with_diff(&scan, &exceptions).map_err(|err| err.to_string())?;
     Ok(scan)
+}
+
+/// Requests cancellation of the in-flight scan by creating the active
+/// run's cooperative-cancel sentinel. The audit script stops at its
+/// next recommendation boundary and the run resolves as cancelled
+/// without persisting. A no-op when no scan is running.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn cancel_scan(scan_control: State<'_, ScanControl>) -> Result<(), String> {
+    let guard = scan_control
+        .cancel_path
+        .lock()
+        .expect("scan-control mutex is never held across a panic");
+    if let Some(path) = guard.as_ref() {
+        std::fs::write(path, b"")
+            .map_err(|err| format!("failed to signal cancellation: {err}"))?;
+    }
+    Ok(())
 }

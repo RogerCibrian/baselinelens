@@ -16,6 +16,7 @@ import {
   type Delta,
 } from "./data/changes";
 import type { ConsoleFilter } from "./data/consoleFilter";
+import { formatDate, formatDateShort } from "./format";
 import {
   categoryScores,
   scoresByLevel,
@@ -66,7 +67,7 @@ export default function Overview({
   const levels = scoresByLevel(baseline, scan, userState);
   const weakest = weakestCategories(baseline, scan, userState, 6);
 
-  const { improved, regressed } = useMemo(
+  const { improved, regressed, improvedTotal, regressedTotal } = useMemo(
     () => recentChanges(baseline, scan, userState, changes),
     [baseline, scan, userState, changes],
   );
@@ -98,10 +99,7 @@ export default function Overview({
           Compliance report ·{" "}
           <span className="mono">{formatDate(scan.startedAt)}</span>
         </p>
-        <HeadlineH1
-          headline={headline}
-          fallback={baseline.source.benchmarkName}
-        />
+        <HeadlineH1 headline={headline} />
         <HeadlineFacts headline={headline} />
         <p className="meta">
           <span className="mono">{scan.device.hostname}</span> ·{" "}
@@ -209,14 +207,18 @@ export default function Overview({
               tone="pass"
               symbol="▲"
               items={improved}
+              total={improvedTotal}
               onJump={(recId) => onJumpToConsole({ search: recId })}
+              onViewAll={() => onJumpToConsole({ delta: "improved" })}
             />
             <RecentlyChangedColumn
               title="Regressed"
               tone="fail"
               symbol="▼"
               items={regressed}
+              total={regressedTotal}
               onJump={(recId) => onJumpToConsole({ search: recId })}
+              onViewAll={() => onJumpToConsole({ delta: "regressed" })}
             />
           </div>
         )}
@@ -444,18 +446,14 @@ function passPctOf(summary: ScanSummary): number {
   return denom === 0 ? 0 : (summary.pass + summary.exception) / denom;
 }
 
-function HeadlineH1({
-  headline,
-  fallback,
-}: {
-  headline: Headline;
-  /** Used when no summaries exist yet (e.g. trend history was reset
-   * after a scan). Falls back to the benchmark name so the report
-   * always has a substantive H1. */
-  fallback: string;
-}) {
+function HeadlineH1({ headline }: { headline: Headline }) {
   if (headline.kind === "empty") {
-    return <h1 className="serif overview-headline">{fallback}</h1>;
+    // No summaries (trend history was reset) but a scan still exists —
+    // a "snapshot" framing reads as a report headline; the bare
+    // benchmark name did not.
+    return (
+      <h1 className="serif overview-headline">Compliance snapshot.</h1>
+    );
   }
   if (headline.kind === "first") {
     return <h1 className="serif overview-headline">First scan recorded.</h1>;
@@ -472,7 +470,13 @@ function HeadlineH1({
 }
 
 function HeadlineFacts({ headline }: { headline: Headline }) {
-  if (headline.kind === "empty") return null;
+  if (headline.kind === "empty") {
+    return (
+      <p className="headline-facts headline-facts-first">
+        Trend resumes after the next scan.
+      </p>
+    );
+  }
   if (headline.kind === "first") {
     return (
       <p className="headline-facts headline-facts-first">
@@ -519,7 +523,14 @@ function recentChanges(
   scan: Scan,
   userState: UserState,
   changes: ChangeEvent[],
-): { improved: RecentChange[]; regressed: RecentChange[] } {
+): {
+  improved: RecentChange[];
+  regressed: RecentChange[];
+  /** Pre-cap bucket sizes so a capped column can offer a "view all"
+   * link into the matching Console delta view. */
+  improvedTotal: number;
+  regressedTotal: number;
+} {
   const index = indexLatestChanges(changes);
   const buckets: Record<Delta, RecentChange[]> = {
     improved: [],
@@ -540,6 +551,8 @@ function recentChanges(
     regressed: buckets.regressed
       .sort(byRecency)
       .slice(0, RECENTLY_CHANGED_LIMIT),
+    improvedTotal: buckets.improved.length,
+    regressedTotal: buckets.regressed.length,
   };
 }
 
@@ -636,6 +649,13 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
 
       {points.map((p, i) => (
         <g key={p.startedAt}>
+          {/* Wide transparent hit target so the per-point tooltip is
+              reachable without pixel-hunting the 3px dot. */}
+          <circle cx={x(i)} cy={y(values[i])} r={12} fill="transparent">
+            <title>
+              {`${formatDateShort(p.startedAt)} — ${values[i].toFixed(1)}% in scope`}
+            </title>
+          </circle>
           <circle
             cx={x(i)}
             cy={y(values[i])}
@@ -643,6 +663,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
             fill="var(--v-paper)"
             stroke="var(--v-accent)"
             strokeWidth={1.5}
+            pointerEvents="none"
           />
           <text
             x={x(i)}
@@ -650,7 +671,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
             className="trend-chart-axis mono"
             textAnchor="middle"
           >
-            {formatChartDate(p.startedAt)}
+            {formatDateShort(p.startedAt)}
           </text>
         </g>
       ))}
@@ -658,55 +679,68 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
   );
 }
 
-function formatChartDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
 
 function RecentlyChangedColumn({
   title,
   tone,
   symbol,
   items,
+  total,
   onJump,
+  onViewAll,
 }: {
   title: string;
   tone: "pass" | "fail";
   symbol: string;
   items: RecentChange[];
+  /** Pre-cap bucket size. When it exceeds the shown items, a footer
+   * link offers the full list in the Console's matching delta view. */
+  total: number;
   onJump: (recId: string) => void;
+  onViewAll: () => void;
 }) {
   return (
     <div className="recently-changed-col">
       <div className={`recently-changed-head tone-${tone}`}>
         <span aria-hidden="true">{symbol}</span>
         <span>{title}</span>
-        <span className="recently-changed-count muted">· {items.length}</span>
+        <span className="recently-changed-count muted">· {total}</span>
       </div>
       {items.length === 0 ? (
         <p className="recently-changed-empty muted">None recently.</p>
       ) : (
-        <ul className="recently-changed-list">
-          {items.map(({ rec }) => (
-            <li key={rec.id}>
-              <button
-                type="button"
-                className="recently-changed-row"
-                onClick={() => onJump(rec.id)}
-              >
-                <div className="recently-changed-meta">
-                  <span className="mono recently-changed-id">{rec.id}</span>
-                  <span
-                    className={`level-chip level-${rec.level.toLowerCase()}`}
-                  >
-                    {rec.level}
-                  </span>
-                </div>
-                <div className="recently-changed-title">{rec.title}</div>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="recently-changed-list">
+            {items.map(({ rec }) => (
+              <li key={rec.id}>
+                <button
+                  type="button"
+                  className="recently-changed-row"
+                  onClick={() => onJump(rec.id)}
+                >
+                  <div className="recently-changed-meta">
+                    <span className="mono recently-changed-id">{rec.id}</span>
+                    <span
+                      className={`level-chip level-${rec.level.toLowerCase()}`}
+                    >
+                      {rec.level}
+                    </span>
+                  </div>
+                  <div className="recently-changed-title">{rec.title}</div>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {total > items.length && (
+            <button
+              type="button"
+              className="recently-changed-more"
+              onClick={onViewAll}
+            >
+              View all {total} in Console →
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -730,6 +764,3 @@ function levelName(level: Level): string {
   }
 }
 
-function formatDate(iso: string): string {
-  return iso.slice(0, 10);
-}

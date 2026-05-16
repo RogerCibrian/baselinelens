@@ -1,10 +1,17 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type { Baseline, DeviceInfo, ParserProgress, Theme } from "./bindings";
+import { useFocusTrap } from "./hooks";
 import ThemeSegment from "./ThemeSegment";
 
 import "./Onboarding.css";
@@ -170,6 +177,20 @@ function Action({
     <section className="ob-action">
       <MachineStrip deviceInfo={deviceInfo} />
       <DropZone state={state} onBrowse={onBrowse} />
+      <p className="ob-get-benchmark">
+        Don't have the PDF yet?{" "}
+        <button
+          type="button"
+          className="ob-link"
+          onClick={() =>
+            void openUrl(
+              "https://www.cisecurity.org/benchmark/microsoft_windows_desktop",
+            )
+          }
+        >
+          Download it from cisecurity.org
+        </button>
+      </p>
       {state.kind === "error" ? (
         <div className="ob-error" role="alert">
           <p className="ob-error-headline">{friendlyError(state.message)}</p>
@@ -195,25 +216,28 @@ function MachineStrip({ deviceInfo }: { deviceInfo: DeviceInfo | null }) {
       </div>
       <div>
         <div className="ob-machine-label">Will scan</div>
-        <div>
-          <span className="ob-machine-host">{deviceInfo?.hostname ?? ""}</span>
-          <span className="ob-machine-meta">
-            {deviceInfo && (
-              <>
-                {" · "}
-                {deviceInfo.osName} {deviceInfo.osVersion}
-                {" · "}
-                Build {deviceInfo.osBuild}
-                {management && (
-                  <>
-                    {" · "}
-                    {management}
-                  </>
-                )}
-              </>
-            )}
-          </span>
-        </div>
+        {deviceInfo ? (
+          <div>
+            <span className="ob-machine-host">{deviceInfo.hostname}</span>
+            <span className="ob-machine-meta">
+              {" · "}
+              {deviceInfo.osName} {deviceInfo.osVersion}
+              {" · "}
+              Build {deviceInfo.osBuild}
+              {management && (
+                <>
+                  {" · "}
+                  {management}
+                </>
+              )}
+            </span>
+          </div>
+        ) : (
+          <div className="ob-machine-skeleton" aria-hidden="true">
+            <span className="ob-skeleton-bar ob-skeleton-host" />
+            <span className="ob-skeleton-bar ob-skeleton-meta" />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -276,30 +300,7 @@ function DropZone({
         ) : (
           <>
             <span className="ob-drop-label">Drop benchmark PDF here</span>
-            <span className="ob-drop-sub">
-              or{" "}
-              <span
-                className="ob-drop-link"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onBrowse();
-                }}
-              >
-                browse files
-              </span>{" "}
-              · download from{" "}
-              <span
-                className="ob-drop-link"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void openUrl(
-                    "https://www.cisecurity.org/benchmark/microsoft_windows_desktop",
-                  );
-                }}
-              >
-                cisecurity.org
-              </span>
-            </span>
+            <span className="ob-drop-sub">or click to browse files</span>
           </>
         )}
       </span>
@@ -492,6 +493,9 @@ function ConfirmModal({
 }) {
   // Esc closes; backdrop click closes too. Focus the primary action so
   // Enter confirms when the modal opens.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(true, dialogRef);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onCancel();
@@ -501,16 +505,21 @@ function ConfirmModal({
   }, [onCancel]);
 
   return (
-    <div
-      className="ob-confirm-scrim"
-      role="dialog"
-      aria-modal="true"
-      onClick={onCancel}
-    >
-      <div className="ob-confirm" onClick={(e) => e.stopPropagation()}>
+    <div className="ob-confirm-scrim" onClick={onCancel} aria-hidden="true">
+      <div
+        className="ob-confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ob-confirm-title"
+        aria-describedby="ob-confirm-sub"
+        ref={dialogRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="ob-confirm-eyebrow">Confirm scan</div>
-        <h2 className="ob-confirm-h">Ready to scan this device?</h2>
-        <p className="ob-confirm-sub">
+        <h2 id="ob-confirm-title" className="ob-confirm-h">
+          Ready to scan this device?
+        </h2>
+        <p id="ob-confirm-sub" className="ob-confirm-sub">
           We parsed the benchmark and matched it to this machine. Review the
           details below before starting.
         </p>

@@ -37,6 +37,9 @@ import {
   type CategoryScore,
   type EffectiveStatus,
 } from "./data/score";
+import ConfirmDialog from "./ConfirmDialog";
+import { formatAge, formatTimestamp } from "./format";
+import { useFocusTrap } from "./hooks";
 
 type SortKey = "id" | "status" | "level" | "title" | "category";
 type SortDirection = "asc" | "desc";
@@ -76,7 +79,7 @@ export default function Console({
    * that reopens it. */
   railCollapsed: boolean;
   onRailCollapsedChange: (next: boolean) => void;
-  onUpdateUserState: (next: UserState) => void;
+  onUpdateUserState: (next: UserState) => Promise<boolean>;
   /** Deletes the per-rec change log and reloads. Invoked from the inline
    * recovery action when `loadErrors.changes` is set. */
   onResetChanges: () => void;
@@ -214,7 +217,9 @@ export default function Console({
         />
         {loadErrors.changes && (
           <p className="surface-notice">
-            <span>Change history can't be read — Δ indicators disabled.</span>
+            <span>
+              Change history can't be read — change indicators disabled.
+            </span>
             <button
               type="button"
               className="surface-notice-action"
@@ -229,6 +234,10 @@ export default function Console({
             onClear={() => onFilterChange(defaultConsoleFilter)}
           />
         ) : (
+          <>
+          <p className="rec-table-hint muted">
+            Click a row to open it · ↑ ↓ to move, Enter to open
+          </p>
           <RecTable
             recs={sorted}
             scan={scan}
@@ -241,6 +250,7 @@ export default function Console({
             selectedRecId={selectedRecId}
             onOpen={selectAndOpen}
           />
+          </>
         )}
       </div>
       <DetailDrawer
@@ -438,7 +448,17 @@ function SavedViewRail({
                 type="button"
                 className={`saved-view${active ? " saved-view-active" : ""}`}
                 onClick={() =>
-                  onFilterChange({ ...defaultConsoleFilter, ...view.filter })
+                  onFilterChange(
+                    // Empty filter = the "All" view: a true reset.
+                    // Every other view merges its fields onto the
+                    // current filter so it composes with a selected
+                    // category/search — the same merge semantics the
+                    // Categories list below uses, so the two rail
+                    // sections behave the same way.
+                    Object.keys(view.filter).length === 0
+                      ? defaultConsoleFilter
+                      : { ...filter, ...view.filter },
+                  )
                 }
               >
                 <span className="saved-view-text">
@@ -518,15 +538,24 @@ function toneFor(pct: number): "pass" | "warn" | "fail" {
   return "fail";
 }
 
+/**
+ * A view is highlighted when the fields it defines match the current
+ * filter — category and search (orthogonal refinements) are ignored so
+ * a view stays selected after the user also picks a category. The empty
+ * "All" view is active only when nothing is filtered at all.
+ */
 function isViewActive(view: SavedView, current: ConsoleFilter): boolean {
-  const target = { ...defaultConsoleFilter, ...view.filter };
-  return (
-    target.level === current.level &&
-    target.status === current.status &&
-    target.category === current.category &&
-    target.delta === current.delta &&
-    target.search === current.search
-  );
+  const keys = Object.keys(view.filter) as (keyof ConsoleFilter)[];
+  if (keys.length === 0) {
+    return (
+      current.level === "all" &&
+      current.status === "all" &&
+      current.category === null &&
+      current.delta === "all" &&
+      current.search.trim() === ""
+    );
+  }
+  return keys.every((key) => current[key] === view.filter[key]);
 }
 
 /**
@@ -568,6 +597,32 @@ function FilterBar({
    * the chip; absence means the chip falls back to the bare number. */
   categoryName: string | null;
 }) {
+  // Local draft so each keystroke is instant while the (per-rec
+  // effectiveStatus/computeDelta) filter recompute is debounced —
+  // typing in a 500-rec baseline shouldn't re-filter on every key.
+  const [draft, setDraft] = useState(filter.search);
+  useEffect(() => {
+    setDraft(filter.search);
+  }, [filter.search]);
+  useEffect(() => {
+    if (draft === filter.search) return;
+    const timer = setTimeout(
+      () => onFilterChange({ ...filter, search: draft }),
+      200,
+    );
+    return () => clearTimeout(timer);
+    // Re-running only on `draft` is intentional: an external filter
+    // change resyncs the draft above, which no-ops this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
+
+  const anyActive =
+    filter.level !== "all" ||
+    filter.status !== "all" ||
+    filter.category !== null ||
+    filter.delta !== "all" ||
+    filter.search.trim() !== "";
+
   return (
     <div className="filter-bar">
       {showViewsButton && (
@@ -585,8 +640,8 @@ function FilterBar({
         type="search"
         className="filter-search"
         placeholder="Search id or title…"
-        value={filter.search}
-        onChange={(e) => onFilterChange({ ...filter, search: e.target.value })}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
       />
       <FilterPill
         label="Status"
@@ -632,6 +687,18 @@ function FilterBar({
         </button>
       )}
       <ColumnsMenu columns={columns} onChange={onColumnsChange} />
+      {anyActive && (
+        <button
+          type="button"
+          className="filter-clear"
+          onClick={() => {
+            setDraft("");
+            onFilterChange(defaultConsoleFilter);
+          }}
+        >
+          Clear filters
+        </button>
+      )}
       <span className="filter-bar-spacer" />
       <span className="muted mono filter-count">
         {shown} of {total}
@@ -801,9 +868,11 @@ function RecTable({
           {columns.found && <th>Found</th>}
           <th
             className="rec-table-delta-col"
-            aria-label="Change vs. prior scan"
             title="Change vs. prior scan"
-          />
+          >
+            <span aria-hidden="true">Δ</span>
+            <span className="sr-only">Change vs. prior scan</span>
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -816,9 +885,19 @@ function RecTable({
           return (
             <tr
               key={rec.id}
+              data-rec-id={rec.id}
+              role="button"
+              tabIndex={0}
               onClick={() => onOpen(rec.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onOpen(rec.id);
+                }
+              }}
               className={selected ? "rec-row-selected" : ""}
               aria-selected={selected}
+              aria-label={`${rec.id} ${rec.title} — open details`}
             >
               <td className="mono">{rec.id}</td>
               <td>
@@ -839,12 +918,12 @@ function RecTable({
               )}
               {columns.expected && (
                 <td className="muted mono rec-table-value-col">
-                  {valueCell(result?.expected)}
+                  {valueCell(result?.expected, result?.checks?.length)}
                 </td>
               )}
               {columns.found && (
                 <td className="muted mono rec-table-value-col">
-                  {valueCell(result?.currentValue)}
+                  {valueCell(result?.currentValue, result?.checks?.length)}
                 </td>
               )}
               <td className="rec-table-delta-col">
@@ -864,8 +943,23 @@ function RecTable({
  * with multi-check structured output (registry recs with several
  * value names) where the drawer's check table is the canonical view.
  */
-function valueCell(value: string | null | undefined): string {
-  return value && value.trim().length > 0 ? value : "—";
+function valueCell(
+  value: string | null | undefined,
+  checksLen: number | undefined,
+): ReactNode {
+  if (value && value.trim().length > 0) return value;
+  // Multi-check recs (registry recs with several value names) carry no
+  // flat string — the data lives in the drawer's check table. Surface
+  // the count instead of a bare em-dash so the cell doesn't read as
+  // "no data" for exactly the richest rows.
+  if (checksLen && checksLen > 0) {
+    return (
+      <span className="muted-italic">
+        {checksLen} check{checksLen === 1 ? "" : "s"}
+      </span>
+    );
+  }
+  return "—";
 }
 
 function SortHeader({
@@ -912,14 +1006,22 @@ function StatusPill({ status }: { status: EffectiveStatus }) {
 function DeltaCell({ delta }: { delta: Delta }) {
   if (delta === "improved") {
     return (
-      <span className="delta-marker delta-improved" aria-label="Improved">
+      <span
+        className="delta-marker delta-improved"
+        aria-label="Improved since the prior scan"
+        title="Improved since the prior scan"
+      >
         ▲
       </span>
     );
   }
   if (delta === "regressed") {
     return (
-      <span className="delta-marker delta-regressed" aria-label="Regressed">
+      <span
+        className="delta-marker delta-regressed"
+        aria-label="Regressed since the prior scan"
+        title="Regressed since the prior scan"
+      >
         ▼
       </span>
     );
@@ -962,13 +1064,15 @@ function DetailDrawer({
    * current scan-time status. */
   changesIndex: Map<string, ChangeEvent>;
   onClose: () => void;
-  onUpdate: (next: UserState) => void;
+  onUpdate: (next: UserState) => Promise<boolean>;
 }) {
   const [exceptionReason, setExceptionReason] = useState("");
   const [exceptionGrantedBy, setExceptionGrantedBy] = useState("");
   const [noteText, setNoteText] = useState("");
   const [savedFlash, setSavedFlash] = useState<"exception" | "note" | null>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const [saveError, setSaveError] = useState<"exception" | "note" | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!rec) return;
@@ -977,25 +1081,46 @@ function DetailDrawer({
     setExceptionReason(ex?.reason ?? "");
     setExceptionGrantedBy(ex?.grantedBy ?? "");
     setNoteText(note?.text ?? "");
+    setSaveError(null);
   }, [rec, userState]);
 
   const isOpen = rec !== null;
 
-  // Focus the close button when the drawer transitions from closed to
-  // open. Tab moves on into the form, and Esc has somewhere to live.
-  useEffect(() => {
-    if (isOpen) closeRef.current?.focus();
-  }, [isOpen]);
+  // Confine Tab to the drawer while open and hand focus back to the
+  // originating row on close. Suspended while the discard prompt is up
+  // so that modal owns focus instead.
+  useFocusTrap(isOpen && !confirmDiscard, drawerRef);
 
-  // Esc closes from anywhere while the drawer is open.
+  const savedException = rec ? userState.exceptions[rec.id] : undefined;
+  const savedNote = rec ? userState.notes[rec.id] : undefined;
+  // Unsaved-edit guard: compare trimmed form values to what's persisted
+  // so closing (×, backdrop, Esc) can warn before discarding an
+  // exception justification or note the user typed but didn't save.
+  const dirty =
+    exceptionReason.trim() !== (savedException?.reason ?? "") ||
+    (exceptionGrantedBy.trim() || "") !== (savedException?.grantedBy ?? "") ||
+    noteText.trim() !== (savedNote?.text ?? "");
+
+  function attemptClose() {
+    if (dirty) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onClose();
+  }
+
+  // Esc requests close (routed through the unsaved-edit guard). Ignored
+  // while the discard prompt is open — that modal handles its own Esc.
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || confirmDiscard) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") attemptClose();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isOpen, onClose]);
+    // attemptClose closes over `dirty`; isOpen/confirmDiscard gate it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, confirmDiscard, dirty]);
 
   // Briefly shows "Saved" next to the action button. The closure-captured
   // `which` means rapid back-to-back saves don't clobber each other's flash.
@@ -1004,6 +1129,23 @@ function DetailDrawer({
     setTimeout(() => {
       setSavedFlash((prev) => (prev === which ? null : prev));
     }, 2000);
+  }
+
+  // Reflects the real persistence outcome instead of always flashing
+  // "Saved": a failed write (disk error, etc.) leaves the in-memory
+  // state ahead of disk, so the user needs to know to retry.
+  async function persist(
+    which: "exception" | "note",
+    next: UserState,
+  ) {
+    const ok = await onUpdate(next);
+    if (ok) {
+      setSaveError((prev) => (prev === which ? null : prev));
+      flashSaved(which);
+    } else {
+      setSavedFlash((prev) => (prev === which ? null : prev));
+      setSaveError(which);
+    }
   }
 
   function saveException() {
@@ -1016,18 +1158,17 @@ function DetailDrawer({
       grantedAt: existing?.grantedAt ?? new Date().toISOString(),
       grantedBy: exceptionGrantedBy.trim() || null,
     };
-    onUpdate({
+    void persist("exception", {
       ...userState,
       exceptions: { ...userState.exceptions, [rec.id]: next },
     });
-    flashSaved("exception");
   }
 
   function clearException() {
     if (!rec) return;
     const exceptions = { ...userState.exceptions };
     delete exceptions[rec.id];
-    onUpdate({ ...userState, exceptions });
+    void persist("exception", { ...userState, exceptions });
   }
 
   function saveNote() {
@@ -1036,18 +1177,17 @@ function DetailDrawer({
       text: noteText.trim(),
       updatedAt: new Date().toISOString(),
     };
-    onUpdate({
+    void persist("note", {
       ...userState,
       notes: { ...userState.notes, [rec.id]: next },
     });
-    flashSaved("note");
   }
 
   function clearNote() {
     if (!rec) return;
     const notes = { ...userState.notes };
     delete notes[rec.id];
-    onUpdate({ ...userState, notes });
+    void persist("note", { ...userState, notes });
   }
 
   const status = rec ? effectiveStatus(rec, scan, userState) : null;
@@ -1077,20 +1217,32 @@ function DetailDrawer({
     <div className={`drawer-overlay${isOpen ? " drawer-overlay-open" : ""}`}>
       <div
         className="drawer-backdrop"
-        onClick={onClose}
+        onClick={attemptClose}
         aria-hidden="true"
       />
-      <aside className="drawer" role="dialog" aria-modal="true">
+      <aside
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="drawer-title-h"
+        ref={drawerRef}
+      >
         {rec && (
           <>
             <header className="drawer-head">
               <div className="drawer-head-row">
-                <span className="mono drawer-id">{rec.id}</span>
+                <span className="drawer-head-id">
+                  <span className="mono drawer-id">{rec.id}</span>
+                  {dirty && (
+                    <span className="drawer-dirty" role="status">
+                      Unsaved
+                    </span>
+                  )}
+                </span>
                 <button
-                  ref={closeRef}
                   type="button"
                   className="drawer-close"
-                  onClick={onClose}
+                  onClick={attemptClose}
                   aria-label="Close drawer"
                 >
                   ×
@@ -1107,7 +1259,9 @@ function DetailDrawer({
                     : "Manual check"}
                 </span>
               </div>
-              <h2 className="drawer-title">{rec.title}</h2>
+              <h2 id="drawer-title-h" className="drawer-title">
+                {rec.title}
+              </h2>
               <DrawerCategoryMeta
                 baseline={baseline}
                 number={rec.categoryNumber}
@@ -1176,6 +1330,11 @@ function DetailDrawer({
                   {savedFlash === "exception" && (
                     <span className="saved-flash" role="status">Saved</span>
                   )}
+                  {saveError === "exception" && (
+                    <span className="save-error" role="alert">
+                      Couldn't save — not stored on disk. Try again.
+                    </span>
+                  )}
                 </div>
               </section>
 
@@ -1209,6 +1368,11 @@ function DetailDrawer({
                   )}
                   {savedFlash === "note" && (
                     <span className="saved-flash" role="status">Saved</span>
+                  )}
+                  {saveError === "note" && (
+                    <span className="save-error" role="alert">
+                      Couldn't save — not stored on disk. Try again.
+                    </span>
                   )}
                 </div>
               </section>
@@ -1244,6 +1408,18 @@ function DetailDrawer({
           </>
         )}
       </aside>
+      {confirmDiscard && (
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          message="This panel has edits that haven't been saved. Closing will lose them."
+          confirmLabel="Discard"
+          onConfirm={() => {
+            setConfirmDiscard(false);
+            onClose();
+          }}
+          onCancel={() => setConfirmDiscard(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1316,7 +1492,7 @@ function ScanResultSection({
           {result.status}
         </dd>
         <dt>Last scanned</dt>
-        <dd className="mono">{formatScanTimestamp(result.measuredAt)}</dd>
+        <dd className="mono">{formatTimestamp(result.measuredAt)}</dd>
         {stateAge && (
           <>
             <dt>{stateAge.label}</dt>
@@ -1368,29 +1544,6 @@ function ScanResultSection({
       )}
     </section>
   );
-}
-
-/** YYYY-MM-DD HH:MM — terse, mono, sortable. Mirrors the top bar's
- * timestamp style for consistency. */
-function formatScanTimestamp(iso: string): string {
-  return iso.slice(0, 16).replace("T", " ");
-}
-
-/** Coarse duration from `fromIso` to now, in the largest unit that
- * still reads cleanly: "12 days", "3 hours", "5 months". */
-function formatAge(fromIso: string): string {
-  const elapsedMs = Date.now() - Date.parse(fromIso);
-  const minutes = Math.floor(elapsedMs / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"}`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} day${days === 1 ? "" : "s"}`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months} month${months === 1 ? "" : "s"}`;
-  const years = Math.floor(days / 365);
-  return `${years} year${years === 1 ? "" : "s"}`;
 }
 
 /**
