@@ -110,6 +110,88 @@ function Get-RegValue {
     }
 }
 
+# Authoritative Entra/Azure AD tenant ID for this device. Some policy
+# keys (e.g. PassportForWork) live under a per-tenant GUID subkey that
+# the benchmark writes as a '<Tenant-ID>' placeholder. Resolved from the
+# device's join record rather than trusting whatever subkey happens to
+# exist. Cached (incl. a negative result) since it's stable per scan.
+$script:tenant_id = $null
+$script:tenant_id_resolved = $false
+function Resolve-TenantId {
+    if ($script:tenant_id_resolved) { return $script:tenant_id }
+    $script:tenant_id_resolved = $true
+
+    # Primary: the CloudDomainJoin record -- the same data dsregcmd
+    # surfaces, one subkey per join cert thumbprint.
+    try {
+        $join_info = 'HKLM:\SYSTEM\CurrentControlSet\Control\CloudDomainJoin\JoinInfo'
+        if (Test-Path -LiteralPath $join_info) {
+            foreach ($sub in Get-ChildItem -LiteralPath $join_info -ErrorAction Stop) {
+                $tid = (Get-ItemProperty -LiteralPath $sub.PSPath -Name 'TenantId' -ErrorAction SilentlyContinue).TenantId
+                if (-not [string]::IsNullOrWhiteSpace($tid)) {
+                    $script:tenant_id = $tid
+                    return $tid
+                }
+            }
+        }
+    } catch {
+        # Fall through to dsregcmd.
+    }
+
+    # Fallback: dsregcmd /status. The 'TenantId' field name is not
+    # localized, so the match is stable across UI languages.
+    try {
+        $status = & dsregcmd.exe /status 2>$null
+        $match = $status | Select-String -Pattern 'TenantId\s*:\s*([0-9A-Fa-f-]{36})'
+        if ($match) {
+            $script:tenant_id = $match.Matches[0].Groups[1].Value
+            return $script:tenant_id
+        }
+    } catch {
+        # No authoritative source available.
+    }
+    return $null
+}
+
+# Resolves a registry check path before reading it. Returns a hashtable
+# with 'kind':
+#   'ok'    -> 'path' holds the concrete, readable path
+#   'fail'  -> a required '<Tenant-ID>' couldn't be resolved, so the
+#              per-tenant policy can't be confirmed (a real Fail, not an
+#              automation gap)
+#   'error' -> an unsupported placeholder or an unparseable path; the
+#              rec is reported Error with 'reason'
+function Resolve-CheckPath {
+    param([Parameter(Mandatory)][string]$Path)
+    $resolved = $Path
+    foreach ($ph in [regex]::Matches($Path, '<[^>]+>')) {
+        $token = $ph.Value
+        $norm = ($token.Trim('<', '>') -replace '[\s_-]', '').ToLowerInvariant()
+        if ($norm -eq 'tenantid') {
+            $tid = Resolve-TenantId
+            if ([string]::IsNullOrWhiteSpace($tid)) {
+                return @{
+                    kind   = 'fail'
+                    reason = 'Entra tenant ID could not be determined; per-tenant policy cannot be confirmed'
+                }
+            }
+            $resolved = $resolved.Replace($token, $tid)
+        } else {
+            return @{
+                kind   = 'error'
+                reason = "Unsupported registry path placeholder $token"
+            }
+        }
+    }
+    if ($resolved -notmatch '^HK(LM|U)\\' -or $resolved -match '[:<>]') {
+        return @{
+            kind   = 'error'
+            reason = 'Registry path could not be parsed'
+        }
+    }
+    return @{ kind = 'ok'; path = $resolved }
+}
+
 # ============================================================================
 # System-state caches
 # ============================================================================
@@ -235,57 +317,45 @@ function Get-PrivilegeSids {
 # Display-name mappings
 # ============================================================================
 
-# CIS recs describe user rights by their Local Security Policy display
-# name ("Access this computer from the network"); secedit's INI uses the
-# underlying LSP constant ("SeNetworkLogonRight"). Recs whose display
-# name isn't in this table fall through to Manual rather than guess.
-# Sourced from Microsoft's "User Rights Assignment" reference.
+# Maps each User Rights Assignment setting to its LSP constant, which is
+# what secedit's INI is keyed on. Names not in this table fall through
+# to Manual rather than guess.
 $script:user_rights_map = @{
-    'Access Credential Manager as a trusted caller'                      = 'SeTrustedCredManAccessPrivilege'
-    'Access this computer from the network'                              = 'SeNetworkLogonRight'
-    'Act as part of the operating system'                                = 'SeTcbPrivilege'
-    'Add workstations to domain'                                         = 'SeMachineAccountPrivilege'
-    'Adjust memory quotas for a process'                                 = 'SeIncreaseQuotaPrivilege'
-    'Allow log on locally'                                               = 'SeInteractiveLogonRight'
-    'Allow log on through Remote Desktop Services'                       = 'SeRemoteInteractiveLogonRight'
-    'Back up files and directories'                                      = 'SeBackupPrivilege'
-    'Bypass traverse checking'                                           = 'SeChangeNotifyPrivilege'
-    'Change the system time'                                             = 'SeSystemtimePrivilege'
-    'Change the time zone'                                               = 'SeTimeZonePrivilege'
-    'Create a pagefile'                                                  = 'SeCreatePagefilePrivilege'
-    'Create a token object'                                              = 'SeCreateTokenPrivilege'
-    'Create global objects'                                              = 'SeCreateGlobalPrivilege'
-    'Create permanent shared objects'                                    = 'SeCreatePermanentPrivilege'
-    'Create symbolic links'                                              = 'SeCreateSymbolicLinkPrivilege'
-    'Debug programs'                                                     = 'SeDebugPrivilege'
-    'Deny access to this computer from the network'                      = 'SeDenyNetworkLogonRight'
-    'Deny log on as a batch job'                                         = 'SeDenyBatchLogonRight'
-    'Deny log on as a service'                                           = 'SeDenyServiceLogonRight'
-    'Deny log on locally'                                                = 'SeDenyInteractiveLogonRight'
-    'Deny log on through Remote Desktop Services'                        = 'SeDenyRemoteInteractiveLogonRight'
-    'Enable computer and user accounts to be trusted for delegation'     = 'SeEnableDelegationPrivilege'
-    'Force shutdown from a remote system'                                = 'SeRemoteShutdownPrivilege'
-    'Generate security audits'                                           = 'SeAuditPrivilege'
-    'Impersonate a client after authentication'                          = 'SeImpersonatePrivilege'
-    'Increase a process working set'                                     = 'SeIncreaseWorkingSetPrivilege'
-    'Increase scheduling priority'                                       = 'SeIncreaseBasePriorityPrivilege'
-    'Load and unload device drivers'                                     = 'SeLoadDriverPrivilege'
-    'Lock pages in memory'                                               = 'SeLockMemoryPrivilege'
-    'Log on as a batch job'                                              = 'SeBatchLogonRight'
-    'Log on as a service'                                                = 'SeServiceLogonRight'
-    'Manage auditing and security log'                                   = 'SeSecurityPrivilege'
-    'Modify an object label'                                             = 'SeRelabelPrivilege'
-    'Modify firmware environment values'                                 = 'SeSystemEnvironmentPrivilege'
-    'Obtain an impersonation token for another user in the same session' = 'SeDelegateSessionUserImpersonatePrivilege'
-    'Perform volume maintenance tasks'                                   = 'SeManageVolumePrivilege'
-    'Profile single process'                                             = 'SeProfileSingleProcessPrivilege'
-    'Profile system performance'                                         = 'SeSystemProfilePrivilege'
-    'Remove computer from docking station'                               = 'SeUndockPrivilege'
-    'Replace a process level token'                                      = 'SeAssignPrimaryTokenPrivilege'
-    'Restore files and directories'                                      = 'SeRestorePrivilege'
-    'Shut down the system'                                               = 'SeShutdownPrivilege'
-    'Synchronize directory service data'                                 = 'SeSyncAgentPrivilege'
-    'Take ownership of files or other objects'                           = 'SeTakeOwnershipPrivilege'
+    'Access Credential Manager As Trusted Caller' = 'SeTrustedCredManAccessPrivilege'
+    'Access From Network'                         = 'SeNetworkLogonRight'
+    'Act As Part Of The Operating System'         = 'SeTcbPrivilege'
+    'Allow Local Log On'                          = 'SeInteractiveLogonRight'
+    'Backup Files And Directories'                = 'SeBackupPrivilege'
+    'Change System Time'                          = 'SeSystemtimePrivilege'
+    'Create Global Objects'                       = 'SeCreateGlobalPrivilege'
+    'Create Page File'                            = 'SeCreatePagefilePrivilege'
+    'Create Permanent Shared Objects'             = 'SeCreatePermanentPrivilege'
+    'Create Symbolic Links'                       = 'SeCreateSymbolicLinkPrivilege'
+    'Create Token'                                = 'SeCreateTokenPrivilege'
+    'Debug Programs'                              = 'SeDebugPrivilege'
+    'Deny Access From Network'                    = 'SeDenyNetworkLogonRight'
+    'Deny Local Log On'                           = 'SeDenyInteractiveLogonRight'
+    'Deny Log On As Batch Job'                    = 'SeDenyBatchLogonRight'
+    'Deny Log On As Service Job'                  = 'SeDenyServiceLogonRight'
+    'Deny Remote Desktop Services Log On'         = 'SeDenyRemoteInteractiveLogonRight'
+    'Enable Delegation'                           = 'SeEnableDelegationPrivilege'
+    'Generate security audits'                    = 'SeAuditPrivilege'
+    'Impersonate Client'                          = 'SeImpersonatePrivilege'
+    'Increase scheduling priority'                = 'SeIncreaseBasePriorityPrivilege'
+    'Load Unload Device Drivers'                  = 'SeLoadDriverPrivilege'
+    'Lock Memory'                                 = 'SeLockMemoryPrivilege'
+    'Log On As Batch Job'                         = 'SeBatchLogonRight'
+    'Manage auditing and security log'            = 'SeSecurityPrivilege'
+    'Manage Volume'                               = 'SeManageVolumePrivilege'
+    'Modify Firmware Environment'                 = 'SeSystemEnvironmentPrivilege'
+    'Modify Object Label'                         = 'SeRelabelPrivilege'
+    'Profile single process'                      = 'SeProfileSingleProcessPrivilege'
+    'Profile System Performance'                  = 'SeSystemProfilePrivilege'
+    'Remote Shutdown'                             = 'SeRemoteShutdownPrivilege'
+    'Replace Process Level Token'                 = 'SeAssignPrimaryTokenPrivilege'
+    'Restore files and directories'               = 'SeRestorePrivilege'
+    'Shut Down The System'                        = 'SeShutdownPrivilege'
+    'Take Ownership'                              = 'SeTakeOwnershipPrivilege'
 }
 
 # Local Security Policy -> Security Options display names -> secedit INI
@@ -445,22 +515,48 @@ function Invoke-Rec {
                 $passes = @()
                 $current_summary = @()
                 $expected_summary = @()
+                $path_error = $null
                 foreach ($check in $audit.checks) {
-                    $current = Get-RegValue -Path $check.path -Name $check.valueName
+                    $exp_str = Format-Expected $check.expected
+                    $resolution = Resolve-CheckPath $check.path
+                    if ($resolution.kind -eq 'error') {
+                        $path_error = $resolution.reason
+                        break
+                    }
+                    if ($resolution.kind -eq 'fail') {
+                        # A required <Tenant-ID> couldn't be resolved: the
+                        # per-tenant policy can't be confirmed, which is a
+                        # real Fail rather than an automation gap.
+                        $passes += $false
+                        $current_summary += "$($check.valueName)=(unresolved)"
+                        $expected_summary += "$($check.valueName) $exp_str"
+                        $check_details += [ordered]@{
+                            path      = $check.path
+                            valueName = $check.valueName
+                            expected  = $exp_str
+                            actual    = $resolution.reason
+                            pass      = $false
+                        }
+                        continue
+                    }
+                    $current = Get-RegValue -Path $resolution.path -Name $check.valueName
                     $pass = Test-Expected $current $check.expected
                     $passes += $pass
                     $actual_str = if ($null -eq $current) { $null } else { [string]$current }
                     $display = if ($null -eq $current) { '(absent)' } else { [string]$current }
-                    $exp_str = Format-Expected $check.expected
                     $current_summary += "$($check.valueName)=$display"
                     $expected_summary += "$($check.valueName) $exp_str"
                     $check_details += [ordered]@{
-                        path      = $check.path
+                        path      = $resolution.path
                         valueName = $check.valueName
                         expected  = $exp_str
                         actual    = $actual_str
                         pass      = $pass
                     }
+                }
+                if ($null -ne $path_error) {
+                    Write-NdjsonResult -Id $id -Status 'Error' -ErrorMessage $path_error
+                    break
                 }
                 $all_pass = -not ($passes -contains $false)
                 $status = if ($all_pass) { 'Pass' } else { 'Fail' }

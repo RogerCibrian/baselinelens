@@ -7,9 +7,11 @@
 
 #[derive(Debug, Clone)]
 pub(super) struct JoinedPath {
-    /// The path component (everything before the last `:`).
+    /// The key path (everything before the first `:`). A registry key
+    /// path is backslash-separated and never contains a `:`, so the
+    /// first colon is the path/value delimiter.
     pub(super) path: String,
-    /// The value name (everything after the last `:`).
+    /// The value name (everything after the first `:`).
     pub(super) value_name: String,
 }
 
@@ -60,7 +62,13 @@ pub(super) fn extract_all(body: &str) -> Vec<JoinedPath> {
             i += 1;
         }
 
-        if let Some(colon_idx) = joined.rfind(':') {
+        // Split on the FIRST colon: a registry key path is
+        // backslash-separated and never contains `:`, so the first one
+        // is the path/value delimiter. Splitting on the last colon
+        // mis-parses value names that themselves contain colons (e.g. an
+        // SDDL string like `O:BAG:BAD:(A;;RC;;;BA)`), folding most of the
+        // value into the path.
+        if let Some(colon_idx) = joined.find(':') {
             let (path_part, rest) = joined.split_at(colon_idx);
             let value_name = rest[1..].trim().to_string();
             let path = path_part.trim().to_string();
@@ -129,6 +137,18 @@ SVOL
         assert_eq!(paths.len(), 1);
         assert_eq!(paths[0].path, "HKU\\[USER SID]\\Software\\Foo");
         assert_eq!(paths[0].value_name, "Bar");
+    }
+
+    #[test]
+    fn splits_on_first_colon_so_sddl_values_keep_the_path_intact() {
+        // A value whose data is an SDDL string carries colons of its own.
+        // The key path must still come out clean (no colon) rather than
+        // swallowing the SDDL up to the last colon.
+        let body = "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa:SampleName O:AAG:BBD:(X;;RC;;;YZ)\n";
+        let paths = extract_all(body);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa");
+        assert!(!paths[0].path.contains(':'));
     }
 
     #[test]
