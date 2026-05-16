@@ -99,6 +99,19 @@
   border-radius: var(--v-radius-sm);
 }
 
+/* In the settings popover the segment spans the panel like every other
+   row; the three options divide the width evenly so there's no dead
+   space past "Dark". Scoped so the onboarding top-bar usage, where
+   content width is correct, is unaffected. */
+.settings-section .settings-segment {
+  display: flex;
+  width: 100%;
+}
+
+.settings-section .settings-segment-option {
+  flex: 1;
+}
+
 .settings-segment-pill {
   position: absolute;
   top: 2px;

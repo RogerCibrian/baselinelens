@@ -424,6 +424,12 @@ function Dashboard({
   // as an intentional stop (no error banner) rather than a failure.
   const cancelRequested = useRef(false);
   const [cancelling, setCancelling] = useState(false);
+  // Records processed in the current run. Tracked independently of
+  // `latest.results` because `latest` stays the prior completed scan
+  // until the first new record swaps in the partial — reading its
+  // result count would show the bar full before the run produces
+  // anything.
+  const [scanProgress, setScanProgress] = useState(0);
 
   const latest = context.latest;
 
@@ -528,6 +534,7 @@ function Dashboard({
     if (scanning) return;
     setScanning(true);
     setScanError(null);
+    setScanProgress(0);
     cancelRequested.current = false;
     setCancelling(false);
     // Capture the current latest so a failed run can restore it. The
@@ -543,6 +550,7 @@ function Dashboard({
     const partial = makePartialScan(baseline, deviceInfo);
     const channel = new Channel<ScanRecord>();
     channel.onmessage = (record) => {
+      setScanProgress((done) => done + 1);
       setContext((prev) => {
         // First record: swap whatever's showing for the fresh partial
         // so stale results from a prior scan don't bleed into the new
@@ -600,7 +608,7 @@ function Dashboard({
     setScanning(false);
   }
 
-  const completed = latest ? Object.keys(latest.results).length : 0;
+  const completed = scanProgress;
   const total = baseline.recommendations.length;
   const tabOrder: Tab[] = ["overview", "console"];
   const activePanelId = tab === "overview" ? "panel-overview" : "panel-console";
