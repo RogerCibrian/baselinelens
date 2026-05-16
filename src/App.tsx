@@ -449,19 +449,19 @@ function Dashboard({
   // so failures degrade per-surface (empty state for a broken `latest`,
   // inline notice on the trend chart for broken `summaries`, etc.) — no
   // dashboard-wide banner. When `autoScan` is set (onboarding's "Scan
-  // this device" path), the same effect kicks off a scan once the load
-  // completes, so the empty state never flashes between confirm and
-  // the live-filling scan view.
+  // this device" confirm — an explicit request to scan now), the same
+  // effect kicks off a scan once the load completes, even if the chosen
+  // baseline already has a cached scan: the button says "Scan this
+  // device", so changing to a previously-scanned baseline must still
+  // scan rather than land on the stale result.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const result = await commands.loadScanContext(baseline.source.pdfSha256);
       if (cancelled) return;
-      let hasLatest = false;
       if (result.status === "ok") {
         setContext(result.data.context);
         setLoadErrors(result.data.errors);
-        hasLatest = result.data.context.latest !== null;
       } else {
         setContext(emptyScanContext);
         setLoadErrors({
@@ -470,7 +470,7 @@ function Dashboard({
           summaries: result.error,
         });
       }
-      if (autoScan && !autoScanFired.current && !hasLatest) {
+      if (autoScan && !autoScanFired.current) {
         autoScanFired.current = true;
         void rescan();
       }
