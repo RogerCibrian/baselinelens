@@ -7,11 +7,14 @@ import {
   type ReactNode,
 } from "react";
 
+import { save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
+import { commands } from "./bindings";
 import type {
   Baseline,
   ChangeEvent,
+  Density,
   Exception,
   Level,
   Note,
@@ -31,6 +34,7 @@ import {
   defaultConsoleFilter,
   type ConsoleFilter,
 } from "./data/consoleFilter";
+import { buildCsv, buildJson } from "./data/exportScan";
 import {
   effectiveStatus,
   topLevelCategoryScores,
@@ -59,6 +63,7 @@ export default function Console({
   onColumnsChange,
   railCollapsed,
   onRailCollapsedChange,
+  density,
   onUpdateUserState,
   onResetChanges,
 }: {
@@ -79,6 +84,9 @@ export default function Console({
    * that reopens it. */
   railCollapsed: boolean;
   onRailCollapsedChange: (next: boolean) => void;
+  /** Table row spacing — applied as `data-density` for the CSS to
+   * tighten or relax row padding. */
+  density: Density;
   onUpdateUserState: (next: UserState) => Promise<boolean>;
   /** Deletes the per-rec change log and reloads. Invoked from the inline
    * recovery action when `loadErrors.changes` is set. */
@@ -87,6 +95,7 @@ export default function Console({
   const [openRecId, setOpenRecId] = useState<string | null>(null);
   const [selectedRecId, setSelectedRecId] = useState<string | null>(null);
   const [sort, setSort] = useState<Sort>(defaultSort);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const changesIndex = useMemo(() => indexLatestChanges(changes), [changes]);
 
@@ -203,8 +212,29 @@ export default function Console({
     setOpenRecId(id);
   }
 
+  // Composed here (not in Rust) so the export matches the console
+  // exactly — effective status, exceptions, notes, and the
+  // human-readable strings all already live in this tree.
+  async function exportResults(format: "csv" | "json") {
+    setExportError(null);
+    const path = await save({
+      defaultPath: `baselinelens-results.${format}`,
+      filters: [{ name: format.toUpperCase(), extensions: [format] }],
+    });
+    if (!path) return;
+    const contents =
+      format === "csv"
+        ? buildCsv(baseline, scan, userState)
+        : buildJson(baseline, scan, userState);
+    const result = await commands.writeExport(path, contents);
+    if (result.status !== "ok") setExportError(result.error);
+  }
+
   return (
-    <div className={`console${railCollapsed ? " console-rail-collapsed" : ""}`}>
+    <div
+      className={`console${railCollapsed ? " console-rail-collapsed" : ""}`}
+      data-density={density}
+    >
       {!railCollapsed && (
         <SavedViewRail
           baseline={baseline}
@@ -227,7 +257,20 @@ export default function Console({
           total={baseline.recommendations.length}
           shown={sorted.length}
           categoryName={categoryName}
+          onExport={(format) => void exportResults(format)}
         />
+        {exportError && (
+          <p className="surface-notice">
+            <span>Export failed: {exportError}</span>
+            <button
+              type="button"
+              className="surface-notice-action"
+              onClick={() => setExportError(null)}
+            >
+              Dismiss
+            </button>
+          </p>
+        )}
         {loadErrors.changes && (
           <p className="surface-notice">
             <span>
@@ -601,6 +644,7 @@ function FilterBar({
   total,
   shown,
   categoryName,
+  onExport,
 }: {
   filter: ConsoleFilter;
   onFilterChange: (next: ConsoleFilter) => void;
@@ -616,6 +660,7 @@ function FilterBar({
    * (parser couldn't extract a heading). Shown alongside the number in
    * the chip; absence means the chip falls back to the bare number. */
   categoryName: string | null;
+  onExport: (format: "csv" | "json") => void;
 }) {
   // Local draft so each keystroke is instant while the (per-rec
   // effectiveStatus/computeDelta) filter recompute is debounced —
@@ -723,6 +768,78 @@ function FilterBar({
       <span className="muted mono filter-count">
         {shown} of {total}
       </span>
+      <ExportMenu onExport={onExport} />
+    </div>
+  );
+}
+
+/**
+ * Pill-styled popover offering CSV / JSON download of the full result
+ * set. Mirrors ColumnsMenu's open/close behavior so the toolbar
+ * dropdowns are consistent. The composition itself lives in the
+ * Console (it owns baseline/scan/userState); this just triggers it.
+ */
+function ExportMenu({
+  onExport,
+}: {
+  onExport: (format: "csv" | "json") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onMouseDown(e: MouseEvent) {
+      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  function pick(format: "csv" | "json") {
+    setOpen(false);
+    onExport(format);
+  }
+
+  return (
+    <div className="columns-menu" ref={wrapperRef}>
+      <button
+        type="button"
+        className="filter-pill columns-menu-trigger"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <span className="filter-pill-label">Export</span>
+        <SelectCaret />
+      </button>
+      {open && (
+        <div className="columns-menu-popover" role="menu">
+          <button
+            type="button"
+            role="menuitem"
+            className="columns-menu-action"
+            onClick={() => pick("csv")}
+          >
+            Export as CSV
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="columns-menu-action"
+            onClick={() => pick("json")}
+          >
+            Export as JSON
+          </button>
+        </div>
+      )}
     </div>
   );
 }

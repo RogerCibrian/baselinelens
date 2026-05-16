@@ -73,6 +73,11 @@
   border-radius: var(--v-radius-md);
   box-shadow: var(--v-shadow-md);
   z-index: 20;
+  /* Cap to the viewport below the top bar and scroll the overflow so
+     the lower items (danger zone, footer) stay reachable on short
+     windows. */
+  max-height: calc(100vh - var(--v-topbar-h) - 16px);
+  overflow-y: auto;
 }
 
 .settings-section {
@@ -171,6 +176,95 @@
 
 .settings-item-destructive:hover {
   background: var(--v-fail-bg);
+}
+
+.settings-group-label {
+  display: block;
+  padding: 8px 10px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--v-text-muted);
+}
+
+.settings-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  margin: 0;
+  padding: 4px 10px 8px;
+  font-size: 11.5px;
+}
+
+.settings-meta dt {
+  color: var(--v-text-subtle);
+}
+
+.settings-meta dd {
+  margin: 0;
+  color: var(--v-text-2);
+  min-width: 0;
+}
+
+/* The sole action in the Baseline group — set apart from the readout
+   above it with a hairline and accent text so it reads as a button,
+   not another metadata line. */
+.settings-item-action {
+  margin-top: 2px;
+  border-top: 1px solid var(--v-line);
+  color: var(--v-accent-text);
+  font-weight: 600;
+}
+
+.settings-item-disclosure {
+  color: var(--v-text-muted);
+}
+
+/* Muted footer for low-salience metadata (parse date, app version).
+   One line, clipped rather than wrapped. */
+.settings-about {
+  margin: 0;
+  padding: 6px 10px;
+  border-top: 1px solid var(--v-line);
+  font-size: 10px;
+  color: var(--v-text-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-resets {
+  display: flex;
+  flex-direction: column;
+  border-left: 2px solid var(--v-line);
+  margin-left: 10px;
+}
+
+/* Danger-zone rows: bold-ish title + a calm muted one-liner so the
+   effect is understood before the click, not only in the confirm. */
+.settings-reset-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.settings-reset-title {
+  font-weight: 500;
+}
+
+.settings-reset-sub {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--v-text-muted);
+}
+
+.settings-error {
+  margin: 2px 10px 6px;
+  font-size: 11px;
+  color: var(--v-fail);
 }
 
 /* Same wordmark language as the onboarding .ob-wordmark (uppercase,
@@ -513,7 +607,28 @@
 }
 
 .overview-header {
+  position: relative;
   margin-bottom: 2.5rem;
+}
+
+/* Manager-facing report action. Sits top-right of the header and is
+   itself dropped from the printed output (see @media print). */
+.overview-print {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--v-line-strong);
+  border-radius: var(--v-radius-sm);
+  background: var(--v-paper);
+  font-size: 12px;
+  color: var(--v-text-2);
+  cursor: pointer;
+}
+
+.overview-print:hover {
+  background: var(--v-paper-2);
+  color: var(--v-text);
 }
 
 /* Contextual overline. Mono uppercase letterspaced — same idiom as the
@@ -541,6 +656,13 @@
   margin: 0;
   font-size: 13px;
   color: var(--v-text-muted);
+}
+
+/* The baseline being measured against is the report's anchor fact —
+   accent it so it stands out from the device/OS context around it. */
+.meta-benchmark {
+  color: var(--v-accent-text);
+  font-weight: 500;
 }
 
 .overview-section {
@@ -1267,6 +1389,14 @@
   border-bottom: 1px solid var(--v-line);
 }
 
+/* Compact density tightens only the vertical rhythm so more rows fit;
+   horizontal padding and font size stay put for legibility. */
+.console[data-density="compact"] .rec-table th,
+.console[data-density="compact"] .rec-table td {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
 .rec-table thead th {
   position: sticky;
   /* Sits under the sticky top bar so scrolled rows pass behind both. */
@@ -1405,6 +1535,21 @@
 
 .columns-menu-item input[type="checkbox"] {
   margin: 0;
+}
+
+.columns-menu-action {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 4px;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--v-text);
+  cursor: pointer;
+}
+
+.columns-menu-action:hover {
+  background: var(--v-paper-2);
 }
 
 .delta-marker {
@@ -2004,4 +2149,93 @@
   margin-left: 0.25rem;
   font-size: 12px;
   color: var(--v-fail);
+}
+
+/* Running report footer — only ever shown while printing. */
+.print-footer {
+  display: none;
+}
+
+/* Real per-page margins: unlike container padding (which applies once,
+   so pages 2+ would start flush to the paper edge) an @page margin
+   repeats on every page. The bottom is deeper to clear the fixed
+   running footer. Trade-off: with non-zero margins the browser's own
+   header/footer is governed by the print dialog's "Headers and
+   footers" toggle rather than being forced off by margin:0. */
+@page {
+  margin: 16mm 14mm 18mm;
+}
+
+@media print {
+  .top-bar,
+  .scan-progress,
+  .settings-wrapper,
+  .overview-print,
+  .surface-notice {
+    display: none !important;
+  }
+
+  .app,
+  .tab-content {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Single column so an empty side (e.g. no "Improved" changes)
+     can't leave a page-tall void. */
+  .level-cards,
+  .category-list,
+  .recently-changed {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Deliberate breaks: keep each numbered section together so it
+     starts fresh rather than orphaning its heading at a page bottom.
+     A section taller than a page (e.g. the long Regressed list) can't
+     be kept whole — the engine still breaks it, but break-after:avoid
+     on the heading guarantees the heading never trails alone. */
+  .doc-section {
+    break-inside: avoid;
+  }
+
+  .doc-section-heading {
+    break-after: avoid;
+  }
+
+  /* Atomic blocks never split mid-item. */
+  .level-card,
+  .category-row,
+  .recently-changed-row,
+  .trend-chart-figure {
+    break-inside: avoid;
+  }
+
+  .trend-chart {
+    width: 100% !important;
+  }
+
+  /* Fixed → repeats at the bottom of every page. left/right:0 spans
+     the content box (already inset by the @page side margins), so no
+     extra horizontal padding. Opaque so dense content can't bleed
+     through behind it. */
+  .print-footer {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 3mm 0;
+    background: var(--v-paper);
+    border-top: 1px solid var(--v-line);
+    font-size: 9px;
+    color: var(--v-text-subtle);
+  }
 }

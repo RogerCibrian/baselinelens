@@ -20,6 +20,8 @@ import {
   type ScanLoadErrors,
   type ScanRecord,
   type ScanResult,
+  type BaselineSource,
+  type Density,
   type Preferences,
   type Theme,
   type TimeFormat,
@@ -35,7 +37,11 @@ import {
   type ConsoleFilter,
 } from "./data/consoleFilter";
 import ConfirmDialog from "./ConfirmDialog";
-import { formatTimestamp, setTimeFormat as applyTimeFormat } from "./format";
+import {
+  formatDate,
+  formatTimestamp,
+  setTimeFormat as applyTimeFormat,
+} from "./format";
 import Onboarding from "./Onboarding";
 import Overview from "./Overview";
 import SettingSegment from "./SettingSegment";
@@ -95,6 +101,9 @@ function App() {
   // Mirrored into the format module so `formatTimestamp` reads it
   // without every caller having to thread it through.
   const [timeFormat, setTimeFormatState] = useState<TimeFormat>("24h");
+  // Console table row spacing. Pure CSS concern (applied as a
+  // data-density attribute), so no module mirror like time format.
+  const [density, setDensityState] = useState<Density>("comfortable");
   const [consoleFilter, setConsoleFilter] = useState<ConsoleFilter>(
     defaultConsoleFilter,
   );
@@ -111,7 +120,12 @@ function App() {
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
 
   useEffect(() => {
-    void restoreFromCache(setAppState, setTheme, setTimeFormatState);
+    void restoreFromCache(
+      setAppState,
+      setTheme,
+      setTimeFormatState,
+      setDensityState,
+    );
     void (async () => {
       const result = await commands.getDeviceInfo();
       if (result.status === "ok") setDeviceInfo(result.data);
@@ -177,6 +191,11 @@ function App() {
     void persistPreferences({ timeFormat: next });
   }
 
+  function updateDensity(next: Density) {
+    setDensityState(next);
+    void persistPreferences({ density: next });
+  }
+
   // Applies a UserState change locally and persists it. The optimistic
   // update keeps the UI snappy; the returned boolean lets the caller
   // (the drawer) show a real outcome instead of a blanket "Saved" —
@@ -191,6 +210,36 @@ function App() {
       return false;
     }
     return true;
+  }
+
+  // Clears scans + history + annotations for the active baseline but
+  // leaves it loaded. The user_state file is gone afterward, so reload
+  // it (now empty) and sync into appState; the caller refreshes the
+  // scan context for the rest.
+  async function clearActiveBaselineData(): Promise<void> {
+    if (appState.kind !== "loaded") return;
+    const sha = appState.baseline.source.pdfSha256;
+    const result = await commands.clearBaselineData(sha);
+    if (result.status !== "ok") {
+      console.error("Failed to clear baseline data:", result.error);
+      return;
+    }
+    const fresh = await loadOrInitUserState(sha);
+    setAppState((prev) =>
+      prev.kind === "loaded" ? { ...prev, userState: fresh } : prev,
+    );
+  }
+
+  // Removes the active baseline wholesale and drops back to onboarding.
+  async function removeActiveBaseline(): Promise<void> {
+    if (appState.kind !== "loaded") return;
+    const sha = appState.baseline.source.pdfSha256;
+    const result = await commands.removeBaseline(sha);
+    if (result.status !== "ok") {
+      console.error("Failed to remove baseline:", result.error);
+      return;
+    }
+    setAppState({ kind: "onboarding" });
   }
 
   // Overview click-through: replace the current Console filter with a
@@ -218,6 +267,8 @@ function App() {
         tab={tab}
         onTabChange={setTab}
         onReparse={() => void selectAndParse(setAppState)}
+        onClearBaselineData={clearActiveBaselineData}
+        onRemoveBaseline={removeActiveBaseline}
         onUpdateUserState={updateUserState}
         consoleFilter={consoleFilter}
         onConsoleFilterChange={setConsoleFilter}
@@ -230,6 +281,8 @@ function App() {
         onThemeChange={updateTheme}
         timeFormat={timeFormat}
         onTimeFormatChange={updateTimeFormat}
+        density={density}
+        onDensityChange={updateDensity}
       />
     );
   }
@@ -278,14 +331,15 @@ function readStoredTheme(): Theme {
  * Reads `app_state.json` on mount and rehydrates the dashboard from the
  * cached `Baseline` and its `UserState`. Falls back to the onboarding
  * screen when nothing is cached or the cached entry can't be loaded.
- * Also syncs the theme and time-format preferences from the canonical
- * store into the in-memory state (and, for theme, the localStorage
- * mirror).
+ * Also syncs the theme, time-format, and density preferences from the
+ * canonical store into the in-memory state (and, for theme, the
+ * localStorage mirror).
  */
 async function restoreFromCache(
   setAppState: Dispatch<SetStateAction<AppState>>,
   setTheme: Dispatch<SetStateAction<Theme>>,
   setTimeFormatState: Dispatch<SetStateAction<TimeFormat>>,
+  setDensityState: Dispatch<SetStateAction<Density>>,
 ) {
   const persisted = await commands.loadAppState();
   if (persisted.status !== "ok") {
@@ -306,6 +360,10 @@ async function restoreFromCache(
   if (storedTimeFormat) {
     setTimeFormatState(storedTimeFormat);
     applyTimeFormat(storedTimeFormat);
+  }
+  const storedDensity = persisted.data?.preferences?.density;
+  if (storedDensity) {
+    setDensityState(storedDensity);
   }
   const sha = persisted.data?.activeBaselineSha;
   if (!sha) {
@@ -412,6 +470,8 @@ function Dashboard({
   tab,
   onTabChange,
   onReparse,
+  onClearBaselineData,
+  onRemoveBaseline,
   onUpdateUserState,
   consoleFilter,
   onConsoleFilterChange,
@@ -424,6 +484,8 @@ function Dashboard({
   onThemeChange,
   timeFormat,
   onTimeFormatChange,
+  density,
+  onDensityChange,
 }: {
   baseline: Baseline;
   userState: UserState;
@@ -440,6 +502,11 @@ function Dashboard({
   tab: Tab;
   onTabChange: (tab: Tab) => void;
   onReparse: () => void;
+  /** Clears the active baseline's scans/history/annotations; it stays
+   * loaded. App reloads userState; Dashboard refreshes scan context. */
+  onClearBaselineData: () => Promise<void>;
+  /** Removes the active baseline entirely; App routes to onboarding. */
+  onRemoveBaseline: () => Promise<void>;
   onUpdateUserState: (next: UserState) => Promise<boolean>;
   consoleFilter: ConsoleFilter;
   onConsoleFilterChange: (next: ConsoleFilter) => void;
@@ -452,8 +519,16 @@ function Dashboard({
   onThemeChange: (next: Theme) => void;
   timeFormat: TimeFormat;
   onTimeFormatChange: (next: TimeFormat) => void;
+  density: Density;
+  onDensityChange: (next: Density) => void;
 }) {
   const [context, setContext] = useState<ScanContext>(emptyScanContext);
+  // App version for the settings readout. Fetched once; the command is
+  // a constant so there's no need to refetch.
+  const [appVersion, setAppVersion] = useState("");
+  useEffect(() => {
+    void commands.appVersion().then(setAppVersion);
+  }, []);
   const [loadErrors, setLoadErrors] = useState<ScanLoadErrors>(emptyLoadErrors);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -550,6 +625,15 @@ function Dashboard({
     if (result.status !== "ok") {
       console.error(`Reset ${target} failed:`, result.error);
     }
+    setScanError(null);
+    await refreshContext();
+  }
+
+  // "Clear all results & notes": App drops the annotations + persisted
+  // data, then we refresh the scan context so the surface empties
+  // without a relaunch. The baseline stays loaded.
+  async function clearAllData() {
+    await onClearBaselineData();
     setScanError(null);
     await refreshContext();
   }
@@ -742,13 +826,19 @@ function Dashboard({
         <SettingsMenu
           theme={theme}
           timeFormat={timeFormat}
+          density={density}
           scanning={scanning}
+          baselineSource={baseline.source}
+          appVersion={appVersion}
           onThemeChange={onThemeChange}
           onTimeFormatChange={onTimeFormatChange}
+          onDensityChange={onDensityChange}
           onChangeBaseline={onReparse}
           onResetLatest={() => void resetScanFile("latest")}
           onResetSummaries={() => void resetScanFile("summaries")}
           onResetChanges={() => void resetScanFile("changes")}
+          onClearAll={() => void clearAllData()}
+          onRemoveBaseline={() => void onRemoveBaseline()}
         />
       </header>
 
@@ -799,6 +889,7 @@ function Dashboard({
             summaries={context.summaries}
             loadErrors={loadErrors}
             userState={userState}
+            appVersion={appVersion}
             onJumpToConsole={onJumpToConsole}
             onResetSummaries={() => void resetScanFile("summaries")}
             onResetChanges={() => void resetScanFile("changes")}
@@ -816,6 +907,7 @@ function Dashboard({
             onColumnsChange={onConsoleColumnsChange}
             railCollapsed={consoleRailCollapsed}
             onRailCollapsedChange={onConsoleRailCollapsedChange}
+            density={density}
             onUpdateUserState={onUpdateUserState}
             onResetChanges={() => void resetScanFile("changes")}
           />
@@ -933,12 +1025,13 @@ function EmptyScanState({
 }
 
 /**
- * Settings popover anchored to the gear button in the top bar. Hosts
- * baseline-switching and the destructive reset actions for the active
- * baseline's scan-history files. Closes on click-outside, Esc, or
- * selecting an item. Reset items prompt for confirmation since the
- * user reaches them outside of an error context — without the prompt
- * a stray click could clear a working trend history.
+ * Settings popover anchored to the gear button in the top bar.
+ * Grouped into Preferences (theme, time format, density), Baseline (a
+ * read-only source readout + switch), and Data (open folder + the
+ * destructive resets behind a disclosure). Closes on click-outside,
+ * Esc, or selecting an item; arrow keys rove the action items. Reset
+ * items prompt for confirmation since the user reaches them outside an
+ * error context.
  */
 type PendingConfirm = {
   title: string;
@@ -953,34 +1046,61 @@ const TIME_FORMAT_LABELS: Record<TimeFormat, string> = {
   "12h": "12-hour",
 };
 
+const DENSITY_OPTIONS = ["comfortable", "compact"] as const;
+const DENSITY_LABELS: Record<Density, string> = {
+  comfortable: "Comfortable",
+  compact: "Compact",
+};
+
 function SettingsMenu({
   theme,
   timeFormat,
+  density,
   scanning,
+  baselineSource,
+  appVersion,
   onThemeChange,
   onTimeFormatChange,
+  onDensityChange,
   onChangeBaseline,
   onResetLatest,
   onResetSummaries,
   onResetChanges,
+  onClearAll,
+  onRemoveBaseline,
 }: {
   theme: Theme;
   timeFormat: TimeFormat;
+  density: Density;
   /** While a scan runs, baseline-switch and the destructive resets are
    * disabled — they'd race the in-flight run (re-parse swaps the
    * baseline out from under it; a reset clears files it's about to
    * rewrite). */
   scanning: boolean;
+  /** Source metadata for the loaded baseline — surfaced read-only so
+   * the user can see what they're being measured against. */
+  baselineSource: BaselineSource;
+  appVersion: string;
   onThemeChange: (next: Theme) => void;
   onTimeFormatChange: (next: TimeFormat) => void;
+  onDensityChange: (next: Density) => void;
   onChangeBaseline: () => void;
   onResetLatest: () => void;
   onResetSummaries: () => void;
   onResetChanges: () => void;
+  /** Clears scans + history + annotations; baseline stays loaded. */
+  onClearAll: () => void;
+  /** Removes the baseline entirely; app returns to onboarding. */
+  onRemoveBaseline: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
+  // The three destructive resets sit behind a disclosure so a stray
+  // click near the gear can't wipe scan history.
+  const [resetsOpen, setResetsOpen] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -1005,6 +1125,47 @@ function SettingsMenu({
     setConfirm(pending);
   }
 
+  async function openFolder() {
+    setDataError(null);
+    const result = await commands.openDataDir();
+    if (result.status === "ok") setOpen(false);
+    else setDataError(result.error);
+  }
+
+  // Roving focus across the action items (the menuitem buttons). The
+  // segmented controls keep their own radiogroup behavior; arrows only
+  // hop between the actionable rows so keyboard users aren't stuck
+  // tabbing through everything.
+  function onMenuKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if (
+      e.key !== "ArrowDown" &&
+      e.key !== "ArrowUp" &&
+      e.key !== "Home" &&
+      e.key !== "End"
+    ) {
+      return;
+    }
+    const menu = menuRef.current;
+    if (!menu) return;
+    const items = Array.from(
+      menu.querySelectorAll<HTMLButtonElement>(
+        'button[role="menuitem"]:not(:disabled)',
+      ),
+    );
+    if (items.length === 0) return;
+    e.preventDefault();
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number;
+    if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = items.length - 1;
+    else if (e.key === "ArrowDown") {
+      next = current < 0 ? 0 : Math.min(current + 1, items.length - 1);
+    } else {
+      next = current < 0 ? items.length - 1 : Math.max(current - 1, 0);
+    }
+    items[next]?.focus();
+  }
+
   return (
     <div className="settings-wrapper" ref={wrapperRef}>
       <button
@@ -1018,12 +1179,17 @@ function SettingsMenu({
         <GearIcon />
       </button>
       {open && (
-        <div className="settings-menu" role="menu">
+        <div
+          className="settings-menu"
+          role="menu"
+          ref={menuRef}
+          onKeyDown={onMenuKeyDown}
+        >
+          <span className="settings-group-label">Preferences</span>
           <div className="settings-section">
             <span className="settings-section-label">Appearance</span>
             <ThemeSegment theme={theme} onThemeChange={onThemeChange} />
           </div>
-          <div className="settings-divider" role="separator" />
           <div className="settings-section">
             <span className="settings-section-label">Time format</span>
             <SettingSegment
@@ -1034,11 +1200,30 @@ function SettingsMenu({
               onChange={onTimeFormatChange}
             />
           </div>
+          <div className="settings-section">
+            <span className="settings-section-label">Density</span>
+            <SettingSegment
+              options={DENSITY_OPTIONS}
+              labels={DENSITY_LABELS}
+              value={density}
+              ariaLabel="Table density"
+              onChange={onDensityChange}
+            />
+          </div>
+
           <div className="settings-divider" role="separator" />
+
+          <span className="settings-group-label">Baseline</span>
+          <dl className="settings-meta">
+            <dt>Benchmark</dt>
+            <dd title={`Parsed from ${baselineSource.pdfFilename}`}>
+              {baselineSource.benchmarkName} {baselineSource.benchmarkVersion}
+            </dd>
+          </dl>
           <button
             type="button"
             role="menuitem"
-            className="settings-item"
+            className="settings-item settings-item-action"
             disabled={scanning}
             onClick={() => {
               setOpen(false);
@@ -1047,58 +1232,111 @@ function SettingsMenu({
           >
             Change baseline
           </button>
+
           <div className="settings-divider" role="separator" />
+
+          <span className="settings-group-label">Data</span>
           <button
             type="button"
             role="menuitem"
-            className="settings-item settings-item-destructive"
-            disabled={scanning}
-            onClick={() =>
-              askConfirm({
-                title: "Reset last scan",
-                message:
-                  "Delete the most-recent scan for this baseline? The next scan will replace it.",
-                confirmLabel: "Delete scan",
-                onConfirm: onResetLatest,
-              })
-            }
+            className="settings-item"
+            onClick={() => void openFolder()}
           >
-            Reset last scan
+            Open data folder
           </button>
+          {dataError && (
+            <p className="settings-error" role="alert">
+              {dataError}
+            </p>
+          )}
+
           <button
             type="button"
             role="menuitem"
-            className="settings-item settings-item-destructive"
-            disabled={scanning}
-            onClick={() =>
-              askConfirm({
-                title: "Reset trend history",
-                message:
-                  "Delete the trend history for this baseline? Past summary points will be lost; the next scan starts a fresh history.",
-                confirmLabel: "Delete history",
-                onConfirm: onResetSummaries,
-              })
-            }
+            className="settings-item settings-item-disclosure"
+            aria-expanded={resetsOpen}
+            onClick={() => setResetsOpen((current) => !current)}
           >
-            Reset trend history
+            Reset data{resetsOpen ? "" : "…"}
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="settings-item settings-item-destructive"
-            disabled={scanning}
-            onClick={() =>
-              askConfirm({
-                title: "Reset change history",
-                message:
-                  "Delete the change log for this baseline? Change indicators clear until a future scan flips a rec again.",
-                confirmLabel: "Delete change log",
-                onConfirm: onResetChanges,
-              })
-            }
-          >
-            Reset change history
-          </button>
+          {resetsOpen && (
+            <div className="settings-resets">
+              {[
+                {
+                  title: "Clear last scan",
+                  sub: "Removes the latest results; the next scan replaces them.",
+                  confirm: {
+                    title: "Clear last scan",
+                    message:
+                      "Deletes this baseline's most recent scan. The Overview and Console show no results until you run a new scan.",
+                    confirmLabel: "Clear last scan",
+                    onConfirm: onResetLatest,
+                  },
+                },
+                {
+                  title: "Clear trend history",
+                  sub: "Empties the Trend chart; it rebuilds from your next scan.",
+                  confirm: {
+                    title: "Clear trend history",
+                    message:
+                      "Deletes this baseline's saved scan summaries. The Trend chart empties and rebuilds from your next scan.",
+                    confirmLabel: "Clear trend history",
+                    onConfirm: onResetSummaries,
+                  },
+                },
+                {
+                  title: "Clear change history",
+                  sub: "Clears the Recently-changed list and the Console's change markers.",
+                  confirm: {
+                    title: "Clear change history",
+                    message:
+                      "Deletes this baseline's change history. The 'Recently changed' section and the Console's improved/regressed markers clear until a future scan flips a recommendation.",
+                    confirmLabel: "Clear change history",
+                    onConfirm: onResetChanges,
+                  },
+                },
+                {
+                  title: "Clear all results & notes",
+                  sub: "Deletes scans, history, exceptions, and notes for this baseline. The baseline stays loaded.",
+                  confirm: {
+                    title: "Clear all results & notes",
+                    message:
+                      "Permanently deletes this baseline's scans, trend history, change history, exceptions, and notes. The baseline stays loaded; the next scan starts fresh.",
+                    confirmLabel: "Clear all",
+                    onConfirm: onClearAll,
+                  },
+                },
+                {
+                  title: "Remove this baseline",
+                  sub: "Deletes everything above and unloads the baseline — returns to onboarding.",
+                  confirm: {
+                    title: "Remove this baseline",
+                    message:
+                      "Returns you to onboarding and permanently deletes this baseline's scans, trend history, change history, exceptions, and notes, plus its parsed copy. Other baselines you've loaded are unaffected.",
+                    confirmLabel: "Remove baseline",
+                    onConfirm: onRemoveBaseline,
+                  },
+                },
+              ].map((item) => (
+                <button
+                  key={item.title}
+                  type="button"
+                  role="menuitem"
+                  className="settings-item settings-item-destructive settings-reset-item"
+                  disabled={scanning}
+                  onClick={() => askConfirm(item.confirm)}
+                >
+                  <span className="settings-reset-title">{item.title}</span>
+                  <span className="settings-reset-sub">{item.sub}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <p className="settings-about mono">
+            Parsed {formatDate(baselineSource.parsedAt)} · App v
+            {appVersion || "—"}
+          </p>
         </div>
       )}
       {confirm && (

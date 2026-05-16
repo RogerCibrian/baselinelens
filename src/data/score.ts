@@ -17,10 +17,11 @@ export type EffectiveStatus =
 /**
  * Returns the display status for `rec` against the scan and user state.
  * A Fail with a matching entry in `userState.exceptions` is reported as
- * "exception" — counts as a pass for the In-scope score per HANDOFF.
- * A missing result for an in-progress scan (no `finishedAt`) is
- * reported as "pending" so the UI can render it distinctly from
- * "manual" while results stream in.
+ * "exception" — a deliberately accepted risk. It's excluded from the
+ * In-scope pass rate (like manual and pending) and counts toward the
+ * Strict compliance total. A missing result for an in-progress scan
+ * (no `finishedAt`) is reported as "pending" so the UI can render it
+ * distinctly from "manual" while results stream in.
  */
 export function effectiveStatus(
   rec: Recommendation,
@@ -57,9 +58,10 @@ export type LevelScore = {
   error: number;
   exception: number;
   pending: number;
-  /** (pass + exception) / (total - manual - pending). Null when
-   * nothing is in scope yet. Excludes pending so the percentage
-   * reflects only the recs whose verdict is settled. */
+  /** pass / (total - manual - pending - exception). Null when nothing
+   * is actionable yet. Manual, pending, and accepted exceptions are
+   * all out of scope, so this is the pass rate over the controls
+   * still being enforced. */
   inScopePct: number | null;
   /** pass / total. */
   fullPct: number;
@@ -115,7 +117,7 @@ function scoreForRecs(
     }
   }
   const total = recs.length;
-  const inScopeDenom = total - manual - pending;
+  const inScopeDenom = total - manual - pending - exception;
   return {
     level,
     total,
@@ -125,7 +127,7 @@ function scoreForRecs(
     error,
     exception,
     pending,
-    inScopePct: inScopeDenom > 0 ? (pass + exception) / inScopeDenom : null,
+    inScopePct: inScopeDenom > 0 ? pass / inScopeDenom : null,
     fullPct: total > 0 ? pass / total : 0,
   };
 }
@@ -140,7 +142,8 @@ export type CategoryScore = {
   pass: number;
   fail: number;
   exception: number;
-  /** (pass + exception) / inScope. */
+  /** pass / inScope, where inScope excludes manual, pending, and
+   * accepted exceptions (the actionable controls only). */
   inScopePct: number;
 };
 
@@ -176,18 +179,13 @@ export function categoryScores(
     for (const rec of recs) {
       const status = effectiveStatus(rec, scan, userState);
       if (status === "manual" || status === "pending") continue;
-      inScope++;
-      switch (status) {
-        case "pass":
-          pass++;
-          break;
-        case "fail":
-          fail++;
-          break;
-        case "exception":
-          exception++;
-          break;
+      if (status === "exception") {
+        exception++;
+        continue;
       }
+      inScope++;
+      if (status === "pass") pass++;
+      else if (status === "fail") fail++;
     }
     if (inScope >= 3) {
       scores.push({
@@ -198,7 +196,7 @@ export function categoryScores(
         pass,
         fail,
         exception,
-        inScopePct: (pass + exception) / inScope,
+        inScopePct: pass / inScope,
       });
     }
   }
@@ -241,18 +239,13 @@ export function topLevelCategoryScores(
     for (const rec of recs) {
       const status = effectiveStatus(rec, scan, userState);
       if (status === "manual" || status === "pending") continue;
-      inScope++;
-      switch (status) {
-        case "pass":
-          pass++;
-          break;
-        case "fail":
-          fail++;
-          break;
-        case "exception":
-          exception++;
-          break;
+      if (status === "exception") {
+        exception++;
+        continue;
       }
+      inScope++;
+      if (status === "pass") pass++;
+      else if (status === "fail") fail++;
     }
     scores.push({
       number,
@@ -262,7 +255,7 @@ export function topLevelCategoryScores(
       pass,
       fail,
       exception,
-      inScopePct: inScope > 0 ? (pass + exception) / inScope : 0,
+      inScopePct: inScope > 0 ? pass / inScope : 0,
     });
   }
 

@@ -49,6 +49,24 @@ export function formatTimestamp(iso: string): string {
   return `${day} ${pad(date.getHours())}:${minutes}`;
 }
 
+/**
+ * Just the clock portion — no date — honoring the 12/24h preference
+ * (`14:30` or `2:30 PM`). Used by the trend axis to disambiguate
+ * multiple scans that fall on the same calendar day.
+ */
+export function formatClock(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const minutes = pad(date.getMinutes());
+  if (activeTimeFormat === "12h") {
+    const hours24 = date.getHours();
+    const meridiem = hours24 < 12 ? "AM" : "PM";
+    const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+    return `${hours12}:${minutes} ${meridiem}`;
+  }
+  return `${pad(date.getHours())}:${minutes}`;
+}
+
 /** Local-timezone `YYYY-MM-DD` for the report's date overline. */
 export function formatDate(iso: string): string {
   const date = new Date(iso);

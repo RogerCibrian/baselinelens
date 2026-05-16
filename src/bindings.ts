@@ -68,6 +68,16 @@ export const commands = {
 	 */
 	resetChanges: (baselineSha: string) => typedError<null, string>(__TAURI_INVOKE("reset_changes", { baselineSha })),
 	/**
+	 *  Clears all scans, history, and annotations for `baseline_sha`,
+	 *  keeping the parsed baseline loaded.
+	 */
+	clearBaselineData: (baselineSha: string) => typedError<null, string>(__TAURI_INVOKE("clear_baseline_data", { baselineSha })),
+	/**
+	 *  Removes `baseline_sha` entirely — its data, its parsed cache, and
+	 *  its active-baseline pointer — so the app returns to onboarding.
+	 */
+	removeBaseline: (baselineSha: string) => typedError<null, string>(__TAURI_INVOKE("remove_baseline", { baselineSha })),
+	/**
 	 *  Runs the audit pipeline against the device this dashboard is on:
 	 *  generates (or reuses) a cached `audit.ps1` from `baseline`, spawns
 	 *  `powershell.exe` to execute it, and streams each `ScanRecord` over
@@ -82,6 +92,24 @@ export const commands = {
 	 *  without persisting. A no-op when no scan is running.
 	 */
 	cancelScan: () => typedError<null, string>(__TAURI_INVOKE("cancel_scan")),
+	/**
+	 *  Application version string (from `Cargo.toml`) for the settings
+	 *  readout.
+	 */
+	appVersion: () => __TAURI_INVOKE<string>("app_version"),
+	/**
+	 *  Opens the appdata directory in the OS file manager. Creates it
+	 *  first so a fresh install with no scans yet still opens cleanly.
+	 */
+	openDataDir: () => typedError<null, string>(__TAURI_INVOKE("open_data_dir")),
+	/**
+	 *  Writes pre-rendered export `contents` to `dest_path`. The CSV/JSON
+	 *  body is composed on the frontend, where effective status,
+	 *  exceptions, notes, and the human-readable strings already exist and
+	 *  match the console one-to-one; this stays a thin, format-agnostic
+	 *  file write so there's no second copy of that logic in Rust.
+	 */
+	writeExport: (destPath: string, contents: string) => typedError<null, string>(__TAURI_INVOKE("write_export", { destPath, contents })),
 };
 
 /* Types */
@@ -179,6 +207,13 @@ export type CheckDetail = {
 	pass: boolean | null,
 };
 
+/**
+ *  Console table row spacing. `Comfortable` is the roomier default;
+ *  `Compact` tightens row padding so more recommendations fit on
+ *  screen for admin scanning.
+ */
+export type Density = "comfortable" | "compact";
+
 export type DeviceInfo = {
 	hostname: string,
 	osName: string,
@@ -240,6 +275,7 @@ export type PolicyScope = "Device" | "User";
 export type Preferences = {
 	theme?: Theme,
 	timeFormat?: TimeFormat,
+	density?: Density,
 };
 
 export type Principal = {

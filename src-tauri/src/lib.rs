@@ -24,8 +24,13 @@ pub fn run() {
             commands::reset_latest_scan,
             commands::reset_summaries,
             commands::reset_changes,
+            commands::clear_baseline_data,
+            commands::remove_baseline,
             commands::start_scan,
             commands::cancel_scan,
+            commands::app_version,
+            commands::open_data_dir,
+            commands::write_export,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

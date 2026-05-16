@@ -55,6 +55,19 @@ pub(crate) struct Preferences {
     pub(crate) theme: Theme,
     #[serde(default)]
     pub(crate) time_format: TimeFormat,
+    #[serde(default)]
+    pub(crate) density: Density,
+}
+
+/// Console table row spacing. `Comfortable` is the roomier default;
+/// `Compact` tightens row padding so more recommendations fit on
+/// screen for admin scanning.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Density {
+    #[default]
+    Comfortable,
+    Compact,
 }
 
 /// Clock display preference for rendered timestamps. `TwentyFourHour`

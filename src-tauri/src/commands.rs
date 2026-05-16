@@ -7,6 +7,7 @@ use specta::Type;
 use tauri::async_runtime;
 use tauri::ipc::Channel;
 use tauri::State;
+use tauri_plugin_opener::OpenerExt;
 
 use crate::audit::generator;
 use crate::audit::merge::ScanCollector;
@@ -205,6 +206,53 @@ pub(crate) fn reset_summaries(baseline_sha: String) -> Result<(), String> {
 #[specta::specta]
 pub(crate) fn reset_changes(baseline_sha: String) -> Result<(), String> {
     persist::reset_changes(&baseline_sha).map_err(|err| err.to_string())
+}
+
+/// Clears all scans, history, and annotations for `baseline_sha`,
+/// keeping the parsed baseline loaded.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn clear_baseline_data(baseline_sha: String) -> Result<(), String> {
+    persist::clear_baseline_data(&baseline_sha).map_err(|err| err.to_string())
+}
+
+/// Removes `baseline_sha` entirely — its data, its parsed cache, and
+/// its active-baseline pointer — so the app returns to onboarding.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn remove_baseline(baseline_sha: String) -> Result<(), String> {
+    persist::remove_baseline(&baseline_sha).map_err(|err| err.to_string())
+}
+
+/// Application version string (from `Cargo.toml`) for the settings
+/// readout.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Opens the appdata directory in the OS file manager. Creates it
+/// first so a fresh install with no scans yet still opens cleanly.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn open_data_dir(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = paths::data_dir().map_err(|err| err.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    app.opener()
+        .open_path(dir.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|err| err.to_string())
+}
+
+/// Writes pre-rendered export `contents` to `dest_path`. The CSV/JSON
+/// body is composed on the frontend, where effective status,
+/// exceptions, notes, and the human-readable strings already exist and
+/// match the console one-to-one; this stays a thin, format-agnostic
+/// file write so there's no second copy of that logic in Rust.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn write_export(dest_path: String, contents: String) -> Result<(), String> {
+    std::fs::write(&dest_path, contents).map_err(|err| err.to_string())
 }
 
 #[tauri::command]

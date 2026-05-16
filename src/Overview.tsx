@@ -16,7 +16,7 @@ import {
   type Delta,
 } from "./data/changes";
 import type { ConsoleFilter } from "./data/consoleFilter";
-import { formatDate, formatDateShort } from "./format";
+import { formatClock, formatDate, formatDateShort } from "./format";
 import {
   categoryScores,
   scoresByLevel,
@@ -43,12 +43,15 @@ export default function Overview({
   summaries,
   loadErrors,
   userState,
+  appVersion,
   onJumpToConsole,
   onResetSummaries,
   onResetChanges,
 }: {
   baseline: Baseline;
   scan: Scan;
+  /** App version for the report footer's product line. */
+  appVersion: string;
   /** Per-rec scan-time status flips, oldest first. */
   changes: ChangeEvent[];
   /** Per-scan summary records (counts + timestamp + versions). */
@@ -95,6 +98,13 @@ export default function Overview({
   return (
     <article className="overview">
       <header className="overview-header">
+        <button
+          type="button"
+          className="overview-print"
+          onClick={() => window.print()}
+        >
+          Print report
+        </button>
         <p className="eyebrow">
           Compliance report ·{" "}
           <span className="mono">{formatDate(scan.startedAt)}</span>
@@ -104,7 +114,9 @@ export default function Overview({
         <p className="meta">
           <span className="mono">{scan.device.hostname}</span> ·{" "}
           {scan.device.osName} {scan.device.osVersion} ·{" "}
-          {baseline.source.benchmarkName} {baseline.source.benchmarkVersion}
+          <span className="meta-benchmark">
+            {baseline.source.benchmarkName} {baseline.source.benchmarkVersion}
+          </span>
         </p>
       </header>
 
@@ -121,7 +133,7 @@ export default function Overview({
         </div>
         <p className="strict-line">
           <strong className="strict-line-label">Strict compliance</strong>
-          {" — every control counted, no exception credit: "}
+          {" — every recommendation counted, including manual and accepted exceptions: "}
           <span className="strict-line-values mono">
             {levels
               .map(
@@ -156,8 +168,8 @@ export default function Overview({
           <figure className="trend-chart-figure">
             <TrendChart points={trendPoints} />
             <figcaption className="trend-chart-caption">
-              Fig. 1 — In-scope pass rate, unweighted across recommendations
-              with a settled verdict.
+              Fig. 1 — In-scope pass rate across recommendations with a
+              settled verdict.
             </figcaption>
           </figure>
         )}
@@ -165,8 +177,7 @@ export default function Overview({
 
       <DocSection num={2} title="Weakest categories">
         <p className="section-lead">
-          Up to six categories with the lowest in-scope pass rates. These
-          are where remediation work is most concentrated.
+          Up to six categories with the lowest in-scope pass rates.
         </p>
         {weakest.length === 0 ? (
           <p className="muted">
@@ -187,7 +198,7 @@ export default function Overview({
 
       <DocSection num={3} title="Recently changed">
         <p className="section-lead">
-          Recommendations whose status flipped against the prior scan.
+          Recommendations whose status recently flipped.
         </p>
         {loadErrors.changes ? (
           <p className="surface-notice">
@@ -225,11 +236,25 @@ export default function Overview({
       </DocSection>
 
       <footer className="overview-footer">
-        <span className="mono">{baseline.source.benchmarkVersion}</span>
+        <span className="mono">BaselineLens v{appVersion || "—"}</span>
         <span className="mono">
-          {baseline.recommendations.length} recommendations
+          {baseline.source.benchmarkName}{" "}
+          {baseline.source.benchmarkVersion}
         </span>
       </footer>
+
+      {/* Print-only running footer. display:none on screen; in print
+          it's position:fixed so Chromium repeats it on every page,
+          standing in for the browser's stripped header/footer. */}
+      <div className="print-footer" aria-hidden="true">
+        <span>
+          {baseline.source.benchmarkName}{" "}
+          {baseline.source.benchmarkVersion}
+        </span>
+        <span>
+          {scan.device.hostname} · {formatDate(scan.startedAt)}
+        </span>
+      </div>
     </article>
   );
 }
@@ -242,10 +267,12 @@ function LevelCard({
   onJump: () => void;
 }) {
   const tone = toneFor(score.inScopePct);
-  // In-scope excludes both Manual recs (no automated check) and Pending
-  // ones (haven't been scanned yet) so the % reflects only settled
-  // verdicts. Pending count surfaces separately in the note when > 0.
-  const inScopeDenom = score.total - score.manual - score.pending;
+  // In-scope is the actionable set: Manual (no automated check),
+  // Pending (not scanned yet), and accepted exceptions are all
+  // excluded, so the % is a pure pass rate. The excluded counts
+  // surface separately in the note.
+  const inScopeDenom =
+    score.total - score.manual - score.pending - score.exception;
   const inScopePct =
     score.inScopePct === null ? null : Math.round(score.inScopePct * 100);
   return (
@@ -272,7 +299,9 @@ function LevelCard({
         </div>
       </div>
       <p className="level-card-note muted mono">
-        {score.pass + score.exception} of {inScopeDenom} in scope
+        {score.pass} of {inScopeDenom} passing
+        {score.exception > 0 &&
+          ` · ${score.exception} exception${score.exception === 1 ? "" : "s"}`}
         {score.pending > 0 && ` · ${score.pending} pending`}
       </p>
       <div className={`threshold-bar tone-${tone}`}>
@@ -437,13 +466,14 @@ function buildHeadline(
 /**
  * In-scope compliance rate for a `ScanSummary`. Matches the level
  * cards' methodology so the headline strip and trend chart move in
- * lockstep with what the per-level breakdown shows: passes and
- * exceptions both count as closed work; fail and error count against;
- * manual and pending are out of scope.
+ * lockstep with the per-level breakdown: only pass counts as done;
+ * fail and error count against; manual and accepted exceptions are
+ * out of scope. Recomputed from the stored component counts, so the
+ * whole trend reflects this methodology uniformly with no break.
  */
 function passPctOf(summary: ScanSummary): number {
-  const denom = summary.pass + summary.fail + summary.error + summary.exception;
-  return denom === 0 ? 0 : (summary.pass + summary.exception) / denom;
+  const denom = summary.pass + summary.fail + summary.error;
+  return denom === 0 ? 0 : summary.pass / denom;
 }
 
 function HeadlineH1({ headline }: { headline: Headline }) {
@@ -599,6 +629,35 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
   const ticks = 4;
   const yTicks = Array.from({ length: ticks + 1 }, (_, i) => yMin + (yRange * i) / ticks);
 
+  // Calendar-day key per point. A point whose day appears more than
+  // once among the visible points gets its time appended so same-day
+  // scans are distinguishable; lone-day points stay just the date.
+  const dayKeys = points.map((p) => {
+    const date = new Date(p.startedAt);
+    return Number.isNaN(date.getTime())
+      ? p.startedAt
+      : `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  });
+  const dayCounts = new Map<string, number>();
+  for (const key of dayKeys) {
+    dayCounts.set(key, (dayCounts.get(key) ?? 0) + 1);
+  }
+  const labels = points.map((p, i) =>
+    (dayCounts.get(dayKeys[i]) ?? 0) > 1
+      ? `${formatDateShort(p.startedAt)} ${formatClock(p.startedAt)}`
+      : formatDateShort(p.startedAt),
+  );
+  // Thin labels when they'd collide: roughly 6px per char in the small
+  // mono axis font plus breathing room, against the per-point spacing.
+  // First and last always render so the range stays readable.
+  const maxLabelLen = labels.reduce((max, s) => Math.max(max, s.length), 0);
+  const minSpacing = maxLabelLen * 6 + 10;
+  const spacing =
+    points.length > 1 ? innerW / (points.length - 1) : innerW;
+  const labelStep = Math.max(1, Math.ceil(minSpacing / spacing));
+  const showLabel = (i: number) =>
+    i === 0 || i === points.length - 1 || i % labelStep === 0;
+
   return (
     <svg
       className="trend-chart"
@@ -653,7 +712,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
               reachable without pixel-hunting the 3px dot. */}
           <circle cx={x(i)} cy={y(values[i])} r={12} fill="transparent">
             <title>
-              {`${formatDateShort(p.startedAt)} — ${values[i].toFixed(1)}% in scope`}
+              {`${formatDateShort(p.startedAt)} ${formatClock(p.startedAt)} — ${values[i].toFixed(1)}% in scope`}
             </title>
           </circle>
           <circle
@@ -665,14 +724,22 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
             strokeWidth={1.5}
             pointerEvents="none"
           />
-          <text
-            x={x(i)}
-            y={padT + innerH + 14}
-            className="trend-chart-axis mono"
-            textAnchor="middle"
-          >
-            {formatDateShort(p.startedAt)}
-          </text>
+          {showLabel(i) && (
+            <text
+              x={x(i)}
+              y={padT + innerH + 14}
+              className="trend-chart-axis mono"
+              textAnchor={
+                i === 0
+                  ? "start"
+                  : i === points.length - 1
+                    ? "end"
+                    : "middle"
+              }
+            >
+              {labels[i]}
+            </text>
+          )}
         </g>
       ))}
     </svg>

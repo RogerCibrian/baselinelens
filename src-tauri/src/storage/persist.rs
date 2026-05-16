@@ -343,6 +343,32 @@ pub(crate) fn reset_changes(baseline_sha: &str) -> Result<(), StorageError> {
     remove_if_exists(&paths::changes_path(baseline_sha)?)
 }
 
+/// Clears all scan-derived data and user annotations for a baseline,
+/// keeping the parsed baseline and app preferences. Scans, trend
+/// history, the change log, exceptions, and notes are all removed.
+pub(crate) fn clear_baseline_data(baseline_sha: &str) -> Result<(), StorageError> {
+    remove_if_exists(&paths::latest_scan_path(baseline_sha)?)?;
+    remove_if_exists(&paths::summaries_path(baseline_sha)?)?;
+    remove_if_exists(&paths::changes_path(baseline_sha)?)?;
+    remove_if_exists(&paths::user_state_path(baseline_sha)?)?;
+    Ok(())
+}
+
+/// `clear_baseline_data` plus the parsed-baseline cache, and detaches
+/// it as the active baseline so the app reopens onboarding on next
+/// load. Other cached baselines are untouched.
+pub(crate) fn remove_baseline(baseline_sha: &str) -> Result<(), StorageError> {
+    clear_baseline_data(baseline_sha)?;
+    remove_if_exists(&paths::baseline_cache_path(baseline_sha)?)?;
+    if let Some(mut state) = load_app_state()? {
+        if state.active_baseline_sha.as_deref() == Some(baseline_sha) {
+            state.active_baseline_sha = None;
+            save_app_state(&state)?;
+        }
+    }
+    Ok(())
+}
+
 /// Writes `value` to `path` via a same-directory tempfile + rename so
 /// a crash mid-write can't leave a partially-written file in place.
 /// `fs::rename` is atomic on the same filesystem on both Windows and

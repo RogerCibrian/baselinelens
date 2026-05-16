@@ -27,8 +27,13 @@ pub fn export_to(out_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
             crate::commands::reset_latest_scan,
             crate::commands::reset_summaries,
             crate::commands::reset_changes,
+            crate::commands::clear_baseline_data,
+            crate::commands::remove_baseline,
             crate::commands::start_scan,
             crate::commands::cancel_scan,
+            crate::commands::app_version,
+            crate::commands::open_data_dir,
+            crate::commands::write_export,
         ])
         .typ::<crate::commands::CachedBaseline>()
         .typ::<crate::commands::ScanContextLoad>()
@@ -44,7 +49,8 @@ pub fn export_to(out_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .typ::<crate::storage::model::AppState>()
         .typ::<crate::storage::model::Preferences>()
         .typ::<crate::storage::model::Theme>()
-        .typ::<crate::storage::model::TimeFormat>();
+        .typ::<crate::storage::model::TimeFormat>()
+        .typ::<crate::storage::model::Density>();
 
     builder.export(Typescript::default(), out_path)?;
     Ok(())
