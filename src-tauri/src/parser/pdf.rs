@@ -1,6 +1,8 @@
 //! PDF text extraction.
 
+#[cfg(test)]
 use std::fs;
+#[cfg(test)]
 use std::path::Path;
 
 use lopdf::Document;
@@ -42,6 +44,7 @@ pub(crate) fn extract_with_progress(
 
 /// No-progress path wrapper used by the parser unit tests that just
 /// need a `String` of extracted text from a PDF on disk.
+#[cfg(test)]
 pub(crate) fn extract(path: &Path) -> Result<String, ParseError> {
     let bytes = fs::read(path).map_err(|source| ParseError::Io {
         path: path.to_path_buf(),

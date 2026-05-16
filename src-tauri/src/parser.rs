@@ -43,14 +43,9 @@ pub(crate) enum ParserProgress {
     Complete,
 }
 
-/// Parses the PDF at `path` into a fully-populated `Baseline`.
-pub(crate) fn parse(path: &Path) -> Result<Baseline, ParseError> {
-    parse_with_progress(path, |_| {})
-}
-
-/// Same as `parse` but invokes `on_progress` at each pipeline stage so a
-/// caller (typically the Tauri command) can stream progress updates to the
-/// UI.
+/// Parses the PDF at `path` into a fully-populated `Baseline`, invoking
+/// `on_progress` at each pipeline stage so a caller (typically the Tauri
+/// command) can stream progress updates to the UI.
 pub(crate) fn parse_with_progress(
     path: &Path,
     mut on_progress: impl FnMut(ParserProgress),
