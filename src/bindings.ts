@@ -26,6 +26,7 @@ export const commands = {
 	parseBaseline: (path: string, onProgress: Channel<ParserProgress>) => typedError<Baseline, string>(__TAURI_INVOKE("parse_baseline", { path, onProgress })),
 	loadAppState: () => typedError<{
 	activeBaselineSha: string | null,
+	preferences?: Preferences,
 } | null, string>(__TAURI_INVOKE("load_app_state")),
 	saveAppState: (state: AppState) => typedError<null, string>(__TAURI_INVOKE("save_app_state", { state })),
 	loadUserState: (baselineSha: string) => typedError<{
@@ -79,10 +80,12 @@ export const commands = {
 /* Types */
 /**
  *  Cross-baseline application state, persisted as `app_state.json`. Tracks
- *  which baseline (if any) the dashboard should reopen on next launch.
+ *  which baseline (if any) the dashboard should reopen on next launch and
+ *  user-level UI preferences that don't belong to any single baseline.
  */
 export type AppState = {
 	activeBaselineSha: string | null,
+	preferences?: Preferences,
 };
 
 export type Assessment = "Automated" | "Manual";
@@ -225,6 +228,11 @@ export type Note = {
 export type ParserProgress = { stage: "readingFile" } | { stage: "computingChecksum" } | { stage: "extractingText"; done: number; total: number } | { stage: "slicingRecommendations" } | { stage: "classifying"; done: number; total: number } | { stage: "complete" };
 
 export type PolicyScope = "Device" | "User";
+
+// User-level UI preferences that survive baseline switches.
+export type Preferences = {
+	theme?: Theme,
+};
 
 export type Principal = {
 	identifier: string,
@@ -396,6 +404,12 @@ export type SeceditSection =
 { type: "Other"; name: string };
 
 export type Status = "Pass" | "Fail" | "Manual" | "Error";
+
+/**
+ *  Color scheme preference. `System` follows the OS via the webview's
+ *  `prefers-color-scheme`; `Light` / `Dark` pin the theme regardless.
+ */
+export type Theme = "system" | "light" | "dark";
 
 /**
  *  Per-baseline user annotations, persisted as

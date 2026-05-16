@@ -113,7 +113,7 @@ pub(crate) struct ChangeEvent {
     pub(crate) audit_script_version: String,
 }
 
-/// Lightweight per-scan record for the trend chart and headline-strip
+/// Lightweight per-scan record for the trend chart and headline
 /// math. Kept separate from full `Scan` files so we can show months of
 /// history without growing storage materially — counts mean the same
 /// thing across schema versions, so old summaries stay readable even
@@ -140,7 +140,7 @@ pub(crate) struct ScanSummary {
 /// needs it. `latest` drives current-scan rendering; `changes` powers
 /// per-rec delta indicators with persistence (a flag stays until the
 /// rec actually flips again, not just until the next no-op rescan);
-/// `summaries` feeds the trend chart and headline-strip math.
+/// `summaries` feeds the trend chart and headline math.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ScanContext {

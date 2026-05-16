@@ -37,9 +37,31 @@ pub(crate) struct Note {
 }
 
 /// Cross-baseline application state, persisted as `app_state.json`. Tracks
-/// which baseline (if any) the dashboard should reopen on next launch.
+/// which baseline (if any) the dashboard should reopen on next launch and
+/// user-level UI preferences that don't belong to any single baseline.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AppState {
     pub(crate) active_baseline_sha: Option<String>,
+    #[serde(default)]
+    pub(crate) preferences: Preferences,
+}
+
+/// User-level UI preferences that survive baseline switches.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Preferences {
+    #[serde(default)]
+    pub(crate) theme: Theme,
+}
+
+/// Color scheme preference. `System` follows the OS via the webview's
+/// `prefers-color-scheme`; `Light` / `Dark` pin the theme regardless.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Theme {
+    #[default]
+    System,
+    Light,
+    Dark,
 }

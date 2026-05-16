@@ -5,6 +5,30 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BaselineLens</title>
+    <script>
+      // Apply the persisted theme before first paint to avoid a flash of
+      // the wrong theme. The canonical store is app_state.json (read via
+      // Tauri once React mounts); this localStorage entry is a synchronous
+      // mirror written alongside every save in App.tsx.
+      (function () {
+        try {
+          var stored = localStorage.getItem("theme");
+          var theme = stored === "light" || stored === "dark" || stored === "system"
+            ? stored
+            : "system";
+          var resolved = theme;
+          if (theme === "system") {
+            resolved = window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+          }
+          document.documentElement.dataset.theme = resolved;
+        } catch (_) {
+          // localStorage can throw in private/locked-down contexts; fall
+          // back to the default light theme by leaving data-theme unset.
+        }
+      })();
+    </script>
   </head>
 
   <body>

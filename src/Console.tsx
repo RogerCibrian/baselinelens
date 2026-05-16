@@ -666,6 +666,7 @@ function FilterPill({
           </option>
         ))}
       </select>
+      <SelectCaret />
     </label>
   );
 }
@@ -730,6 +731,7 @@ function ColumnsMenu({
       >
         <span className="filter-pill-label">Edit columns</span>
         <span className="filter-pill-select">{count}</span>
+        <SelectCaret />
       </button>
       {open && (
         <div className="columns-menu-popover" role="menu">
@@ -797,7 +799,11 @@ function RecTable({
           )}
           {columns.expected && <th>Expected</th>}
           {columns.found && <th>Found</th>}
-          <th className="rec-table-delta-col" aria-label="Change">Δ</th>
+          <th
+            className="rec-table-delta-col"
+            aria-label="Change vs. prior scan"
+            title="Change vs. prior scan"
+          />
         </tr>
       </thead>
       <tbody>
@@ -1128,7 +1134,7 @@ function DetailDrawer({
               />
 
               <section className="drawer-section">
-                <h4 className="section-eyebrow">Exception</h4>
+                <h4>Exception</h4>
                 <p className="muted drawer-help">
                   Granting an exception treats this rec as a pass for the
                   In-scope score.
@@ -1174,7 +1180,7 @@ function DetailDrawer({
               </section>
 
               <section className="drawer-section">
-                <h4 className="section-eyebrow">Note</h4>
+                <h4>Note</h4>
                 <label>
                   Investigation notes, links, decisions — won't change pass/fail.
                   <textarea
@@ -1209,7 +1215,7 @@ function DetailDrawer({
 
               {rec.references.length > 0 && (
                 <section className="drawer-section">
-                  <h4 className="section-eyebrow">References</h4>
+                  <h4>References</h4>
                   <ul className="drawer-references">
                     {rec.references.map((ref, i) => (
                       <li key={i}>
@@ -1249,7 +1255,7 @@ function DetailDrawer({
 function DrawerText({ title, text }: { title: string; text: string }) {
   return (
     <section className="drawer-section">
-      <h4 className="section-eyebrow">{title}</h4>
+      <h4>{title}</h4>
       {paragraphs(text).map((para, i) => (
         <p key={i} className="drawer-text">
           {para}
@@ -1303,7 +1309,7 @@ function ScanResultSection({
   const hasChecks = result.checks && result.checks.length > 0;
   return (
     <section className="drawer-section">
-      <h4 className="section-eyebrow">Scan result</h4>
+      <h4>Scan result</h4>
       <dl className="drawer-kv">
         <dt>Status</dt>
         <dd className={`scan-status scan-status-${result.status.toLowerCase()}`}>
@@ -1422,6 +1428,27 @@ function RailChevronIcon({ flipped = false }: { flipped?: boolean }) {
       style={flipped ? { transform: "rotate(180deg)" } : undefined}
     >
       <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+/** Down chevron for the filter/columns pills — replaces the prior
+ * CSS gradient-triangle caret so it stays crisp at any display scale. */
+function SelectCaret() {
+  return (
+    <svg
+      className="filter-pill-caret"
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 9l6 6 6-6" />
     </svg>
   );
 }

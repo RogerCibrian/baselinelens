@@ -19,6 +19,7 @@ import {
   type ScanLoadErrors,
   type ScanRecord,
   type ScanResult,
+  type Theme,
   type UserState,
 } from "./bindings";
 import Console from "./Console";
@@ -32,6 +33,7 @@ import {
 } from "./data/consoleFilter";
 import Onboarding from "./Onboarding";
 import Overview from "./Overview";
+import ThemeSegment from "./ThemeSegment";
 
 import "./App.css";
 
@@ -76,6 +78,11 @@ function App() {
   // initial state we'd flash the welcome screen on every cold launch.
   const [appState, setAppState] = useState<AppState>({ kind: "loading" });
   const [tab, setTab] = useState<Tab>("overview");
+  // Theme is seeded from the synchronous localStorage mirror so initial
+  // render matches what the pre-paint script in index.html already applied
+  // to <html>. The canonical value is loaded from app_state.json below
+  // and overwrites this if it differs.
+  const [theme, setTheme] = useState<Theme>(readStoredTheme);
   const [consoleFilter, setConsoleFilter] = useState<ConsoleFilter>(
     defaultConsoleFilter,
   );
@@ -92,13 +99,56 @@ function App() {
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
 
   useEffect(() => {
-    void restoreFromCache(setAppState);
+    void restoreFromCache(setAppState, setTheme);
     void (async () => {
       const result = await commands.getDeviceInfo();
       if (result.status === "ok") setDeviceInfo(result.data);
       else console.error("Failed to read device info:", result.error);
     })();
   }, []);
+
+  // Applies the active theme to <html data-theme="..."> and follows the
+  // OS preference when set to "system". Runs on every theme change and
+  // re-subscribes the matchMedia listener accordingly.
+  useEffect(() => {
+    function apply(resolved: "light" | "dark") {
+      document.documentElement.dataset.theme = resolved;
+    }
+    if (theme === "system") {
+      const query = window.matchMedia("(prefers-color-scheme: dark)");
+      apply(query.matches ? "dark" : "light");
+      const listener = (event: MediaQueryListEvent) => {
+        apply(event.matches ? "dark" : "light");
+      };
+      query.addEventListener("change", listener);
+      return () => query.removeEventListener("change", listener);
+    }
+    apply(theme);
+  }, [theme]);
+
+  // Persists a theme change to app_state.json (canonical) and writes a
+  // localStorage mirror so the pre-paint script in index.html can apply
+  // the same value on the next launch without an IPC round-trip.
+  async function updateTheme(next: Theme) {
+    setTheme(next);
+    try {
+      localStorage.setItem("theme", next);
+    } catch {
+      // Storage can fail in locked-down contexts; the in-memory + Rust
+      // copies still drive the active session.
+    }
+    const current = await commands.loadAppState();
+    const base = current.status === "ok" && current.data
+      ? current.data
+      : { activeBaselineSha: null };
+    const result = await commands.saveAppState({
+      ...base,
+      preferences: { theme: next },
+    });
+    if (result.status !== "ok") {
+      console.error("Failed to save theme preference:", result.error);
+    }
+  }
 
   // Applies a UserState change locally and persists it. The optimistic
   // update keeps the UI snappy; a save failure logs to the console and
@@ -146,6 +196,8 @@ function App() {
         consoleRailCollapsed={consoleRailCollapsed}
         onConsoleRailCollapsedChange={setConsoleRailCollapsed}
         onJumpToConsole={jumpToConsole}
+        theme={theme}
+        onThemeChange={(next) => void updateTheme(next)}
       />
     );
   }
@@ -153,6 +205,8 @@ function App() {
     <Onboarding
       state={appState}
       deviceInfo={deviceInfo}
+      theme={theme}
+      onThemeChange={(next) => void updateTheme(next)}
       onPickPath={(path) => void parseAtPath(path, setAppState)}
       onError={(message, fileName) =>
         setAppState({ kind: "error", message, fileName: fileName ?? null })
@@ -173,15 +227,46 @@ function App() {
 }
 
 /**
+ * Reads the synchronous localStorage mirror of the theme preference.
+ * Validates the stored string against the `Theme` union so a stray edit
+ * to localStorage can't push an unknown value into state. Defaults to
+ * `"system"` when no entry is set yet.
+ */
+function readStoredTheme(): Theme {
+  try {
+    const raw = localStorage.getItem("theme");
+    if (raw === "light" || raw === "dark" || raw === "system") return raw;
+  } catch {
+    // Inaccessible storage falls through to the default.
+  }
+  return "system";
+}
+
+/**
  * Reads `app_state.json` on mount and rehydrates the dashboard from the
  * cached `Baseline` and its `UserState`. Falls back to the onboarding
  * screen when nothing is cached or the cached entry can't be loaded.
+ * Also syncs the theme preference from the canonical store into the
+ * in-memory state and localStorage mirror.
  */
-async function restoreFromCache(setAppState: Dispatch<SetStateAction<AppState>>) {
+async function restoreFromCache(
+  setAppState: Dispatch<SetStateAction<AppState>>,
+  setTheme: Dispatch<SetStateAction<Theme>>,
+) {
   const persisted = await commands.loadAppState();
   if (persisted.status !== "ok") {
     setAppState({ kind: "error", message: persisted.error, fileName: null });
     return;
+  }
+  const storedTheme = persisted.data?.preferences?.theme;
+  if (storedTheme) {
+    setTheme(storedTheme);
+    try {
+      localStorage.setItem("theme", storedTheme);
+    } catch {
+      // Same fallthrough as above — locked-down storage just skips the
+      // mirror; the in-memory copy still drives the active session.
+    }
   }
   const sha = persisted.data?.activeBaselineSha;
   if (!sha) {
@@ -296,6 +381,8 @@ function Dashboard({
   consoleRailCollapsed,
   onConsoleRailCollapsedChange,
   onJumpToConsole,
+  theme,
+  onThemeChange,
 }: {
   baseline: Baseline;
   userState: UserState;
@@ -320,6 +407,8 @@ function Dashboard({
   consoleRailCollapsed: boolean;
   onConsoleRailCollapsedChange: (next: boolean) => void;
   onJumpToConsole: (filter: Partial<ConsoleFilter>) => void;
+  theme: Theme;
+  onThemeChange: (next: Theme) => void;
 }) {
   const [context, setContext] = useState<ScanContext>(emptyScanContext);
   const [loadErrors, setLoadErrors] = useState<ScanLoadErrors>(emptyLoadErrors);
@@ -414,21 +503,29 @@ function Dashboard({
     // pre-rescan `latest` is still the source of truth on disk; we just
     // need to mirror that in memory if the run aborts.
     const previousLatest = context.latest;
-    // Drop into a partial Scan immediately so the dashboard switches
-    // out of the empty state; channel messages fill `results`
-    // row-by-row. Once the scan completes we re-fetch the whole context
-    // for a clean sync.
-    setContext((prev) => ({ ...prev, latest: makePartialScan(baseline, deviceInfo) }));
+    // The partial Scan is built up front but only committed once the
+    // first result arrives — see the channel handler. A run that fails
+    // before emitting anything (UAC denied, script error) then never
+    // flips the dashboard out of its current view, so there's no flash
+    // of empty L1/L2/BL cards before falling back.
+    const partial = makePartialScan(baseline, deviceInfo);
     const channel = new Channel<ScanRecord>();
     channel.onmessage = (record) => {
       setContext((prev) => {
-        if (!prev.latest) return prev;
+        // First record: swap whatever's showing for the fresh partial
+        // so stale results from a prior scan don't bleed into the new
+        // run; `prev.latest === previousLatest` only holds until that
+        // first swap, after which records merge into the partial.
+        const live =
+          !prev.latest || prev.latest === previousLatest
+            ? partial
+            : prev.latest;
         return {
           ...prev,
           latest: {
-            ...prev.latest,
+            ...live,
             results: {
-              ...prev.latest.results,
+              ...live.results,
               [record.id]: scanRecordToResult(record),
             },
           },
@@ -512,6 +609,8 @@ function Dashboard({
           {buttonLabel}
         </button>
         <SettingsMenu
+          theme={theme}
+          onThemeChange={onThemeChange}
           onChangeBaseline={onReparse}
           onResetLatest={() => void resetScanFile("latest")}
           onResetSummaries={() => void resetScanFile("summaries")}
@@ -648,6 +747,9 @@ function EmptyScanState({
     : "Run a scan to evaluate this device against the loaded baseline. Results stay on the device and are saved between launches.";
   return (
     <div className="empty-scan">
+      <span className="empty-scan-icon" aria-hidden="true">
+        <ScanIcon />
+      </span>
       <h2 className="empty-scan-title">{title}</h2>
       <p className="empty-scan-body">{body}</p>
       {loadError && <p className="empty-scan-error mono">{loadError}</p>}
@@ -683,11 +785,15 @@ function EmptyScanState({
  * a stray click could clear a working trend history.
  */
 function SettingsMenu({
+  theme,
+  onThemeChange,
   onChangeBaseline,
   onResetLatest,
   onResetSummaries,
   onResetChanges,
 }: {
+  theme: Theme;
+  onThemeChange: (next: Theme) => void;
   onChangeBaseline: () => void;
   onResetLatest: () => void;
   onResetSummaries: () => void;
@@ -735,6 +841,11 @@ function SettingsMenu({
       </button>
       {open && (
         <div className="settings-menu" role="menu">
+          <div className="settings-section">
+            <span className="settings-section-label">Appearance</span>
+            <ThemeSegment theme={theme} onThemeChange={onThemeChange} />
+          </div>
+          <div className="settings-divider" role="separator" />
           <button
             type="button"
             role="menuitem"
@@ -893,6 +1004,30 @@ function WarnIcon() {
         strokeLinecap="round"
       />
       <circle cx="8" cy="11.5" r="0.85" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Display with an inline scan-pulse — the empty-state mark for "no
+ * scan yet / run a scan". Lucide-style 1.5px stroke to match the
+ * other inline icons. */
+function ScanIcon() {
+  return (
+    <svg
+      width="44"
+      height="44"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="2.5" y="4" width="19" height="13" rx="2" />
+      <path d="M9 21h6" />
+      <path d="M12 17v4" />
+      <path d="M6 11h3l1.5-3 2 5 1.5-3H18" />
     </svg>
   );
 }

@@ -4,7 +4,8 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import type { Baseline, DeviceInfo, ParserProgress } from "./bindings";
+import type { Baseline, DeviceInfo, ParserProgress, Theme } from "./bindings";
+import ThemeSegment from "./ThemeSegment";
 
 import "./Onboarding.css";
 
@@ -19,6 +20,8 @@ type DragState = "none" | "valid" | "invalid";
 export default function Onboarding({
   state,
   deviceInfo,
+  theme,
+  onThemeChange,
   onPickPath,
   onError,
   onConfirm,
@@ -30,6 +33,8 @@ export default function Onboarding({
    * the strip renders empty fields rather than placeholders so the
    * layout stays stable when values arrive. */
   deviceInfo: DeviceInfo | null;
+  theme: Theme;
+  onThemeChange: (next: Theme) => void;
   onPickPath: (path: string) => void;
   onError: (message: string, fileName?: string) => void;
   onConfirm: () => void;
@@ -102,6 +107,7 @@ export default function Onboarding({
     <div className="ob-page">
       <header className="ob-topbar">
         <div className="ob-wordmark">BaselineLens</div>
+        <ThemeSegment theme={theme} onThemeChange={onThemeChange} />
       </header>
 
       <main className="ob-main">
@@ -136,7 +142,7 @@ export default function Onboarding({
 function Hero() {
   return (
     <section className="ob-hero">
-      <div className="ob-eyebrow">§ Get started</div>
+      <div className="ob-eyebrow">Get started</div>
       <h1 className="ob-h1">
         Audit a Windows device against
         <br />
@@ -389,7 +395,7 @@ function Steps() {
   ];
   return (
     <section className="ob-steps">
-      <div className="ob-steps-eyebrow">§ What happens next</div>
+      <div className="ob-steps-eyebrow">What happens next</div>
       <div className="ob-steps-list">
         {steps.map((step) => (
           <div key={step.n} className="ob-step">
@@ -452,7 +458,7 @@ function DragOverlay({
   ]
     .filter(Boolean)
     .join(" ");
-  const eyebrow = invalid ? "§ Not a PDF" : "§ Incoming file";
+  const eyebrow = invalid ? "Not a PDF" : "Incoming file";
   const heading = invalid ? "PDF files only" : "Drop to parse";
   const subtitle = invalid
     ? "Drop a CIS Benchmark PDF to continue."
@@ -502,7 +508,7 @@ function ConfirmModal({
       onClick={onCancel}
     >
       <div className="ob-confirm" onClick={(e) => e.stopPropagation()}>
-        <div className="ob-confirm-eyebrow">§ Confirm scan</div>
+        <div className="ob-confirm-eyebrow">Confirm scan</div>
         <h2 className="ob-confirm-h">Ready to scan this device?</h2>
         <p className="ob-confirm-sub">
           We parsed the benchmark and matched it to this machine. Review the

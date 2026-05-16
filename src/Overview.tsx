@@ -98,17 +98,20 @@ export default function Overview({
           Compliance report ·{" "}
           <span className="mono">{formatDate(scan.startedAt)}</span>
         </p>
-        <h1 className="serif overview-title">{baseline.source.benchmarkName}</h1>
+        <HeadlineH1
+          headline={headline}
+          fallback={baseline.source.benchmarkName}
+        />
+        <HeadlineFacts headline={headline} />
         <p className="meta">
           <span className="mono">{scan.device.hostname}</span> ·{" "}
           {scan.device.osName} {scan.device.osVersion} ·{" "}
-          {baseline.source.benchmarkVersion}
+          {baseline.source.benchmarkName} {baseline.source.benchmarkVersion}
         </p>
       </header>
 
       <section className="overview-section">
-        <HeadlineStrip headline={headline} />
-        <h2 className="section-eyebrow">§ Score by level</h2>
+        <h2 className="doc-section-heading serif">Score by level</h2>
         <div className="level-cards">
           {levels.map((score) => (
             <LevelCard
@@ -118,6 +121,17 @@ export default function Overview({
             />
           ))}
         </div>
+        <p className="strict-line">
+          <strong className="strict-line-label">Strict compliance</strong>
+          {" — every control counted, no exception credit: "}
+          <span className="strict-line-values mono">
+            {levels
+              .map(
+                (s) => `${levelName(s.level)} ${Math.round(s.fullPct * 100)}%`,
+              )
+              .join("  ·  ")}
+          </span>
+        </p>
       </section>
 
       <DocSection num={1} title="Trend">
@@ -252,12 +266,6 @@ function LevelCard({
                 <span className="level-pct-unit">%</span>
               </>
             )}
-          </span>
-        </div>
-        <div>
-          <span className="caption">Full</span>
-          <span className="level-full mono">
-            {Math.round(score.fullPct * 100)}%
           </span>
         </div>
       </div>
@@ -436,25 +444,47 @@ function passPctOf(summary: ScanSummary): number {
   return denom === 0 ? 0 : (summary.pass + summary.exception) / denom;
 }
 
-function HeadlineStrip({ headline }: { headline: Headline }) {
+function HeadlineH1({
+  headline,
+  fallback,
+}: {
+  headline: Headline;
+  /** Used when no summaries exist yet (e.g. trend history was reset
+   * after a scan). Falls back to the benchmark name so the report
+   * always has a substantive H1. */
+  fallback: string;
+}) {
+  if (headline.kind === "empty") {
+    return <h1 className="serif overview-headline">{fallback}</h1>;
+  }
+  if (headline.kind === "first") {
+    return <h1 className="serif overview-headline">First scan recorded.</h1>;
+  }
+  return (
+    <h1 className="serif overview-headline">
+      Compliance is{" "}
+      <em className={`headline-trend headline-trend-${headline.trend}`}>
+        {headline.trend}
+      </em>
+      .
+    </h1>
+  );
+}
+
+function HeadlineFacts({ headline }: { headline: Headline }) {
   if (headline.kind === "empty") return null;
   if (headline.kind === "first") {
     return (
-      <p className="headline-strip headline-first">
-        First scan recorded — trend metrics appear after the next scan.
+      <p className="headline-facts headline-facts-first">
+        Trend metrics appear after the next scan.
       </p>
     );
   }
-  const { trend, pointsDelta, windowDays, improved, regressed, weakCategoryCount } =
+  const { pointsDelta, windowDays, improved, regressed, weakCategoryCount } =
     headline;
   const arrow = pointsDelta >= 0 ? "↑" : "↓";
   return (
-    <p className="headline-strip">
-      <span className="headline-lead serif">
-        Compliance is{" "}
-        <em className={`headline-trend headline-trend-${trend}`}>{trend}</em>.
-      </span>
-      <span className="headline-divider" aria-hidden="true" />
+    <p className="headline-facts">
       <span className="headline-fact mono">
         {arrow} {Math.abs(pointsDelta).toFixed(1)} pts in {windowDays} day
         {windowDays === 1 ? "" : "s"}

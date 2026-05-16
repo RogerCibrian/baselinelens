@@ -5,6 +5,10 @@
 }
 
 .ob-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   padding: 24px 32px;
 }
 
@@ -130,7 +134,7 @@
   width: 100%;
   padding: 32px 24px;
   background: var(--v-paper);
-  border: 1px dashed var(--v-line-strong);
+  border: 1px solid var(--v-line-strong);
   border-radius: 6px;
   cursor: pointer;
   text-align: left;
@@ -139,8 +143,8 @@
   transition: border-color 140ms ease, background 140ms ease;
 }
 
-.ob-drop:hover {
-  border-color: var(--v-text-muted);
+.ob-drop:hover:not(:disabled) {
+  border-color: var(--v-accent);
   background: var(--v-paper-2);
 }
 
@@ -296,7 +300,7 @@
 
 .ob-steps-list {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 24px;
 }
 
@@ -310,8 +314,8 @@
   position: absolute;
   top: -1px;
   left: 0;
-  width: 24px;
-  height: 1px;
+  width: 32px;
+  height: 2px;
   background: var(--v-text);
 }
 
@@ -582,5 +586,5 @@
 }
 
 .ob-btn-primary:hover {
-  background: #000;
+  background: var(--v-text-strong);
 }

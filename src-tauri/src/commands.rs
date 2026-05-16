@@ -74,9 +74,18 @@ pub(crate) async fn parse_baseline(
     if let Err(err) = persist::save_cached_baseline(&baseline) {
         eprintln!("failed to cache baseline: {err}");
     }
-    let app_state = AppState {
-        active_baseline_sha: Some(baseline.source.pdf_sha256.clone()),
+    // Read existing app state so unrelated user preferences (theme, etc.)
+    // survive a baseline switch. A missing or unreadable file degrades to
+    // a default — at worst the user re-picks their theme once.
+    let mut app_state = match persist::load_app_state() {
+        Ok(Some(state)) => state,
+        Ok(None) => AppState::default(),
+        Err(err) => {
+            eprintln!("failed to read app_state before update: {err}");
+            AppState::default()
+        }
     };
+    app_state.active_baseline_sha = Some(baseline.source.pdf_sha256.clone());
     if let Err(err) = persist::save_app_state(&app_state) {
         eprintln!("failed to update app_state: {err}");
     }

@@ -22,6 +22,22 @@
   src: url("/fonts/JetBrainsMono-Latin.woff2") format("woff2");
 }
 
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/IBMPlexSans-Latin-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/IBMPlexSans-Latin-500.woff2") format("woff2");
+}
+
 :root {
   color-scheme: light;
 
@@ -40,18 +56,21 @@
   --v-text-muted: #6b6b75;
   --v-text-subtle: #9b9ba5;
   --v-text-inverse: #fafaf8;
+  /* One step deeper than --v-text — used for primary-button hover so the
+     contrast bump works in both themes (black in light, white in dark). */
+  --v-text-strong: #000000;
 
   /* Status */
   --v-pass: oklch(0.55 0.14 145);
-  --v-pass-bg: oklch(0.95 0.04 145);
+  --v-pass-bg: oklch(0.95 0.06 145);
   --v-fail: oklch(0.55 0.18 27);
-  --v-fail-bg: oklch(0.95 0.04 27);
+  --v-fail-bg: oklch(0.95 0.06 27);
   --v-warn: oklch(0.62 0.13 75);
-  --v-warn-bg: oklch(0.95 0.05 75);
+  --v-warn-bg: oklch(0.95 0.065 75);
   --v-exception: oklch(0.55 0.16 305);
-  --v-exception-bg: oklch(0.95 0.04 305);
+  --v-exception-bg: oklch(0.95 0.06 305);
   --v-progress: oklch(0.62 0.12 230);
-  --v-progress-bg: oklch(0.95 0.03 230);
+  --v-progress-bg: oklch(0.95 0.055 230);
   --v-snooze: oklch(0.65 0.02 270);
   --v-snooze-bg: oklch(0.94 0.01 270);
   --v-manual: oklch(0.60 0.02 270);
@@ -59,11 +78,11 @@
 
   /* Levels */
   --v-bl: oklch(0.55 0.14 55);
-  --v-bl-bg: oklch(0.95 0.04 55);
+  --v-bl-bg: oklch(0.95 0.06 55);
   --v-l1: oklch(0.55 0.10 220);
-  --v-l1-bg: oklch(0.95 0.03 220);
+  --v-l1-bg: oklch(0.95 0.055 220);
   --v-l2: oklch(0.55 0.14 305);
-  --v-l2-bg: oklch(0.95 0.04 305);
+  --v-l2-bg: oklch(0.95 0.06 305);
 
   /* Accent */
   --v-accent: oklch(0.50 0.13 245);
@@ -74,9 +93,13 @@
   --v-accent-on: #ffffff;
 
   /* Type */
-  --v-font-sans: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --v-font-sans: "IBM Plex Sans", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --v-font-serif: "Source Serif 4", "Source Serif Pro", Georgia, "Times New Roman", serif;
   --v-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Layout */
+  --v-topbar-h: 48px;
+  --v-bar-h: 4px;
 
   /* Radius */
   --v-radius-sm: 4px;
@@ -90,6 +113,54 @@
 
   /* Easing */
   --v-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --v-bg: #111114;
+  --v-paper: #17171b;
+  --v-paper-2: #1c1c22;
+  --v-paper-3: #25252c;
+  --v-line: rgba(255, 255, 255, 0.08);
+  --v-line-strong: rgba(255, 255, 255, 0.16);
+  --v-line-soft: rgba(255, 255, 255, 0.04);
+
+  --v-text: #ededf0;
+  --v-text-2: #c8c8cd;
+  --v-text-muted: #93939c;
+  --v-text-subtle: #6a6a73;
+  --v-text-inverse: #16161a;
+  --v-text-strong: #ffffff;
+
+  --v-pass: oklch(0.74 0.16 145);
+  --v-pass-bg: oklch(0.27 0.05 145);
+  --v-fail: oklch(0.72 0.18 27);
+  --v-fail-bg: oklch(0.27 0.06 27);
+  --v-warn: oklch(0.78 0.14 80);
+  --v-warn-bg: oklch(0.28 0.05 80);
+  --v-exception: oklch(0.72 0.17 305);
+  --v-exception-bg: oklch(0.27 0.05 305);
+  --v-progress: oklch(0.75 0.13 230);
+  --v-progress-bg: oklch(0.27 0.05 230);
+  --v-snooze: oklch(0.70 0.02 270);
+  --v-snooze-bg: oklch(0.25 0.005 270);
+  --v-manual: oklch(0.65 0.02 270);
+  --v-manual-bg: oklch(0.25 0.005 270);
+
+  --v-bl: oklch(0.75 0.14 55);
+  --v-bl-bg: oklch(0.27 0.055 55);
+  --v-l1: oklch(0.75 0.10 220);
+  --v-l1-bg: oklch(0.27 0.055 220);
+  --v-l2: oklch(0.75 0.14 305);
+  --v-l2-bg: oklch(0.27 0.055 305);
+
+  --v-accent: oklch(0.72 0.13 245);
+  --v-accent-2: oklch(0.80 0.13 245);
+  --v-accent-bg: oklch(0.30 0.06 245);
+  --v-accent-line: oklch(0.45 0.10 245);
+  --v-accent-text: oklch(0.78 0.14 245);
+  --v-accent-on: #0a0a0c;
 }
 
 * {
@@ -120,6 +191,14 @@ select,
 textarea {
   font: inherit;
   color: inherit;
+}
+
+/* Zero specificity (:where) so components can still opt into a bespoke
+   focus treatment — e.g. .filter-search uses a border+background focus
+   and sets outline: none, which wins over this. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--v-accent);
+  outline-offset: 2px;
 }
 
 .mono {

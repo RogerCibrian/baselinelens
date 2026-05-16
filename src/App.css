@@ -14,7 +14,7 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0 1rem;
-  height: 48px;
+  height: var(--v-topbar-h);
   background: var(--v-paper-2);
   border-bottom: 1px solid var(--v-line);
 }
@@ -66,13 +66,69 @@
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  min-width: 180px;
+  min-width: 220px;
   padding: 4px;
   background: var(--v-paper);
   border: 1px solid var(--v-line);
   border-radius: var(--v-radius-md);
   box-shadow: var(--v-shadow-md);
   z-index: 20;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 6px;
+}
+
+.settings-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--v-text-subtle);
+}
+
+.settings-segment {
+  position: relative;
+  display: inline-flex;
+  padding: 2px;
+  background: var(--v-paper-2);
+  border: 1px solid var(--v-line);
+  border-radius: var(--v-radius-sm);
+}
+
+.settings-segment-pill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  background: var(--v-paper);
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition:
+    transform 180ms var(--v-ease),
+    width 180ms var(--v-ease);
+  pointer-events: none;
+}
+
+.settings-segment-option {
+  position: relative;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--v-text-muted);
+  text-align: center;
+  transition: color 120ms ease;
+}
+
+.settings-segment-option:hover {
+  color: var(--v-text);
+}
+
+.settings-segment-option[aria-checked="true"] {
+  color: var(--v-text);
+  font-weight: 500;
 }
 
 .settings-item {
@@ -104,40 +160,54 @@
   background: var(--v-fail-bg);
 }
 
+/* Same wordmark language as the onboarding .ob-wordmark (uppercase,
+   letterspaced) but full-strength color and a touch larger — in the top
+   bar the wordmark is the product anchor, not a recessive overline. */
 .brand {
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: -0.005em;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--v-text);
 }
 
 .tabs {
   display: flex;
-  gap: 4px;
-  padding: 4px;
-  background: var(--v-paper-2);
-  border: 1px solid var(--v-line);
-  border-radius: 6px;
-  height: 36px;
+  align-items: center;
+  /* Inter-tab gap stays tighter than the brand→nav separation below so
+     the two tabs read as one nav group, distinct from the wordmark. */
+  gap: 1.25rem;
+  /* On top of the top bar's 0.75rem flex gap → ~36px from the wordmark
+     vs 20px between tabs: brand is the anchor, nav is its own cluster. */
+  margin-left: 1.5rem;
 }
 
 .tab {
-  padding: 0 16px;
-  height: 28px;
-  border-radius: 4px;
+  position: relative;
+  padding: 4px 0;
   color: var(--v-text-muted);
   font-size: 13px;
-  transition: background 120ms ease, color 120ms ease;
+  transition: color 120ms ease;
 }
 
 .tab:hover {
-  background: var(--v-paper-3);
+  color: var(--v-text);
 }
 
 .tab[aria-selected="true"] {
-  background: var(--v-paper);
   color: var(--v-text);
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* Underline indicator. Color + rule carry the active state (no weight
+   change) so switching tabs doesn't reflow the label width. */
+.tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  background: var(--v-text);
 }
 
 .empty-scan {
@@ -149,6 +219,12 @@
   margin: 6rem auto;
   max-width: 32rem;
   text-align: center;
+}
+
+.empty-scan-icon {
+  display: inline-flex;
+  color: var(--v-text-subtle);
+  margin-bottom: 0.25rem;
 }
 
 .empty-scan-title {
@@ -173,8 +249,8 @@
   font-size: 11px;
   line-height: 1.5;
   color: var(--v-fail);
-  background: rgba(184, 48, 45, 0.06);
-  border: 1px solid rgba(184, 48, 45, 0.18);
+  background: var(--v-fail-bg);
+  border: 1px solid color-mix(in oklab, var(--v-fail) 24%, transparent);
   border-radius: 4px;
   text-align: left;
   overflow-wrap: anywhere;
@@ -200,10 +276,13 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem 1rem;
+  margin: 1rem 1.5rem 0;
+  padding: 0.5rem 0.875rem;
   background: var(--v-warn-bg);
   color: var(--v-warn);
-  border-bottom: 1px solid var(--v-line);
+  border: 1px solid color-mix(in oklab, var(--v-warn) 22%, transparent);
+  border-left: 3px solid var(--v-warn);
+  border-radius: var(--v-radius-md);
   font-size: 13px;
 }
 
@@ -322,17 +401,21 @@
   margin-bottom: 2.5rem;
 }
 
+/* Contextual overline. Mono uppercase letterspaced — same idiom as the
+   onboarding eyebrow and the "§ N" section markers, so the report
+   screens read as one product. */
 .eyebrow {
   margin: 0 0 0.5rem;
-  font-size: 11px;
+  font-family: var(--v-font-mono);
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--v-text-subtle);
 }
 
-.overview-title {
-  margin: 0 0 0.5rem;
+.overview-headline {
+  margin: 0 0 0.75rem;
   font-size: 2.75rem;
   font-weight: 400;
   line-height: 1.08;
@@ -347,15 +430,6 @@
 
 .overview-section {
   margin-top: 2.5rem;
-}
-
-.section-eyebrow {
-  margin: 0 0 0.75rem;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--v-text-subtle);
 }
 
 .doc-section {
@@ -406,7 +480,7 @@
 
 .level-cards {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1rem;
 }
 
@@ -460,9 +534,9 @@
 .caption {
   display: block;
   margin-bottom: 4px;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--v-text-subtle);
 }
@@ -480,9 +554,24 @@
   color: var(--v-text-subtle);
 }
 
-.level-full {
-  font-size: 18px;
-  font-weight: 500;
+/* Deliberate "don't let in-scope flatter us" anchor: the strict
+   pass/total figure, defined inline so it reads as an auditor's note
+   rather than a competing scoreboard. */
+.strict-line {
+  margin: 1rem 0 0;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--v-line-soft);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--v-text-muted);
+}
+
+.strict-line-label {
+  font-weight: 600;
+  color: var(--v-text-2);
+}
+
+.strict-line-values {
   color: var(--v-text-2);
 }
 
@@ -492,7 +581,7 @@
 }
 
 .threshold-bar {
-  height: 4px;
+  height: var(--v-bar-h);
   background: var(--v-line);
   border-radius: 2px;
   overflow: hidden;
@@ -572,7 +661,7 @@
 
 .category-bar {
   display: block;
-  height: 4px;
+  height: var(--v-bar-h);
   background: var(--v-line);
   border-radius: 2px;
   overflow: hidden;
@@ -585,27 +674,18 @@
   color: var(--v-text-subtle);
 }
 
-.headline-strip {
+.headline-facts {
   display: flex;
   align-items: baseline;
   gap: 0.875rem;
   flex-wrap: wrap;
-  margin: 0 0 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--v-line-soft);
+  margin: 0 0 0.75rem;
   color: var(--v-text-muted);
   font-size: 13px;
 }
 
-.headline-first {
+.headline-facts-first {
   font-style: italic;
-}
-
-.headline-lead {
-  font-size: 22px;
-  font-weight: 400;
-  letter-spacing: -0.012em;
-  color: var(--v-text);
 }
 
 .headline-trend {
@@ -640,7 +720,7 @@
   padding: 1.25rem 0.5rem 0.5rem;
   background: var(--v-paper);
   border: 1px solid var(--v-line);
-  border-radius: 4px;
+  border-radius: var(--v-radius-md);
 }
 
 .trend-chart {
@@ -786,11 +866,11 @@
 
 .saved-view-rail {
   position: sticky;
-  /* Tucks just below the 48px sticky top bar so the rail keeps a 1rem
+  /* Tucks just below the sticky top bar so the rail keeps a 1rem
      breathing margin and doesn't slide behind the bar on scroll. */
-  top: calc(48px + 1rem);
+  top: calc(var(--v-topbar-h) + 1rem);
   align-self: start;
-  max-height: calc(100vh - 48px - 2rem);
+  max-height: calc(100vh - var(--v-topbar-h) - 2rem);
   overflow-y: auto;
 }
 
@@ -862,9 +942,9 @@
 
 .category-rail-bar {
   display: block;
-  height: 3px;
+  height: var(--v-bar-h);
   background: var(--v-line);
-  border-radius: 1.5px;
+  border-radius: 2px;
   overflow: hidden;
 }
 
@@ -995,18 +1075,18 @@
   appearance: none;
   background: transparent;
   border: 0;
-  outline: none;
-  padding: 0 18px 0 4px;
+  padding: 0 2px 0 4px;
   font-size: 12px;
   font-weight: 500;
   color: inherit;
   cursor: pointer;
-  /* Custom caret — sits inside the right-padding above. */
-  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
-                    linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: right 8px center, right 4px center;
-  background-size: 4px 4px;
-  background-repeat: no-repeat;
+}
+
+.filter-pill-caret {
+  flex-shrink: 0;
+  margin-right: 2px;
+  color: inherit;
+  opacity: 0.65;
 }
 
 .filter-pill-active .filter-pill-select {
@@ -1060,8 +1140,8 @@
 
 .rec-table thead th {
   position: sticky;
-  /* Sits under the sticky 48px top bar so scrolled rows pass behind both. */
-  top: 48px;
+  /* Sits under the sticky top bar so scrolled rows pass behind both. */
+  top: var(--v-topbar-h);
   z-index: 1;
   background: var(--v-paper-2);
   border-bottom: 1px solid var(--v-line-strong);
@@ -1131,7 +1211,7 @@
   content: "";
   width: 5px;
   height: 5px;
-  border-radius: 1px;
+  border-radius: 50%;
   background: currentColor;
 }
 
@@ -1423,10 +1503,17 @@
   margin-top: 2rem;
 }
 
+/* Canonical drawer-heading treatment. Self-contained so a section
+   heading is styled by this rule alone — no second class needed. */
 .drawer-section h4 {
   margin: 0 0 0.75rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--v-line);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--v-text-subtle);
 }
 
 .drawer-kv {

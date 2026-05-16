@@ -40,7 +40,9 @@ pub fn export_to(out_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .typ::<crate::audit::model::ChangeEvent>()
         .typ::<crate::audit::model::CheckDetail>()
         .typ::<crate::storage::model::UserState>()
-        .typ::<crate::storage::model::AppState>();
+        .typ::<crate::storage::model::AppState>()
+        .typ::<crate::storage::model::Preferences>()
+        .typ::<crate::storage::model::Theme>();
 
     builder.export(Typescript::default(), out_path)?;
     Ok(())
