@@ -395,7 +395,8 @@ Above Lock\\Allow Cortana Above Lock
     fn parses_real_pdf_into_complete_baseline() {
         let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
-        let baseline = parse(&pdf_path).expect("parse should succeed");
+        let baseline =
+            parse_with_progress(&pdf_path, |_| {}).expect("parse should succeed");
 
         assert_eq!(baseline.recommendations.len(), 457);
         assert_eq!(
