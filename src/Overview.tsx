@@ -610,8 +610,8 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
     >
       <defs>
         <linearGradient id="trend-grad" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="var(--v-accent)" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="var(--v-accent)" stopOpacity="0" />
+          <stop offset="0%" stopColor="var(--v-pass)" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="var(--v-pass)" stopOpacity="0" />
         </linearGradient>
       </defs>
 
@@ -640,7 +640,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
       <path d={areaPath} fill="url(#trend-grad)" />
       <path
         d={linePath}
-        stroke="var(--v-accent)"
+        stroke="var(--v-pass)"
         strokeWidth={1.75}
         fill="none"
         strokeLinecap="round"
@@ -661,7 +661,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
             cy={y(values[i])}
             r={3}
             fill="var(--v-paper)"
-            stroke="var(--v-accent)"
+            stroke="var(--v-pass)"
             strokeWidth={1.5}
             pointerEvents="none"
           />

@@ -79,17 +79,17 @@
   /* Levels */
   --v-bl: oklch(0.55 0.14 55);
   --v-bl-bg: oklch(0.95 0.06 55);
-  --v-l1: oklch(0.55 0.10 220);
-  --v-l1-bg: oklch(0.95 0.055 220);
-  --v-l2: oklch(0.55 0.14 305);
-  --v-l2-bg: oklch(0.95 0.06 305);
+  --v-l1: oklch(0.58 0.045 245);
+  --v-l1-bg: oklch(0.96 0.012 245);
+  --v-l2: oklch(0.55 0.16 340);
+  --v-l2-bg: oklch(0.95 0.06 340);
 
   /* Accent */
-  --v-accent: oklch(0.50 0.13 245);
-  --v-accent-2: oklch(0.42 0.13 245);
-  --v-accent-bg: oklch(0.96 0.025 245);
-  --v-accent-line: oklch(0.85 0.06 245);
-  --v-accent-text: oklch(0.42 0.14 245);
+  --v-accent: oklch(0.50 0.15 280);
+  --v-accent-2: oklch(0.42 0.15 280);
+  --v-accent-bg: oklch(0.96 0.03 280);
+  --v-accent-line: oklch(0.85 0.07 280);
+  --v-accent-text: oklch(0.44 0.16 280);
   --v-accent-on: #ffffff;
 
   /* Type */
@@ -150,16 +150,16 @@
 
   --v-bl: oklch(0.75 0.14 55);
   --v-bl-bg: oklch(0.27 0.055 55);
-  --v-l1: oklch(0.75 0.10 220);
-  --v-l1-bg: oklch(0.27 0.055 220);
-  --v-l2: oklch(0.75 0.14 305);
-  --v-l2-bg: oklch(0.27 0.055 305);
+  --v-l1: oklch(0.74 0.04 245);
+  --v-l1-bg: oklch(0.26 0.012 245);
+  --v-l2: oklch(0.75 0.16 340);
+  --v-l2-bg: oklch(0.27 0.06 340);
 
-  --v-accent: oklch(0.72 0.13 245);
-  --v-accent-2: oklch(0.80 0.13 245);
-  --v-accent-bg: oklch(0.30 0.06 245);
-  --v-accent-line: oklch(0.45 0.10 245);
-  --v-accent-text: oklch(0.78 0.14 245);
+  --v-accent: oklch(0.72 0.15 280);
+  --v-accent-2: oklch(0.80 0.15 280);
+  --v-accent-bg: oklch(0.30 0.07 280);
+  --v-accent-line: oklch(0.45 0.11 280);
+  --v-accent-text: oklch(0.80 0.16 280);
   --v-accent-on: #0a0a0c;
 }
 
