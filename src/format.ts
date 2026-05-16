@@ -6,22 +6,47 @@
  * can even land the date a day off near midnight.
  */
 
+import type { TimeFormat } from "./bindings";
+
 function pad(value: number): string {
   return value < 10 ? `0${value}` : String(value);
 }
 
 /**
- * Local-timezone `YYYY-MM-DD HH:MM` — terse, monospace-friendly, and
- * sortable. Used by the top bar's last-scan time and the drawer's
+ * Active clock-format preference. Held at module scope rather than
+ * threaded through every `formatTimestamp` caller: the preference is
+ * app-wide and changes rarely, and a toggle re-renders the whole tree
+ * (it lives in App state), so reads always pick up the current value.
+ * App keeps this in step with the persisted preference via
+ * `setTimeFormat`.
+ */
+let activeTimeFormat: TimeFormat = "24h";
+
+/** Points the timestamp formatter at the user's clock-format choice. */
+export function setTimeFormat(format: TimeFormat): void {
+  activeTimeFormat = format;
+}
+
+/**
+ * Local-timezone date plus clock time — terse, monospace-friendly, and
+ * (in 24-hour form) sortable. The date is always `YYYY-MM-DD`; the
+ * clock is `HH:MM` or `h:MM AM/PM` per the active time-format
+ * preference. Used by the top bar's last-scan time and the drawer's
  * scan-result timestamps.
  */
 export function formatTimestamp(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    ` ${pad(date.getHours())}:${pad(date.getMinutes())}`
-  );
+  const day =
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const minutes = pad(date.getMinutes());
+  if (activeTimeFormat === "12h") {
+    const hours24 = date.getHours();
+    const meridiem = hours24 < 12 ? "AM" : "PM";
+    const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+    return `${day} ${hours12}:${minutes} ${meridiem}`;
+  }
+  return `${day} ${pad(date.getHours())}:${minutes}`;
 }
 
 /** Local-timezone `YYYY-MM-DD` for the report's date overline. */

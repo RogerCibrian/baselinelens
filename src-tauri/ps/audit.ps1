@@ -250,7 +250,10 @@ function Get-SeceditExport {
 }
 
 # auditpol /get /category:* /r dumps every subcategory's audit setting
-# as CSV. Same caching pattern as secedit.
+# as CSV, including the subcategory's display name. Keyed by GUID (the
+# stable, locale-independent identifier the benchmark references) to a
+# { Name; Setting } pair so checks can show the readable name instead
+# of the GUID. Same caching pattern as secedit.
 $script:auditpol_cache = $null
 $script:auditpol_error = $null
 
@@ -269,7 +272,10 @@ function Get-AuditPolDump {
         foreach ($row in ($csv_text | ConvertFrom-Csv)) {
             $guid = $row.'Subcategory GUID'
             if ($null -ne $guid -and $guid -ne '') {
-                $cache[$guid] = $row.'Inclusion Setting'
+                $cache[$guid] = [ordered]@{
+                    Name    = $row.'Subcategory'
+                    Setting = $row.'Inclusion Setting'
+                }
             }
         }
         $script:auditpol_cache = $cache
@@ -296,6 +302,20 @@ function Resolve-PrincipalToSid {
         return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
     } catch {
         return $null
+    }
+}
+
+# Resolves a SID string back to a readable account name (e.g.
+# `BUILTIN\Administrators`) for display. Falls back to the raw SID when
+# the account can't be translated on this device -- still informative,
+# just less friendly.
+function Resolve-SidToName {
+    param([Parameter(Mandatory)][string]$Sid)
+    try {
+        $obj = New-Object System.Security.Principal.SecurityIdentifier($Sid)
+        return $obj.Translate([System.Security.Principal.NTAccount]).Value
+    } catch {
+        return $Sid
     }
 }
 
@@ -392,18 +412,35 @@ function Format-Value {
 function Format-Expected {
     param($Expected)
     switch ($Expected.type) {
-        'Equals'      { "equals $(Format-Value $Expected.value)" }
-        'NotEquals'   { "not equals $(Format-Value $Expected.value)" }
+        'Equals'      { Format-Value $Expected.value }
+        'NotEquals'   { "not $(Format-Value $Expected.value)" }
         'AtLeast'     { "at least $($Expected.value)" }
         'AtMost'      { "at most $($Expected.value)" }
         'OneOf'       { 'one of ' + (($Expected.values | ForEach-Object { Format-Value $_ }) -join ', ') }
         'Contains'    { "contains '$($Expected.substring)'" }
         'ContainsAll' { 'contains all of ' + (($Expected.substrings | ForEach-Object { "'$_'" }) -join ', ') }
-        'Absent'      { 'absent' }
-        'AbsentOr'    { 'absent or (' + (Format-Expected $Expected.inner) + ')' }
+        'Absent'      { 'Not configured' }
+        'AbsentOr'    { 'Not configured, or ' + (Format-Expected $Expected.inner) }
         'All'         { 'all of (' + (($Expected.values | ForEach-Object { Format-Expected $_ }) -join '; ') + ')' }
         'Any'         { 'any of (' + (($Expected.values | ForEach-Object { Format-Expected $_ }) -join '; ') + ')' }
         default       { "?$($Expected.type)?" }
+    }
+}
+
+# Normalizes an audit mode to one readable phrase, accepting both the
+# benchmark enum spelling (`SuccessAndFailure`) and auditpol's display
+# text (`Success and Failure`) so expected and found render the same
+# way.
+function Format-AuditMode {
+    param($Mode)
+    switch -Exact ("$Mode") {
+        'NoAuditing'          { 'No auditing' }
+        'No Auditing'         { 'No auditing' }
+        'Success'             { 'Success' }
+        'Failure'             { 'Failure' }
+        'SuccessAndFailure'   { 'Success and Failure' }
+        'Success and Failure' { 'Success and Failure' }
+        default               { "$Mode" }
     }
 }
 
@@ -566,10 +603,14 @@ function Invoke-Rec {
                     -Checks $check_details
             }
             'PolicyManager' {
-                # Two-step Intune MDM lookup: read the WinningProvider GUID
-                # under HKLM\...\PolicyManager\current\<scope>\<area>, then
-                # read the actual value from the provider's tree under
-                # \PolicyManager\Providers\{GUID}\Default\<scope>\<area>.
+                # Intune MDM settings are registry-backed. A WinningProvider
+                # GUID under PolicyManager\current\<scope>\<area> names the
+                # provider tree that holds the value; the value itself lives
+                # under \PolicyManager\Providers\{GUID}\Default\<scope>\<area>.
+                # Both steps are plain registry reads, so the result is
+                # reported as a registry check against the concrete path read
+                # -- the provider path when a provider claimed the setting,
+                # the WinningProvider lookup path when none did.
                 $scope_current = if ($audit.scope -eq 'Device') { 'device' } else { '(USER SID)' }
                 # User-scope values live under the currently-logged-in user's
                 # SID per the data-model decision in project memory.
@@ -584,9 +625,10 @@ function Invoke-Rec {
                 $provider = Get-RegValue -Path $wp_path -Name $wp_name
 
                 $current = $null
+                $read_path = $wp_path
                 if ($null -ne $provider) {
-                    $actual_path = "HKLM:\SOFTWARE\Microsoft\PolicyManager\Providers\$provider\Default\$scope_provider\$($audit.area)"
-                    $current = Get-RegValue -Path $actual_path -Name $audit.setting
+                    $read_path = "HKLM:\SOFTWARE\Microsoft\PolicyManager\Providers\$provider\Default\$scope_provider\$($audit.area)"
+                    $current = Get-RegValue -Path $read_path -Name $audit.setting
                 }
 
                 $pass = Test-Expected $current $audit.expected
@@ -594,7 +636,7 @@ function Invoke-Rec {
                 $actual_str = if ($null -eq $current) { $null } else { [string]$current }
                 $display = if ($null -eq $current) { '(absent)' } else { [string]$current }
                 $details = @([ordered]@{
-                    path      = "PolicyManager: $($audit.scope) / $($audit.area)"
+                    path      = $read_path
                     valueName = $audit.setting
                     expected  = $exp_str
                     actual    = $actual_str
@@ -602,8 +644,8 @@ function Invoke-Rec {
                 })
                 $status = if ($pass) { 'Pass' } else { 'Fail' }
                 Write-NdjsonResult -Id $id -Status $status `
-                    -Expected "PolicyManager $($audit.scope) / $($audit.area) / $($audit.setting) $exp_str" `
-                    -CurrentValue $display `
+                    -CurrentValue "$($audit.setting)=$display" `
+                    -Expected "$($audit.setting) $exp_str" `
                     -Checks $details
             }
             'UserRightsAssignment' {
@@ -641,10 +683,25 @@ function Invoke-Rec {
                     $pass = ($missing.Count -eq 0)
                 }
 
-                $actual_display = if ($actual_sids.Count -eq 0) { '(none)' } else { $actual_sids -join ', ' }
-                $actual_str = if ($actual_sids.Count -eq 0) { $null } else { $actual_sids -join ', ' }
-                $exp_principals = ($audit.expected | ForEach-Object { $_.identifier }) -join ', '
-                $exp_str = "$($audit.matching.ToLower()) [$exp_principals]"
+                # Display in plain language. An empty expected set means
+                # the right must be granted to nobody ("No one"); the
+                # matching mode reads as a sentence rather than the raw
+                # enum + bracket form. Actual SIDs are translated back to
+                # account names so the reader sees `BUILTIN\Administrators`
+                # rather than `S-1-5-32-544`.
+                $exp_names = @($audit.expected | ForEach-Object { $_.identifier })
+                if ($exp_names.Count -eq 0) {
+                    $exp_str = 'No one'
+                } elseif ($audit.matching -eq 'Exact') {
+                    $exp_str = 'Only ' + ($exp_names -join ', ')
+                } else {
+                    $exp_str = 'Includes ' + ($exp_names -join ', ')
+                }
+                $actual_str = if ($actual_sids.Count -eq 0) {
+                    'No one'
+                } else {
+                    (@($actual_sids | ForEach-Object { Resolve-SidToName $_ })) -join ', '
+                }
                 $details = @([ordered]@{
                     path      = 'User Rights Assignment'
                     valueName = $audit.rightName
@@ -655,7 +712,7 @@ function Invoke-Rec {
                 $status = if ($pass) { 'Pass' } else { 'Fail' }
                 Write-NdjsonResult -Id $id -Status $status `
                     -Expected "User Right '$($audit.rightName)' $exp_str" `
-                    -CurrentValue $actual_display `
+                    -CurrentValue $actual_str `
                     -Checks $details
             }
             'Secedit' {
@@ -693,10 +750,14 @@ function Invoke-Rec {
 
                 $pass = Test-Expected $raw $audit.expected
                 $exp_str = Format-Expected $audit.expected
-                $actual_str = if ($null -eq $raw) { $null } else { [string]$raw }
-                $display = if ($null -eq $raw) { '(absent)' } else { [string]$raw }
+                # These settings live in "Local Security Policy"
+                # (secpol.msc) -- name the user-facing location, not the
+                # secedit tool used to read it. An unset entry reads
+                # "Not configured" rather than a null the UI would show
+                # as the misleading "absent".
+                $actual_str = if ($null -eq $raw) { 'Not configured' } else { [string]$raw }
                 $details = @([ordered]@{
-                    path      = "Secedit: $section_name"
+                    path      = 'Local Security Policy'
                     valueName = $audit.setting
                     expected  = $exp_str
                     actual    = $actual_str
@@ -704,13 +765,23 @@ function Invoke-Rec {
                 })
                 $status = if ($pass) { 'Pass' } else { 'Fail' }
                 Write-NdjsonResult -Id $id -Status $status `
-                    -Expected "Secedit $section_name / $($audit.setting) $exp_str" `
-                    -CurrentValue $display `
+                    -Expected "Local Security Policy / $($audit.setting) $exp_str" `
+                    -CurrentValue $actual_str `
                     -Checks $details
             }
             'AuditPolicy' {
                 $dump = Get-AuditPolDump
-                $current_text = $dump[$audit.subcategoryGuid]
+                $entry = $dump[$audit.subcategoryGuid]
+                $current_text = if ($null -ne $entry) { $entry.Setting } else { $null }
+                $sub_name = if ($null -ne $entry `
+                    -and -not [string]::IsNullOrWhiteSpace($entry.Name)) {
+                    $entry.Name
+                } else {
+                    # No display name (subcategory absent on this OS, or an
+                    # invalid GUID): fall back to the GUID so there's still
+                    # an identifier rather than a blank.
+                    $audit.subcategoryGuid
+                }
 
                 # auditpol's "Inclusion Setting" column uses display strings
                 # with spaces; map to our enum spelling for comparison.
@@ -734,18 +805,28 @@ function Invoke-Rec {
                     }
                 }
 
-                $exp_str = "$($audit.matching.ToLower()) $($audit.expected)"
+                $exp_value = Format-AuditMode $audit.expected
+                $exp_str = if ($audit.matching -eq 'Exact') {
+                    $exp_value
+                } else {
+                    "Includes $exp_value"
+                }
+                $found_str = if ($null -eq $current_text) {
+                    'Not configured'
+                } else {
+                    Format-AuditMode $current_text
+                }
                 $details = @([ordered]@{
                     path      = 'Audit Policy'
-                    valueName = $audit.subcategoryGuid
+                    valueName = $sub_name
                     expected  = $exp_str
-                    actual    = $current_text
+                    actual    = $found_str
                     pass      = $pass
                 })
                 $status = if ($pass) { 'Pass' } else { 'Fail' }
                 Write-NdjsonResult -Id $id -Status $status `
-                    -Expected "Audit subcategory $($audit.subcategoryGuid) $exp_str" `
-                    -CurrentValue $current_text `
+                    -Expected "Audit subcategory '$sub_name' $exp_str" `
+                    -CurrentValue $found_str `
                     -Checks $details
             }
             'Manual' {

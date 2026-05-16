@@ -239,6 +239,7 @@ export type PolicyScope = "Device" | "User";
 // User-level UI preferences that survive baseline switches.
 export type Preferences = {
 	theme?: Theme,
+	timeFormat?: TimeFormat,
 };
 
 export type Principal = {
@@ -417,6 +418,13 @@ export type Status = "Pass" | "Fail" | "Manual" | "Error";
  *  `prefers-color-scheme`; `Light` / `Dark` pin the theme regardless.
  */
 export type Theme = "system" | "light" | "dark";
+
+/**
+ *  Clock display preference for rendered timestamps. `TwentyFourHour`
+ *  shows `14:30`; `TwelveHour` shows `2:30 PM`. Date parts are
+ *  unaffected.
+ */
+export type TimeFormat = "24h" | "12h";
 
 /**
  *  Per-baseline user annotations, persisted as

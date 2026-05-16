@@ -20,7 +20,9 @@ import {
   type ScanLoadErrors,
   type ScanRecord,
   type ScanResult,
+  type Preferences,
   type Theme,
+  type TimeFormat,
   type UserState,
 } from "./bindings";
 import Console from "./Console";
@@ -33,9 +35,10 @@ import {
   type ConsoleFilter,
 } from "./data/consoleFilter";
 import ConfirmDialog from "./ConfirmDialog";
-import { formatTimestamp } from "./format";
+import { formatTimestamp, setTimeFormat as applyTimeFormat } from "./format";
 import Onboarding from "./Onboarding";
 import Overview from "./Overview";
+import SettingSegment from "./SettingSegment";
 import ThemeSegment from "./ThemeSegment";
 
 import "./App.css";
@@ -86,6 +89,12 @@ function App() {
   // to <html>. The canonical value is loaded from app_state.json below
   // and overwrites this if it differs.
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
+  // Clock format for rendered timestamps. Unlike theme it needs no
+  // pre-paint localStorage mirror (no CSS hook, and the dashboard isn't
+  // shown until the cache restore that loads the real value completes).
+  // Mirrored into the format module so `formatTimestamp` reads it
+  // without every caller having to thread it through.
+  const [timeFormat, setTimeFormatState] = useState<TimeFormat>("24h");
   const [consoleFilter, setConsoleFilter] = useState<ConsoleFilter>(
     defaultConsoleFilter,
   );
@@ -102,7 +111,7 @@ function App() {
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
 
   useEffect(() => {
-    void restoreFromCache(setAppState, setTheme);
+    void restoreFromCache(setAppState, setTheme, setTimeFormatState);
     void (async () => {
       const result = await commands.getDeviceInfo();
       if (result.status === "ok") setDeviceInfo(result.data);
@@ -129,10 +138,27 @@ function App() {
     apply(theme);
   }, [theme]);
 
+  // Merges a preference patch into app_state.json. Loads the current
+  // state first and spreads the existing preferences so writing one
+  // preference can't clobber its siblings.
+  async function persistPreferences(patch: Partial<Preferences>) {
+    const current = await commands.loadAppState();
+    const base = current.status === "ok" && current.data
+      ? current.data
+      : { activeBaselineSha: null };
+    const result = await commands.saveAppState({
+      ...base,
+      preferences: { ...base.preferences, ...patch },
+    });
+    if (result.status !== "ok") {
+      console.error("Failed to save preferences:", result.error);
+    }
+  }
+
   // Persists a theme change to app_state.json (canonical) and writes a
   // localStorage mirror so the pre-paint script in index.html can apply
   // the same value on the next launch without an IPC round-trip.
-  async function updateTheme(next: Theme) {
+  function updateTheme(next: Theme) {
     setTheme(next);
     try {
       localStorage.setItem("theme", next);
@@ -140,17 +166,15 @@ function App() {
       // Storage can fail in locked-down contexts; the in-memory + Rust
       // copies still drive the active session.
     }
-    const current = await commands.loadAppState();
-    const base = current.status === "ok" && current.data
-      ? current.data
-      : { activeBaselineSha: null };
-    const result = await commands.saveAppState({
-      ...base,
-      preferences: { theme: next },
-    });
-    if (result.status !== "ok") {
-      console.error("Failed to save theme preference:", result.error);
-    }
+    void persistPreferences({ theme: next });
+  }
+
+  // Applies a clock-format change immediately (the module mirror so
+  // timestamps re-render in the new format) and persists it.
+  function updateTimeFormat(next: TimeFormat) {
+    applyTimeFormat(next);
+    setTimeFormatState(next);
+    void persistPreferences({ timeFormat: next });
   }
 
   // Applies a UserState change locally and persists it. The optimistic
@@ -203,7 +227,9 @@ function App() {
         onConsoleRailCollapsedChange={setConsoleRailCollapsed}
         onJumpToConsole={jumpToConsole}
         theme={theme}
-        onThemeChange={(next) => void updateTheme(next)}
+        onThemeChange={updateTheme}
+        timeFormat={timeFormat}
+        onTimeFormatChange={updateTimeFormat}
       />
     );
   }
@@ -252,12 +278,14 @@ function readStoredTheme(): Theme {
  * Reads `app_state.json` on mount and rehydrates the dashboard from the
  * cached `Baseline` and its `UserState`. Falls back to the onboarding
  * screen when nothing is cached or the cached entry can't be loaded.
- * Also syncs the theme preference from the canonical store into the
- * in-memory state and localStorage mirror.
+ * Also syncs the theme and time-format preferences from the canonical
+ * store into the in-memory state (and, for theme, the localStorage
+ * mirror).
  */
 async function restoreFromCache(
   setAppState: Dispatch<SetStateAction<AppState>>,
   setTheme: Dispatch<SetStateAction<Theme>>,
+  setTimeFormatState: Dispatch<SetStateAction<TimeFormat>>,
 ) {
   const persisted = await commands.loadAppState();
   if (persisted.status !== "ok") {
@@ -273,6 +301,11 @@ async function restoreFromCache(
       // Same fallthrough as above — locked-down storage just skips the
       // mirror; the in-memory copy still drives the active session.
     }
+  }
+  const storedTimeFormat = persisted.data?.preferences?.timeFormat;
+  if (storedTimeFormat) {
+    setTimeFormatState(storedTimeFormat);
+    applyTimeFormat(storedTimeFormat);
   }
   const sha = persisted.data?.activeBaselineSha;
   if (!sha) {
@@ -389,6 +422,8 @@ function Dashboard({
   onJumpToConsole,
   theme,
   onThemeChange,
+  timeFormat,
+  onTimeFormatChange,
 }: {
   baseline: Baseline;
   userState: UserState;
@@ -415,6 +450,8 @@ function Dashboard({
   onJumpToConsole: (filter: Partial<ConsoleFilter>) => void;
   theme: Theme;
   onThemeChange: (next: Theme) => void;
+  timeFormat: TimeFormat;
+  onTimeFormatChange: (next: TimeFormat) => void;
 }) {
   const [context, setContext] = useState<ScanContext>(emptyScanContext);
   const [loadErrors, setLoadErrors] = useState<ScanLoadErrors>(emptyLoadErrors);
@@ -704,8 +741,10 @@ function Dashboard({
         )}
         <SettingsMenu
           theme={theme}
+          timeFormat={timeFormat}
           scanning={scanning}
           onThemeChange={onThemeChange}
+          onTimeFormatChange={onTimeFormatChange}
           onChangeBaseline={onReparse}
           onResetLatest={() => void resetScanFile("latest")}
           onResetSummaries={() => void resetScanFile("summaries")}
@@ -908,22 +947,32 @@ type PendingConfirm = {
   onConfirm: () => void;
 };
 
+const TIME_FORMAT_OPTIONS = ["24h", "12h"] as const;
+const TIME_FORMAT_LABELS: Record<TimeFormat, string> = {
+  "24h": "24-hour",
+  "12h": "12-hour",
+};
+
 function SettingsMenu({
   theme,
+  timeFormat,
   scanning,
   onThemeChange,
+  onTimeFormatChange,
   onChangeBaseline,
   onResetLatest,
   onResetSummaries,
   onResetChanges,
 }: {
   theme: Theme;
+  timeFormat: TimeFormat;
   /** While a scan runs, baseline-switch and the destructive resets are
    * disabled — they'd race the in-flight run (re-parse swaps the
    * baseline out from under it; a reset clears files it's about to
    * rewrite). */
   scanning: boolean;
   onThemeChange: (next: Theme) => void;
+  onTimeFormatChange: (next: TimeFormat) => void;
   onChangeBaseline: () => void;
   onResetLatest: () => void;
   onResetSummaries: () => void;
@@ -973,6 +1022,17 @@ function SettingsMenu({
           <div className="settings-section">
             <span className="settings-section-label">Appearance</span>
             <ThemeSegment theme={theme} onThemeChange={onThemeChange} />
+          </div>
+          <div className="settings-divider" role="separator" />
+          <div className="settings-section">
+            <span className="settings-section-label">Time format</span>
+            <SettingSegment
+              options={TIME_FORMAT_OPTIONS}
+              labels={TIME_FORMAT_LABELS}
+              value={timeFormat}
+              ariaLabel="Time format"
+              onChange={onTimeFormatChange}
+            />
           </div>
           <div className="settings-divider" role="separator" />
           <button

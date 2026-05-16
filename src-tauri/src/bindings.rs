@@ -43,7 +43,8 @@ pub fn export_to(out_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .typ::<crate::storage::model::UserState>()
         .typ::<crate::storage::model::AppState>()
         .typ::<crate::storage::model::Preferences>()
-        .typ::<crate::storage::model::Theme>();
+        .typ::<crate::storage::model::Theme>()
+        .typ::<crate::storage::model::TimeFormat>();
 
     builder.export(Typescript::default(), out_path)?;
     Ok(())

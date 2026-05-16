@@ -1526,6 +1526,14 @@
   transform: translateX(0);
 }
 
+/* The drawer takes initial focus as a non-interactive focus holder so
+   no header control gets a stray ring; it must never draw one itself.
+   Wins over the zero-specificity global focus-visible rule. */
+.drawer:focus,
+.drawer:focus-visible {
+  outline: none;
+}
+
 .drawer-head {
   display: flex;
   flex-direction: column;
@@ -1565,6 +1573,48 @@
 .drawer-close:hover {
   background: var(--v-line);
   color: var(--v-text);
+}
+
+.drawer-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.drawer-nav-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--v-radius-sm);
+  background: var(--v-paper-3);
+  color: var(--v-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drawer-nav-btn:hover:not(:disabled) {
+  background: var(--v-line);
+  color: var(--v-text);
+}
+
+.drawer-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.drawer-nav-pos {
+  min-width: 3.75em;
+  font-family: var(--v-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--v-text-subtle);
+  text-align: center;
 }
 
 .chip-neutral {
@@ -1674,49 +1724,94 @@
   overflow-wrap: anywhere;
 }
 
-.checks-table {
-  width: 100%;
-  margin-top: 0.75rem;
-  border-collapse: collapse;
-  font-size: 11px;
-  line-height: 1.45;
+.check-cards {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
 }
 
-.checks-table th {
+.check-card {
+  border: 1px solid var(--v-line);
+  border-radius: 6px;
+  padding: 0.75rem 0.875rem;
+}
+
+.check-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-family: var(--v-font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  text-align: left;
-  color: var(--v-text-subtle);
-  padding: 0.3rem 0.5rem 0.3rem 0;
-  border-bottom: 1px solid var(--v-line);
 }
 
-.checks-table td {
-  padding: 0.3rem 0.5rem 0.3rem 0;
-  border-bottom: 1px solid var(--v-line);
-  vertical-align: top;
-  color: var(--v-text);
+.check-verdict::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.check-verdict-pass { color: var(--v-pass); }
+.check-verdict-fail { color: var(--v-fail); }
+.check-verdict-manual { color: var(--v-manual); }
+
+/* The path is the location/context — kept legible but visually
+   secondary (muted, lighter). The value name is the specific setting
+   under audit, so it carries the accent color + weight and reads as
+   the line that matters. */
+.check-loc {
+  margin: 0.5rem 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--v-text-muted);
   word-break: break-word;
   overflow-wrap: anywhere;
 }
 
-.checks-table tr:last-child td {
-  border-bottom: none;
+.check-name {
+  margin: 0.2rem 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--v-accent-text);
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
-/* Value name column — names are short (e.g. EnableSmartScreen), let
-   them stay on one line and the column auto-sizes. */
-.checks-table td:nth-child(2),
-.checks-table th:nth-child(2) {
-  white-space: nowrap;
+.check-kv {
+  display: grid;
+  grid-template-columns: minmax(0, 4.5rem) minmax(0, 1fr);
+  column-gap: 1rem;
+  row-gap: 0.3rem;
+  margin: 0.625rem 0 0;
+  padding-top: 0.625rem;
+  border-top: 1px solid var(--v-line);
+  font-size: 12px;
+  line-height: 1.5;
+  align-items: baseline;
 }
 
-.checks-table .muted-italic {
-  font-style: italic;
+.check-kv dt {
+  font-family: var(--v-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--v-text-subtle);
+}
+
+.check-kv dd {
+  margin: 0;
+  color: var(--v-text);
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* Parent `.drawer-kv dd` has specificity (0,1,1) and sets `color`, so

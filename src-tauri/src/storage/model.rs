@@ -53,6 +53,20 @@ pub(crate) struct AppState {
 pub(crate) struct Preferences {
     #[serde(default)]
     pub(crate) theme: Theme,
+    #[serde(default)]
+    pub(crate) time_format: TimeFormat,
+}
+
+/// Clock display preference for rendered timestamps. `TwentyFourHour`
+/// shows `14:30`; `TwelveHour` shows `2:30 PM`. Date parts are
+/// unaffected.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub(crate) enum TimeFormat {
+    #[default]
+    #[serde(rename = "24h")]
+    TwentyFourHour,
+    #[serde(rename = "12h")]
+    TwelveHour,
 }
 
 /// Color scheme preference. `System` follows the OS via the webview's

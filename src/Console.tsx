@@ -128,6 +128,19 @@ export default function Console({
     ? (baseline.recommendations.find((r) => r.id === openRecId) ?? null)
     : null;
 
+  // Position of the open rec within the list as currently filtered and
+  // sorted, so the drawer's prev/next walks exactly what the table
+  // shows. -1 while the drawer is closed or the open rec was filtered
+  // out from under it.
+  const openIndex = openRecId
+    ? sorted.findIndex((r) => r.id === openRecId)
+    : -1;
+  const prevRecId = openIndex > 0 ? sorted[openIndex - 1].id : null;
+  const nextRecId =
+    openIndex >= 0 && openIndex < sorted.length - 1
+      ? sorted[openIndex + 1].id
+      : null;
+
   // Resolved chip label for the active category filter — the local name
   // (last segment of the parsed full path) when available, otherwise the
   // chip falls back to just the number.
@@ -259,6 +272,11 @@ export default function Console({
         scan={scan}
         userState={userState}
         changesIndex={changesIndex}
+        prevRecId={prevRecId}
+        nextRecId={nextRecId}
+        position={openIndex >= 0 ? openIndex + 1 : null}
+        total={sorted.length}
+        onNavigate={selectAndOpen}
         onClose={() => setOpenRecId(null)}
         onUpdate={onUpdateUserState}
       />
@@ -356,6 +374,7 @@ const SAVED_VIEWS: SavedView[] = [
   {
     id: "passing",
     name: "Passing",
+    description: "Currently meeting the baseline",
     filter: { status: "pass" },
   },
   {
@@ -373,6 +392,7 @@ const SAVED_VIEWS: SavedView[] = [
   {
     id: "bitlocker",
     name: "BitLocker only",
+    description: "BitLocker profile recommendations",
     filter: { level: "BL" },
   },
 ];
@@ -1052,6 +1072,11 @@ function DetailDrawer({
   scan,
   userState,
   changesIndex,
+  prevRecId,
+  nextRecId,
+  position,
+  total,
+  onNavigate,
   onClose,
   onUpdate,
 }: {
@@ -1063,6 +1088,17 @@ function DetailDrawer({
    * / "Passing for" by reading when the rec last flipped into its
    * current scan-time status. */
   changesIndex: Map<string, ChangeEvent>;
+  /** Id of the rec one row above the open one in the filtered+sorted
+   * list, or null at the top of the list. */
+  prevRecId: string | null;
+  /** Id of the rec one row below, or null at the bottom. */
+  nextRecId: string | null;
+  /** 1-based position of the open rec in the current list, or null
+   * when it isn't in the list (e.g. filtered out after opening). */
+  position: number | null;
+  /** Size of the current filtered+sorted list. */
+  total: number;
+  onNavigate: (id: string) => void;
   onClose: () => void;
   onUpdate: (next: UserState) => Promise<boolean>;
 }) {
@@ -1071,7 +1107,12 @@ function DetailDrawer({
   const [noteText, setNoteText] = useState("");
   const [savedFlash, setSavedFlash] = useState<"exception" | "note" | null>(null);
   const [saveError, setSaveError] = useState<"exception" | "note" | null>(null);
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // Action deferred behind the unsaved-edits prompt. Holds the thing to
+  // do (close, or navigate to another rec) once the user confirms the
+  // discard; null when there's nothing pending. Stored as a thunk so
+  // close and prev/next funnel through one guard.
+  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
+  const confirmDiscard = pendingLeave !== null;
   const drawerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1091,6 +1132,17 @@ function DetailDrawer({
   // so that modal owns focus instead.
   useFocusTrap(isOpen && !confirmDiscard, drawerRef);
 
+  // Land initial focus on the dialog itself, not the first header
+  // control. The focus trap would otherwise park the ring on the
+  // prev-rec chevron, which looks wrong when the drawer was reached by
+  // mouse and stays stuck there during arrow navigation. Runs after the
+  // trap effect (declared below it), so the trap still captures the
+  // originating row for restore-on-close; this only redirects where
+  // focus lands. Re-asserted when the discard prompt closes.
+  useEffect(() => {
+    if (isOpen && !confirmDiscard) drawerRef.current?.focus();
+  }, [isOpen, confirmDiscard]);
+
   const savedException = rec ? userState.exceptions[rec.id] : undefined;
   const savedNote = rec ? userState.notes[rec.id] : undefined;
   // Unsaved-edit guard: compare trimmed form values to what's persisted
@@ -1101,26 +1153,50 @@ function DetailDrawer({
     (exceptionGrantedBy.trim() || "") !== (savedException?.grantedBy ?? "") ||
     noteText.trim() !== (savedNote?.text ?? "");
 
-  function attemptClose() {
+  // Runs `action` immediately when there's nothing unsaved; otherwise
+  // defers it behind the discard prompt. Both closing and prev/next go
+  // through here so the guard behaves identically for each.
+  function guardedLeave(action: () => void) {
     if (dirty) {
-      setConfirmDiscard(true);
+      setPendingLeave(() => action);
       return;
     }
-    onClose();
+    action();
   }
 
-  // Esc requests close (routed through the unsaved-edit guard). Ignored
-  // while the discard prompt is open — that modal handles its own Esc.
+  function attemptClose() {
+    guardedLeave(onClose);
+  }
+
+  function navigateTo(id: string | null) {
+    if (id === null) return;
+    guardedLeave(() => onNavigate(id));
+  }
+
+  // Esc requests close; Up/Down step to the previous/next rec in the
+  // current list. All route through the unsaved-edit guard. Arrow nav
+  // is suppressed while focus is in a form field so it doesn't fight
+  // caret movement in the note textarea. Ignored entirely while the
+  // discard prompt is open — that modal handles its own keys.
   useEffect(() => {
     if (!isOpen || confirmDiscard) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") attemptClose();
+      if (e.key === "Escape") {
+        attemptClose();
+        return;
+      }
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      e.preventDefault();
+      navigateTo(e.key === "ArrowUp" ? prevRecId : nextRecId);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-    // attemptClose closes over `dirty`; isOpen/confirmDiscard gate it.
+    // attemptClose/navigateTo close over `dirty` + the nav ids; the
+    // listed deps gate and refresh the handler.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, confirmDiscard, dirty]);
+  }, [isOpen, confirmDiscard, dirty, prevRecId, nextRecId]);
 
   // Briefly shows "Saved" next to the action button. The closure-captured
   // `which` means rapid back-to-back saves don't clobber each other's flash.
@@ -1225,6 +1301,7 @@ function DetailDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby="drawer-title-h"
+        tabIndex={-1}
         ref={drawerRef}
       >
         {rec && (
@@ -1239,14 +1316,41 @@ function DetailDrawer({
                     </span>
                   )}
                 </span>
-                <button
-                  type="button"
-                  className="drawer-close"
-                  onClick={attemptClose}
-                  aria-label="Close drawer"
-                >
-                  ×
-                </button>
+                <div className="drawer-head-actions">
+                  {position !== null && total > 1 && (
+                    <div className="drawer-nav">
+                      <button
+                        type="button"
+                        className="drawer-nav-btn"
+                        onClick={() => navigateTo(prevRecId)}
+                        disabled={prevRecId === null}
+                        aria-label="Previous recommendation"
+                      >
+                        <NavChevron dir="up" />
+                      </button>
+                      <span className="drawer-nav-pos" aria-live="polite">
+                        {position} / {total}
+                      </span>
+                      <button
+                        type="button"
+                        className="drawer-nav-btn"
+                        onClick={() => navigateTo(nextRecId)}
+                        disabled={nextRecId === null}
+                        aria-label="Next recommendation"
+                      >
+                        <NavChevron dir="down" />
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="drawer-close"
+                    onClick={attemptClose}
+                    aria-label="Close drawer"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
               <div className="drawer-chips">
                 <span className={`level-chip level-${rec.level.toLowerCase()}`}>
@@ -1408,16 +1512,17 @@ function DetailDrawer({
           </>
         )}
       </aside>
-      {confirmDiscard && (
+      {pendingLeave && (
         <ConfirmDialog
           title="Discard unsaved changes?"
-          message="This panel has edits that haven't been saved. Closing will lose them."
+          message="This panel has edits that haven't been saved. Leaving will lose them."
           confirmLabel="Discard"
           onConfirm={() => {
-            setConfirmDiscard(false);
-            onClose();
+            const action = pendingLeave;
+            setPendingLeave(null);
+            action();
           }}
-          onCancel={() => setConfirmDiscard(false)}
+          onCancel={() => setPendingLeave(null)}
         />
       )}
     </div>
@@ -1467,12 +1572,11 @@ function DrawerCategoryMeta({
 
 /**
  * Shows the scan verdict for the open rec. When `result.checks` is
- * populated (real scans), renders a per-check table — one row per
- * registry value or conceptual check, with full path + value name +
- * expected predicate + actual reading + pass/fail. Falls back to the
- * flat `expected` / `currentValue` strings when checks aren't
- * available (mock scans, errors that short-circuited before
- * enumerating).
+ * populated, renders one card per check: a pass/fail/manual marker,
+ * the location read, the value name, and the expected/found pair.
+ * Falls back to the flat `expected` / `currentValue` strings when
+ * checks aren't available (mock scans, or errors that stopped before
+ * any check ran).
  */
 function ScanResultSection({
   result,
@@ -1519,28 +1623,29 @@ function ScanResultSection({
         )}
       </dl>
       {hasChecks && (
-        <table className="checks-table mono">
-          <thead>
-            <tr>
-              <th>Path</th>
-              <th>Value</th>
-              <th>Expected</th>
-              <th>Found</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.checks!.map((c, i) => (
-              <tr key={i}>
-                <td>{breakableRegistryPath(c.path)}</td>
-                <td>{c.valueName}</td>
-                <td>{c.expected}</td>
-                <td>
-                  {c.actual ?? <span className="muted-italic">absent</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ul className="check-cards">
+          {result.checks!.map((c, i) => (
+            <li key={i} className="check-card">
+              <span
+                className={`check-verdict check-verdict-${verdictKey(c.pass)}`}
+              >
+                {verdictLabel(c.pass)}
+              </span>
+              <p className="check-loc mono">{breakableRegistryPath(c.path)}</p>
+              {c.valueName && <p className="check-name mono">{c.valueName}</p>}
+              <dl className="check-kv">
+                <dt>Expected</dt>
+                <dd className="mono">{c.expected}</dd>
+                <dt>Found</dt>
+                <dd className="mono">
+                  {c.actual ?? (
+                    <span className="muted-italic">Not configured</span>
+                  )}
+                </dd>
+              </dl>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );
@@ -1551,6 +1656,20 @@ function ScanResultSection({
  * segment boundaries (HKLM: / SOFTWARE / Policies / …) rather than
  * mid-token. Short paths stay on one line; long ones break readably.
  */
+/** Maps a per-check `pass` tristate to its verdict CSS suffix. */
+function verdictKey(pass: boolean | null): "pass" | "fail" | "manual" {
+  if (pass === true) return "pass";
+  if (pass === false) return "fail";
+  return "manual";
+}
+
+/** Maps a per-check `pass` tristate to its verdict label. */
+function verdictLabel(pass: boolean | null): string {
+  if (pass === true) return "Pass";
+  if (pass === false) return "Fail";
+  return "Manual";
+}
+
 function breakableRegistryPath(path: string): ReactNode {
   const parts = path.split(/(?<=\\)/);
   return parts.map((part, i) => (
@@ -1559,6 +1678,32 @@ function breakableRegistryPath(path: string): ReactNode {
       {i < parts.length - 1 && <wbr />}
     </Fragment>
   ));
+}
+
+/**
+ * Up/down caret for the drawer's prev/next controls. `up` steps to the
+ * rec above in the list (previous); `down` steps below (next), matching
+ * the vertical Console row order.
+ */
+function NavChevron({ dir }: { dir: "up" | "down" }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden="true"
+      style={dir === "down" ? { transform: "rotate(180deg)" } : undefined}
+    >
+      <path
+        d="M3 7.5 6 4.5 9 7.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 /**
