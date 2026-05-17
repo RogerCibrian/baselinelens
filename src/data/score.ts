@@ -68,7 +68,8 @@ export type LevelScore = {
 };
 
 /**
- * Returns one LevelScore per recognized level (L1, L2, BL).
+ * Returns one LevelScore per level present in the baseline, in
+ * L1→L2→BL order. A level with no recommendations is omitted.
  */
 export function scoresByLevel(
   baseline: Baseline,
@@ -76,9 +77,10 @@ export function scoresByLevel(
   userState: UserState,
 ): LevelScore[] {
   const levels: Level[] = ["L1", "L2", "BL"];
-  return levels.map((level) => {
+  return levels.flatMap((level) => {
     const recs = baseline.recommendations.filter((r) => r.level === level);
-    return scoreForRecs(level, recs, scan, userState);
+    if (recs.length === 0) return [];
+    return [scoreForRecs(level, recs, scan, userState)];
   });
 }
 

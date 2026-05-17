@@ -558,19 +558,33 @@ function SavedViewRail({
               <button
                 type="button"
                 className={`saved-view${active ? " saved-view-active" : ""}`}
-                onClick={() =>
+                onClick={() => {
+                  const keys = Object.keys(
+                    view.filter,
+                  ) as (keyof ConsoleFilter)[];
+                  // Empty filter = the "All" view: a true reset.
+                  if (keys.length === 0) {
+                    onFilterChange(defaultConsoleFilter);
+                    return;
+                  }
+                  // Active → toggle off: restore this view's fields to
+                  // their defaults, keeping any category/search and
+                  // other composed views. Inactive → merge its fields
+                  // onto the current filter so it composes with a
+                  // selected category/search, matching the Categories
+                  // list below.
                   onFilterChange(
-                    // Empty filter = the "All" view: a true reset.
-                    // Every other view merges its fields onto the
-                    // current filter so it composes with a selected
-                    // category/search — the same merge semantics the
-                    // Categories list below uses, so the two rail
-                    // sections behave the same way.
-                    Object.keys(view.filter).length === 0
-                      ? defaultConsoleFilter
+                    active
+                      ? keys.reduce(
+                          (acc, key) => ({
+                            ...acc,
+                            [key]: defaultConsoleFilter[key],
+                          }),
+                          filter,
+                        )
                       : { ...filter, ...view.filter },
-                  )
-                }
+                  );
+                }}
               >
                 <span className="saved-view-text">
                   <span className="saved-view-name">{view.name}</span>
