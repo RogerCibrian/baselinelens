@@ -32,6 +32,47 @@ pub(super) fn parse(body: &str) -> Option<ExpectedValue> {
         });
     }
 
+    // A "value that is blank" / "no value set" phrasing means the value
+    // must be present and empty — distinct from the "does not exist"
+    // absent vocabulary handled above.
+    if normalized.contains("REG_MULTI_SZ value that is blank")
+        || (normalized.contains("REG_MULTI_SZ") && normalized.contains("no value in key"))
+    {
+        return Some(ExpectedValue::Equals {
+            value: Value::MultiStr { values: Vec::new() },
+        });
+    }
+    if normalized.contains("REG_SZ that is <blank>")
+        || (normalized.contains("REG_SZ") && normalized.contains("no value set"))
+    {
+        return Some(ExpectedValue::Equals {
+            value: Value::Str {
+                value: String::new(),
+            },
+        });
+    }
+
+    if let Some(after) = find_after(&normalized, "REG_DWORD value between ") {
+        let snippet = capture_until_period(after);
+        if let Some((low, high)) = parse_between(snippet) {
+            return Some(ExpectedValue::All {
+                values: vec![
+                    ExpectedValue::AtLeast { value: low },
+                    ExpectedValue::AtMost { value: high },
+                ],
+            });
+        }
+    }
+
+    if let Some(after) = find_after(&normalized, "REG_MULTI_SZ value of ") {
+        let items = split_list(capture_until_period(after));
+        if !items.is_empty() {
+            return Some(ExpectedValue::Equals {
+                value: Value::MultiStr { values: items },
+            });
+        }
+    }
+
     if let Some(after) = find_after(&normalized, "REG_SZ value of ") {
         let snippet = capture_until_period(after).trim();
         if !snippet.is_empty() && !contains_per_key_split(snippet) {
@@ -51,7 +92,20 @@ pub(super) fn parse(body: &str) -> Option<ExpectedValue> {
         if contains_per_key_split(snippet) {
             return None;
         }
-        return parse_dword_constraint(snippet);
+        if let Some(constraint) = parse_dword_constraint(snippet) {
+            return Some(constraint);
+        }
+        // A REG_DWORD label on a backslash-bearing comma/and list is a
+        // mislabeled REG_MULTI_SZ path list, not a number.
+        if snippet.contains('\\') {
+            let items = split_list(snippet);
+            if !items.is_empty() {
+                return Some(ExpectedValue::Equals {
+                    value: Value::MultiStr { values: items },
+                });
+            }
+        }
+        return None;
     }
 
     if let Some(after) = find_after(&normalized, "the value contains ") {
@@ -319,6 +373,27 @@ fn contains_per_key_split(text: &str) -> bool {
     text.contains(") and ")
 }
 
+/// Parses a `N and M` range snippet into the inclusive `(low, high)`
+/// bounds.
+fn parse_between(snippet: &str) -> Option<(i64, i64)> {
+    let (low, high) = snippet.trim().split_once(" and ")?;
+    Some((parse_int(low)?, parse_int(high)?))
+}
+
+/// Splits a comma- and `and`-separated snippet into its items. List
+/// items here are registry paths (no internal commas), and PDF-wrap
+/// whitespace is already collapsed upstream, so the delimiters are
+/// unambiguous.
+fn split_list(snippet: &str) -> Vec<String> {
+    snippet
+        .replace(", and ", ", ")
+        .replace(" and ", ", ")
+        .split(',')
+        .map(|part| part.trim().to_string())
+        .filter(|part| !part.is_empty())
+        .collect()
+}
+
 fn normalize_whitespace(text: &str) -> String {
     let mut normalized = String::with_capacity(text.len());
     let mut prev_was_space = false;
@@ -573,6 +648,80 @@ mod tests {
     fn parses_absent_key_not_existing() {
         let body = "...registry location with the key not existing.\n";
         assert_eq!(parse(body), Some(ExpectedValue::Absent));
+    }
+
+    #[test]
+    fn parses_blank_multi_sz_as_equals_empty() {
+        let body = "...REG_MULTI_SZ value that is blank i.e. no value in key.\n";
+        assert_eq!(
+            parse(body),
+            Some(ExpectedValue::Equals {
+                value: Value::MultiStr { values: Vec::new() }
+            })
+        );
+    }
+
+    #[test]
+    fn parses_blank_sz_as_equals_empty_string() {
+        let body = "...REG_SZ that is <blank> i.e. no value set.\n";
+        assert_eq!(
+            parse(body),
+            Some(ExpectedValue::Equals {
+                value: Value::Str {
+                    value: String::new()
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn parses_dword_range_as_all_at_least_at_most() {
+        let body = "...REG_DWORD value between 5 and 14.\n";
+        assert_eq!(
+            parse(body),
+            Some(ExpectedValue::All {
+                values: vec![
+                    ExpectedValue::AtLeast { value: 5 },
+                    ExpectedValue::AtMost { value: 14 },
+                ],
+            })
+        );
+    }
+
+    #[test]
+    fn parses_multi_sz_list_as_equals_multistr() {
+        let body = "...REG_MULTI_SZ value of System\\CurrentControlSet\\Control\\ProductOptions, \
+            System\\CurrentControlSet\\Control\\Server Applications and \
+            Software\\Microsoft\\Windows NT\\CurrentVersion.\n";
+        assert_eq!(
+            parse(body),
+            Some(ExpectedValue::Equals {
+                value: Value::MultiStr {
+                    values: vec![
+                        "System\\CurrentControlSet\\Control\\ProductOptions".to_string(),
+                        "System\\CurrentControlSet\\Control\\Server Applications".to_string(),
+                        "Software\\Microsoft\\Windows NT\\CurrentVersion".to_string(),
+                    ]
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn parses_mislabeled_dword_path_list_as_multistr() {
+        let body = "...REG_DWORD value of System\\CurrentControlSet\\Control\\Print\\Printers \
+            and System\\CurrentControlSet\\Services\\Eventlog.\n";
+        assert_eq!(
+            parse(body),
+            Some(ExpectedValue::Equals {
+                value: Value::MultiStr {
+                    values: vec![
+                        "System\\CurrentControlSet\\Control\\Print\\Printers".to_string(),
+                        "System\\CurrentControlSet\\Services\\Eventlog".to_string(),
+                    ]
+                }
+            })
+        );
     }
 
     #[test]
