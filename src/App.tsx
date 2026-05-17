@@ -1016,7 +1016,7 @@ function EmptyScanState({
             className="button-secondary"
             onClick={onResetLatest}
           >
-            Reset last scan
+            Clear last scan
           </button>
         )}
       </div>
@@ -1259,14 +1259,14 @@ function SettingsMenu({
             onClick={() => setResetsOpen((current) => !current)}
           >
             <DisclosureChevron />
-            <span>Reset data</span>
+            <span>Clear data</span>
           </button>
           {resetsOpen && (
             <div
               className="settings-resets"
               id="settings-reset-panel"
               role="group"
-              aria-label="Reset data"
+              aria-label="Clear data"
             >
               <p className="settings-resets-caption">
                 These permanently delete data for this baseline.
@@ -1419,7 +1419,7 @@ function ScanErrorBanner({
 }) {
   // Today, summaries is the only file in the save path that's read
   // before being rewritten — so a save-time abort that names it is the
-  // schema-drift case where "Reset trend history" recovers. Any other
+  // schema-drift case where "Clear trend history" recovers. Any other
   // cause (UAC denial, disk full, script failure, etc.) gets a plain
   // banner with no misleading recovery action. If more read-then-write
   // paths land later, extend this detection rather than asserting a
@@ -1434,7 +1434,7 @@ function ScanErrorBanner({
       </div>
       {isSummariesError && (
         <button className="stale-banner-action" onClick={onResetSummaries}>
-          Reset trend history
+          Clear trend history
         </button>
       )}
       <button className="stale-banner-action-secondary" onClick={onDismiss}>

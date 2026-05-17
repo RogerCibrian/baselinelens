@@ -401,9 +401,11 @@
 .tab-content {
   flex: 1;
   padding: 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
   width: 100%;
+  /* No width cap here: each tab self-sizes. The Overview keeps its
+     own report-width cap (.overview); the Console is a workbench and
+     bounds itself wider (see .console) so it reclaims fullscreen
+     space instead of sitting in a 1200px column. */
 }
 
 /* Stale banner */
@@ -1129,6 +1131,11 @@
   grid-template-columns: 240px 1fr;
   gap: 1.5rem;
   position: relative;
+  /* Workbench bound: use the fullscreen width an audit table wants,
+     but cap + center so columns don't stretch sparsely on ultrawide
+     displays. */
+  max-width: 1600px;
+  margin: 0 auto;
 }
 
 .console-rail-collapsed {
@@ -1426,6 +1433,28 @@
   padding-bottom: 3px;
 }
 
+/* Compact carries through the rest of the workbench — the rail rows
+   and the drawer's stacked sections/cards — tightening only vertical
+   rhythm (horizontal padding and font size stay for legibility). The
+   Overview report is deliberately left alone (fixed report layout). */
+.console[data-density="compact"] .saved-view {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.console[data-density="compact"] .drawer-section {
+  margin-top: 1.25rem;
+}
+
+.console[data-density="compact"] .check-cards {
+  gap: 0.4rem;
+}
+
+.console[data-density="compact"] .check-card {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
 .rec-table thead th {
   position: sticky;
   /* Sits under the sticky top bar so scrolled rows pass behind both. */
@@ -1625,6 +1654,21 @@
 
 .surface-notice-action:hover {
   background: var(--v-fail-bg);
+}
+
+/* Success variant — a pass-toned edge and a neutral (non-red) Dismiss
+   so a confirmation doesn't read like an error. */
+.surface-notice-ok {
+  color: var(--v-text-2);
+  border-color: var(--v-pass);
+}
+
+.surface-notice-ok .surface-notice-action {
+  color: var(--v-text-muted);
+}
+
+.surface-notice-ok .surface-notice-action:hover {
+  background: var(--v-paper-3);
 }
 
 .empty-state {

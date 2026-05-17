@@ -96,6 +96,7 @@ export default function Console({
   const [selectedRecId, setSelectedRecId] = useState<string | null>(null);
   const [sort, setSort] = useState<Sort>(defaultSort);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exportOk, setExportOk] = useState<string | null>(null);
 
   const changesIndex = useMemo(() => indexLatestChanges(changes), [changes]);
 
@@ -225,6 +226,7 @@ export default function Console({
   // human-readable strings all already live in this tree.
   async function exportResults(format: "csv" | "json") {
     setExportError(null);
+    setExportOk(null);
     const path = await save({
       defaultPath: `baselinelens-results.${format}`,
       filters: [{ name: format.toUpperCase(), extensions: [format] }],
@@ -235,7 +237,17 @@ export default function Console({
         ? buildCsv(baseline, scan, userState)
         : buildJson(baseline, scan, userState);
     const result = await commands.writeExport(path, contents);
-    if (result.status !== "ok") setExportError(result.error);
+    if (result.status !== "ok") {
+      setExportError(result.error);
+      return;
+    }
+    const name = path.split(/[\\/]/).pop() ?? path;
+    setExportOk(name);
+    // Auto-dismiss, but only if this same message is still showing
+    // (a later export shouldn't have its confirmation cut short).
+    window.setTimeout(() => {
+      setExportOk((current) => (current === name ? null : current));
+    }, 5000);
   }
 
   return (
@@ -279,6 +291,18 @@ export default function Console({
             </button>
           </p>
         )}
+        {exportOk && (
+          <p className="surface-notice surface-notice-ok">
+            <span>Exported {exportOk}</span>
+            <button
+              type="button"
+              className="surface-notice-action"
+              onClick={() => setExportOk(null)}
+            >
+              Dismiss
+            </button>
+          </p>
+        )}
         {loadErrors.changes && (
           <p className="surface-notice">
             <span>
@@ -289,7 +313,7 @@ export default function Console({
               className="surface-notice-action"
               onClick={onResetChanges}
             >
-              Reset change history
+              Clear change history
             </button>
           </p>
         )}
@@ -712,7 +736,8 @@ function FilterBar({
       <input
         type="search"
         className="filter-search"
-        placeholder="Search id, title, category, values, notes…"
+        placeholder="Search recs…"
+        title="Searches id, title, category, expected/found values, notes, and exception reasons"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
       />
@@ -1013,10 +1038,10 @@ function RecTable({
           {columns.found && <th>Found</th>}
           <th
             className="rec-table-delta-col"
-            title="Change vs. prior scan"
+            title="Recent status change"
           >
             <span aria-hidden="true">Δ</span>
-            <span className="sr-only">Change vs. prior scan</span>
+            <span className="sr-only">Recent status change</span>
           </th>
         </tr>
       </thead>
@@ -1153,8 +1178,8 @@ function DeltaCell({ delta }: { delta: Delta }) {
     return (
       <span
         className="delta-marker delta-improved"
-        aria-label="Improved since the prior scan"
-        title="Improved since the prior scan"
+        aria-label="Recently improved"
+        title="Recently improved"
       >
         ▲
       </span>
@@ -1164,8 +1189,8 @@ function DeltaCell({ delta }: { delta: Delta }) {
     return (
       <span
         className="delta-marker delta-regressed"
-        aria-label="Regressed since the prior scan"
-        title="Regressed since the prior scan"
+        aria-label="Recently regressed"
+        title="Recently regressed"
       >
         ▼
       </span>

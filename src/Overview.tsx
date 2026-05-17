@@ -88,11 +88,28 @@ export default function Overview({
     [summaries, improved.length, regressed.length, weakCategoryCount],
   );
 
-  const trendPoints = useMemo(() => {
-    const tail = summaries.slice(-TREND_CHART_POINTS);
-    return tail.map((s) => ({
-      startedAt: s.startedAt,
-      passPct: passPctOf(s),
+  const trendPoints = useMemo<TrendPoint[]>(() => {
+    // Collapse consecutive scans with the exact same result into one
+    // point so a "just checking" scan that changed nothing doesn't
+    // plant a permanent flat point. Consecutive-only: an equal value
+    // that returns after a change (9 → 12 → 9) is real movement and
+    // stays its own point. Display-side only — every scan is still
+    // recorded; the run's timestamps ride along for the tooltip.
+    const runs: { passPct: number; scans: string[] }[] = [];
+    let lastSig: string | null = null;
+    for (const s of summaries) {
+      const sig = `${s.pass}|${s.fail}|${s.manual}|${s.error}|${s.exception}`;
+      if (sig === lastSig) {
+        runs[runs.length - 1].scans.push(s.startedAt);
+      } else {
+        runs.push({ passPct: passPctOf(s), scans: [s.startedAt] });
+        lastSig = sig;
+      }
+    }
+    return runs.slice(-TREND_CHART_POINTS).map((run) => ({
+      startedAt: run.scans[run.scans.length - 1],
+      passPct: run.passPct,
+      scans: run.scans,
     }));
   }, [summaries]);
   return (
@@ -157,12 +174,14 @@ export default function Overview({
               className="surface-notice-action"
               onClick={onResetSummaries}
             >
-              Reset trend history
+              Clear trend history
             </button>
           </p>
         ) : trendPoints.length < 2 ? (
           <p className="muted trend-empty">
-            One scan recorded — trend appears once a second scan completes.
+            {summaries.length > 1
+              ? `No change across ${summaries.length} scans — the trend appears once a result differs.`
+              : "One scan recorded — the trend appears once a second scan completes."}
           </p>
         ) : (
           <figure className="trend-chart-figure">
@@ -208,7 +227,7 @@ export default function Overview({
               className="surface-notice-action"
               onClick={onResetChanges}
             >
-              Reset change history
+              Clear change history
             </button>
           </p>
         ) : (
@@ -586,7 +605,15 @@ function recentChanges(
   };
 }
 
-type TrendPoint = { startedAt: string; passPct: number };
+type TrendPoint = {
+  /** Anchor: the most recent scan in the collapsed run, so the
+   * rightmost point stays the latest scan. */
+  startedAt: string;
+  passPct: number;
+  /** Every scan start time that produced this same result, oldest
+   * first. Length > 1 when a run of unchanged scans collapsed here. */
+  scans: string[];
+};
 
 /**
  * SVG line chart of pass-rate over the last N scans. Renders the line
@@ -665,7 +692,7 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
       height={height}
       viewBox={`0 0 ${width} ${height}`}
       role="img"
-      aria-label={`Pass rate across ${points.length} recent scans`}
+      aria-label={`In-scope pass rate, ${points.length} points`}
     >
       <defs>
         <linearGradient id="trend-grad" x1="0" x2="0" y1="0" y2="1">
@@ -712,7 +739,9 @@ function TrendChart({ points }: { points: TrendPoint[] }) {
               reachable without pixel-hunting the 3px dot. */}
           <circle cx={x(i)} cy={y(values[i])} r={12} fill="transparent">
             <title>
-              {`${formatDateShort(p.startedAt)} ${formatClock(p.startedAt)} — ${values[i].toFixed(1)}% in scope`}
+              {p.scans.length > 1
+                ? `${values[i].toFixed(1)}% in scope · ${p.scans.length} scans, ${formatDateShort(p.scans[0])} ${formatClock(p.scans[0])} – ${formatDateShort(p.startedAt)} ${formatClock(p.startedAt)}`
+                : `${formatDateShort(p.startedAt)} ${formatClock(p.startedAt)} — ${values[i].toFixed(1)}% in scope`}
             </title>
           </circle>
           <circle
