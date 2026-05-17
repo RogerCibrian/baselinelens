@@ -217,8 +217,27 @@
   font-weight: 600;
 }
 
-.settings-item-disclosure {
-  color: var(--v-text-muted);
+/* Doorway to the destructive actions: tinted like them and carrying a
+   rotating caret so it reads as an expandable danger group, not a
+   stray flat item. */
+.settings-reset-trigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--v-fail);
+}
+
+.settings-reset-trigger:hover {
+  background: var(--v-fail-bg);
+}
+
+.settings-reset-chevron {
+  flex: none;
+  transition: transform 120ms var(--v-ease);
+}
+
+.settings-reset-trigger[aria-expanded="true"] .settings-reset-chevron {
+  transform: rotate(90deg);
 }
 
 /* Muted footer for low-salience metadata (parse date, app version).
@@ -234,11 +253,21 @@
   text-overflow: ellipsis;
 }
 
+/* Opened danger zone reads as one contained panel, not loose rows. */
 .settings-resets {
   display: flex;
   flex-direction: column;
-  border-left: 2px solid var(--v-line);
-  margin-left: 10px;
+  margin: 2px 6px 4px;
+  padding: 4px;
+  background: var(--v-paper-2);
+  border: 1px solid var(--v-line);
+  border-radius: var(--v-radius-sm);
+}
+
+.settings-resets-caption {
+  margin: 2px 6px 6px;
+  font-size: 10px;
+  color: var(--v-text-subtle);
 }
 
 /* Danger-zone rows: bold-ish title + a calm muted one-liner so the

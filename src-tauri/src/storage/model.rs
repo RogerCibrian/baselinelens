@@ -16,9 +16,9 @@ pub(crate) struct UserState {
     pub(crate) notes: HashMap<String, Note>,
 }
 
-/// An accepted-risk decision against a single recommendation. Counted as a
-/// pass for the In-scope score; the reason and grantor are surfaced in the
-/// detail drawer.
+/// An accepted-risk decision against a single recommendation. Excluded
+/// from the In-scope pass rate and counted toward Strict compliance;
+/// the reason and grantor are surfaced in the detail drawer.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Exception {

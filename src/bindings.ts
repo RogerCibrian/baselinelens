@@ -223,9 +223,9 @@ export type DeviceInfo = {
 };
 
 /**
- *  An accepted-risk decision against a single recommendation. Counted as a
- *  pass for the In-scope score; the reason and grantor are surfaced in the
- *  detail drawer.
+ *  An accepted-risk decision against a single recommendation. Excluded
+ *  from the In-scope pass rate and counted toward Strict compliance;
+ *  the reason and grantor are surfaced in the detail drawer.
  */
 export type Exception = {
 	reason: string,
@@ -429,8 +429,8 @@ export type ScanSummary = {
 	/**
 	 *  Count of Fail results that carry a matching entry in the user's
 	 *  exception list at scan time. Held separately from `fail` so the
-	 *  trend math can credit closed-by-paperwork recs the same way the
-	 *  level cards do (In-scope methodology counts exception as pass).
+	 *  trend math can exclude accepted exceptions from the In-scope
+	 *  rate, matching the level cards.
 	 */
 	exception: number,
 	parserVersion: string,

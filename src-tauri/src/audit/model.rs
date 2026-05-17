@@ -129,8 +129,8 @@ pub(crate) struct ScanSummary {
     pub(crate) error: u32,
     /// Count of Fail results that carry a matching entry in the user's
     /// exception list at scan time. Held separately from `fail` so the
-    /// trend math can credit closed-by-paperwork recs the same way the
-    /// level cards do (In-scope methodology counts exception as pass).
+    /// trend math can exclude accepted exceptions from the In-scope
+    /// rate, matching the level cards.
     pub(crate) exception: u32,
     pub(crate) parser_version: String,
     pub(crate) audit_script_version: String,

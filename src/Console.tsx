@@ -99,6 +99,18 @@ export default function Console({
 
   const changesIndex = useMemo(() => indexLatestChanges(changes), [changes]);
 
+  // Category number → local name (last segment of the parsed path).
+  // Used by the table's Category cell and the search predicate, so
+  // both read the same names; computed once per baseline.
+  const categoryNamesByNumber = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const cat of baseline.categories) {
+      const localName = cat.name?.split(" - ").pop() ?? cat.name ?? "";
+      if (localName) map.set(cat.number, localName);
+    }
+    return map;
+  }, [baseline.categories]);
+
   const filtered = useMemo(() => {
     const needle = filter.search.trim().toLowerCase();
     return baseline.recommendations.filter((rec) => {
@@ -115,16 +127,24 @@ export default function Console({
         }
       }
       if (needle) {
-        if (
-          !rec.id.toLowerCase().includes(needle) &&
-          !rec.title.toLowerCase().includes(needle)
-        ) {
+        const result = scan.results[rec.id];
+        const haystack = [
+          rec.id,
+          rec.title,
+          rec.categoryNumber,
+          categoryNamesByNumber.get(rec.categoryNumber) ?? "",
+          result?.expected ?? "",
+          result?.currentValue ?? "",
+          userState.notes[rec.id]?.text ?? "",
+          userState.exceptions[rec.id]?.reason ?? "",
+        ];
+        if (!haystack.some((field) => field.toLowerCase().includes(needle))) {
           return false;
         }
       }
       return true;
     });
-  }, [baseline, scan, userState, filter, changesIndex]);
+  }, [baseline, scan, userState, filter, changesIndex, categoryNamesByNumber]);
 
   const sorted = useMemo(() => {
     const out = [...filtered];
@@ -159,18 +179,6 @@ export default function Console({
     if (!cat || !cat.name) return null;
     return cat.name.split(" - ").pop() ?? cat.name;
   }, [baseline, filter.category]);
-
-  // Map of category number → local name for the table's Category cell.
-  // Pre-computed once per baseline so each row gets an O(1) lookup
-  // instead of scanning `baseline.categories` per render.
-  const categoryNamesByNumber = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const cat of baseline.categories) {
-      const localName = cat.name?.split(" - ").pop() ?? cat.name ?? "";
-      if (localName) map.set(cat.number, localName);
-    }
-    return map;
-  }, [baseline.categories]);
 
   // Keyboard navigation. ArrowUp/ArrowDown move the selected row; Enter
   // opens the drawer for it. Skipped while the drawer is already open or
@@ -704,7 +712,7 @@ function FilterBar({
       <input
         type="search"
         className="filter-search"
-        placeholder="Search id or title…"
+        placeholder="Search id, title, category, values, notes…"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
       />
@@ -1511,8 +1519,9 @@ function DetailDrawer({
               <section className="drawer-section">
                 <h4>Exception</h4>
                 <p className="muted drawer-help">
-                  Granting an exception treats this rec as a pass for the
-                  In-scope score.
+                  Granting an exception records an accepted risk. The rec
+                  is excluded from the In-scope pass rate and counts
+                  toward Strict compliance.
                 </p>
                 <label>
                   Reason

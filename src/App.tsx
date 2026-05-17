@@ -1253,14 +1253,24 @@ function SettingsMenu({
           <button
             type="button"
             role="menuitem"
-            className="settings-item settings-item-disclosure"
+            className="settings-item settings-reset-trigger"
             aria-expanded={resetsOpen}
+            aria-controls="settings-reset-panel"
             onClick={() => setResetsOpen((current) => !current)}
           >
-            Reset data{resetsOpen ? "" : "…"}
+            <DisclosureChevron />
+            <span>Reset data</span>
           </button>
           {resetsOpen && (
-            <div className="settings-resets">
+            <div
+              className="settings-resets"
+              id="settings-reset-panel"
+              role="group"
+              aria-label="Reset data"
+            >
+              <p className="settings-resets-caption">
+                These permanently delete data for this baseline.
+              </p>
               {[
                 {
                   title: "Clear last scan",
@@ -1355,6 +1365,29 @@ function SettingsMenu({
   );
 }
 
+
+/** Right-pointing caret for the Reset-data disclosure. CSS rotates it
+ * to point down when the trigger's `aria-expanded` is true. */
+function DisclosureChevron() {
+  return (
+    <svg
+      className="settings-reset-chevron"
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M3.5 2 6.5 5 3.5 8"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 function GearIcon() {
   return (
