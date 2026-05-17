@@ -47,7 +47,10 @@ fn extract_subcategory_guid(audit_body: &str) -> Option<String> {
 /// `is set to 'X'` → `(X, Exact)`; `is set to include 'X'` → `(X, Includes)`.
 fn parse_mode_from_title(title: &str) -> Option<(AuditPolicyMode, MatchMode)> {
     let (cue, matching) = if let Some(idx) = title.find("is set to include '") {
-        (&title[idx + "is set to include '".len()..], MatchMode::Includes)
+        (
+            &title[idx + "is set to include '".len()..],
+            MatchMode::Includes,
+        )
     } else if let Some(idx) = title.find("is set to '") {
         (&title[idx + "is set to '".len()..], MatchMode::Exact)
     } else {

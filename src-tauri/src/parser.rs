@@ -33,7 +33,11 @@ pub(crate) const PARSER_VERSION: &str = "3";
 /// `(done, total)` so the bar can move continuously through the slow
 /// phases; the other stages are instantaneous.
 #[derive(Debug, Clone, Serialize, Type)]
-#[serde(tag = "stage", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "stage",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub(crate) enum ParserProgress {
     ReadingFile,
     ComputingChecksum,
@@ -161,10 +165,7 @@ fn parse_version_token(line: &str) -> Option<String> {
     if !chars.next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
         return None;
     }
-    let token: String = line
-        .chars()
-        .take_while(|c| !c.is_whitespace())
-        .collect();
+    let token: String = line.chars().take_while(|c| !c.is_whitespace()).collect();
     Some(token)
 }
 
@@ -400,8 +401,7 @@ Above Lock\\Allow Cortana Above Lock
                 Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf")
             });
-        let baseline =
-            parse_with_progress(&pdf_path, |_| {}).expect("parse should succeed");
+        let baseline = parse_with_progress(&pdf_path, |_| {}).expect("parse should succeed");
         let mut cats: Vec<_> = baseline.categories.iter().collect();
         cats.sort_by(|a, b| a.number.cmp(&b.number));
         for cat in cats {
@@ -427,8 +427,7 @@ Above Lock\\Allow Cortana Above Lock
     fn parses_real_pdf_into_complete_baseline() {
         let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
-        let baseline =
-            parse_with_progress(&pdf_path, |_| {}).expect("parse should succeed");
+        let baseline = parse_with_progress(&pdf_path, |_| {}).expect("parse should succeed");
 
         assert_eq!(baseline.recommendations.len(), 457);
         assert_eq!(

@@ -53,7 +53,9 @@ pub(super) fn try_parse(body: &str, paths: &[JoinedPath]) -> Option<AuditProcedu
         let checks: Vec<RegistryCheck> = scoped
             .into_iter()
             .filter_map(|(scope, joined)| {
-                let entry = per_key.iter().find(|(name, _)| name == &joined.value_name)?;
+                let entry = per_key
+                    .iter()
+                    .find(|(name, _)| name == &joined.value_name)?;
                 Some(RegistryCheck {
                     path: joined.path.clone(),
                     value_name: joined.value_name.clone(),

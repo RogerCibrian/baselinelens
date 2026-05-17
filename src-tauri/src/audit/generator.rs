@@ -212,9 +212,7 @@ mod tests {
             ExpectedValue::Contains {
                 substring: String::new(),
             },
-            ExpectedValue::ContainsAll {
-                substrings: vec![],
-            },
+            ExpectedValue::ContainsAll { substrings: vec![] },
             ExpectedValue::Absent,
             ExpectedValue::AbsentOr {
                 inner: Box::new(ExpectedValue::Absent),

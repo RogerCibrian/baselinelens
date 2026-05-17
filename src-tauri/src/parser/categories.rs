@@ -36,10 +36,7 @@ pub(crate) fn extract_local_names(
 /// Joins `number`'s ancestor names into a " - "-separated path. Levels
 /// without a known local name are skipped — the path stays useful even
 /// when the parser only found names for some ancestors.
-pub(crate) fn build_full_path(
-    number: &str,
-    local_names: &HashMap<String, String>,
-) -> String {
+pub(crate) fn build_full_path(number: &str, local_names: &HashMap<String, String>) -> String {
     let parts: Vec<&str> = number.split('.').collect();
     let mut segments: Vec<String> = Vec::new();
     for cutoff in 1..=parts.len() {
@@ -94,8 +91,7 @@ mod tests {
     #[ignore = "diagnostic — dumps parse_heading hits for a number; BASELINELENS_TEST_PDF"]
     fn inspect_heading_hits() {
         let pdf = std::env::var("BASELINELENS_TEST_PDF").expect("set BASELINELENS_TEST_PDF");
-        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf))
-            .expect("PDF extraction");
+        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf)).expect("PDF extraction");
         let mut in_body = false;
         let mut hits = 0;
         for (idx, line) in text.lines().enumerate() {

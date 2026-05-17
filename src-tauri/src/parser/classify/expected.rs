@@ -23,9 +23,10 @@ pub(super) fn parse(body: &str) -> Option<ExpectedValue> {
         return Some(ExpectedValue::Absent);
     }
 
-    if let Some(after) =
-        find_after(&normalized, "does not exist, or when it exists with a value of ")
-        && let Some(value) = parse_dword(after)
+    if let Some(after) = find_after(
+        &normalized,
+        "does not exist, or when it exists with a value of ",
+    ) && let Some(value) = parse_dword(after)
     {
         return Some(ExpectedValue::AbsentOr {
             inner: Box::new(ExpectedValue::Equals { value }),
@@ -200,10 +201,7 @@ pub(super) fn parse_per_key_dword(body: &str) -> Option<Vec<(String, ExpectedVal
 fn parse_contains_constraint(snippet: &str) -> Option<ExpectedValue> {
     let dewrapped = snippet.replace("- ", "-");
     let stripped = strip_parentheticals(&dewrapped);
-    let normalized: String = stripped
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let normalized: String = stripped.split_whitespace().collect::<Vec<_>>().join(" ");
 
     let parts: Vec<String> = normalized
         .split(" or ")
@@ -289,8 +287,7 @@ fn parse_dword_constraint(snippet: &str) -> Option<ExpectedValue> {
         let value = parse_dword(parts[0])?;
         return Some(ExpectedValue::Equals { value });
     }
-    let values: Option<Vec<Value>> =
-        parts.iter().map(|part| parse_dword(part)).collect();
+    let values: Option<Vec<Value>> = parts.iter().map(|part| parse_dword(part)).collect();
     Some(ExpectedValue::OneOf { values: values? })
 }
 
@@ -426,9 +423,7 @@ fn capture_until_period(text: &str) -> &str {
 /// isn't a list of well-formed GUIDs.
 fn parse_guid_list(snippet: &str) -> Option<Vec<String>> {
     let dewrapped = snippet.replace("- ", "-");
-    let normalized = dewrapped
-        .replace(", and ", ", ")
-        .replace(" and ", ", ");
+    let normalized = dewrapped.replace(", and ", ", ").replace(" and ", ", ");
 
     let parts: Vec<String> = normalized
         .split(',')
@@ -756,7 +751,6 @@ mod tests {
         let body = "...REG_DWORD value of 1 (Disabled) and 0 (DoReport).\n";
         assert_eq!(parse(body), None);
     }
-
 
     #[test]
     fn parses_reg_sz_guid_list_as_containsall() {

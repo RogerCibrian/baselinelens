@@ -167,8 +167,7 @@ where
         source,
     })?;
 
-    let ps_command =
-        build_runas_command(script_path, baseline_path, &output_path, cancel_path);
+    let ps_command = build_runas_command(script_path, baseline_path, &output_path, cancel_path);
 
     let mut outer_child = Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps_command])
@@ -220,12 +219,7 @@ fn temp_ndjson_path() -> PathBuf {
 /// passed as a list to `Start-Process` so PowerShell handles the
 /// quoting through `ShellExecuteEx` without our format string having
 /// to escape per-platform shell metacharacters.
-fn build_runas_command(
-    script: &Path,
-    baseline: &Path,
-    output: &Path,
-    cancel: &Path,
-) -> String {
+fn build_runas_command(script: &Path, baseline: &Path, output: &Path, cancel: &Path) -> String {
     fn ps_squote(p: &Path) -> String {
         // Single-quoted PS strings only need `'` doubled; everything else
         // is literal, including backslashes.
@@ -327,4 +321,3 @@ fn parse_event(line: &str) -> Result<AuditEvent, AuditError> {
         source,
     })
 }
-

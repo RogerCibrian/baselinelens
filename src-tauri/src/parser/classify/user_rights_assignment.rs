@@ -20,10 +20,7 @@ pub(super) fn detect(ctx: &DetectCtx) -> Detection {
         .remediation
         .as_deref()
         .map(|remediation| {
-            super::policy_path_has(
-                remediation,
-                &["User Rights Assignment\\", "User Rights\\"],
-            )
+            super::policy_path_has(remediation, &["User Rights Assignment\\", "User Rights\\"])
         })
         .unwrap_or(false);
     if !is_ura {
@@ -55,10 +52,7 @@ pub(super) fn try_parse(rec: &RawRecommendation) -> Option<AuditProcedure> {
 /// Settings Catalog form (`User Rights\<Right>`) or the Local Security
 /// Policy form (`…\User Rights Assignment\<Right>`).
 fn extract_right_name(remediation: &str) -> Option<String> {
-    super::policy_setting(
-        remediation,
-        &["User Rights Assignment\\", "User Rights\\"],
-    )
+    super::policy_setting(remediation, &["User Rights Assignment\\", "User Rights\\"])
 }
 
 /// Reads the principal list and match mode from the rec title.
@@ -124,7 +118,10 @@ mod tests {
     #[test]
     fn extracts_right_name_from_remediation() {
         let remediation = "Set the following Settings Catalog path:\nUser Rights\\Debug Programs\n";
-        assert_eq!(extract_right_name(remediation).as_deref(), Some("Debug Programs"));
+        assert_eq!(
+            extract_right_name(remediation).as_deref(),
+            Some("Debug Programs")
+        );
     }
 
     #[test]
@@ -180,7 +177,10 @@ mod tests {
         assert_eq!(principals.len(), 2);
         assert_eq!(principals[0].kind, PrincipalKind::WellKnownName);
         assert_eq!(principals[1].kind, PrincipalKind::AccountName);
-        assert_eq!(principals[1].identifier, "Window Manager\\Window Manager Group");
+        assert_eq!(
+            principals[1].identifier,
+            "Window Manager\\Window Manager Group"
+        );
     }
 
     #[test]

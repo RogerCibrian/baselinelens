@@ -161,8 +161,7 @@ mod tests {
             }
         }
         let manual_total: usize = manual_by_reason.values().sum();
-        let automated =
-            registry + policy_manager + audit_policy + user_rights + secedit_count;
+        let automated = registry + policy_manager + audit_policy + user_rights + secedit_count;
 
         use crate::parser::model::Level;
         let l1 = recs.iter().filter(|r| r.level == Level::L1).count();
@@ -175,9 +174,7 @@ mod tests {
             "recs sliced: {}  |  automated: {automated}  |  manual: {manual_total}",
             recs.len()
         );
-        eprintln!(
-            "  level: L1={l1} L2={l2} BL={bl_level}  |  bitlocker_tagged={bitlocker}"
-        );
+        eprintln!("  level: L1={l1} L2={l2} BL={bl_level}  |  bitlocker_tagged={bitlocker}");
         eprintln!(
             "  registry={registry} policy_manager={policy_manager} \
              audit_policy={audit_policy} user_rights={user_rights} \
@@ -284,7 +281,10 @@ mod tests {
             ("4.10.20.1.13", "Registry per-key different (should bail)"),
             ("4.11.5.2", "Registry HKU (CurrentUser scope)"),
             ("4.11.28.3.2", "Registry AbsentOr(Equals(Dword(0)))"),
-            ("4.11.36.4.10.1", "Registry All(AtMost(900000), NotEquals(0))"),
+            (
+                "4.11.36.4.10.1",
+                "Registry All(AtMost(900000), NotEquals(0))",
+            ),
             ("38.22", "Registry Str with %SystemRoot% literal"),
         ];
 
@@ -366,7 +366,10 @@ mod tests {
                 continue;
             }
             eprintln!("\n===== [{}] {} =====", rec.id, rec.title);
-            eprintln!("--AUDIT--\n{}", rec.sections.audit.as_deref().unwrap_or("<none>"));
+            eprintln!(
+                "--AUDIT--\n{}",
+                rec.sections.audit.as_deref().unwrap_or("<none>")
+            );
             eprintln!(
                 "--REMEDIATION--\n{}",
                 rec.sections.remediation.as_deref().unwrap_or("<none>")
@@ -423,7 +426,11 @@ mod tests {
         }
 
         for (reason, members) in &by_reason {
-            eprintln!("\n############ {} ({} recs) ############", reason, members.len());
+            eprintln!(
+                "\n############ {} ({} recs) ############",
+                reason,
+                members.len()
+            );
             for rec in members {
                 eprintln!("\n--- [{}] {} ---", rec.id, rec.title);
                 if let Some(audit) = rec.sections.audit.as_deref() {

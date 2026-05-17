@@ -155,8 +155,8 @@ fn parse_heading_start(line: &str) -> Option<String> {
 /// tier token is present, which the caller treats as a non-heading.
 fn read_profile(body: &[&str], terminator_idx: usize) -> Option<(Level, bool)> {
     let scan_end = body.len().min(terminator_idx + 1 + 6);
-    let label_idx = (terminator_idx + 1..scan_end)
-        .find(|&j| body[j].trim() == "Profile Applicability:")?;
+    let label_idx =
+        (terminator_idx + 1..scan_end).find(|&j| body[j].trim() == "Profile Applicability:")?;
 
     let mut has_l1 = false;
     let mut has_l2 = false;
@@ -384,7 +384,11 @@ mod tests {
         assert_eq!(first.id, "1.1");
         assert_eq!(first.level, Level::L1);
         assert_eq!(first.assessment, Assessment::Automated);
-        assert!(first.title.contains("Cortana"), "title was {:?}", first.title);
+        assert!(
+            first.title.contains("Cortana"),
+            "title was {:?}",
+            first.title
+        );
         assert!(first.sections.description.is_some());
         assert!(first.sections.audit.is_some());
         assert!(first.sections.remediation.is_some());
@@ -398,8 +402,7 @@ mod tests {
                 drive with BASELINELENS_TEST_PDF"]
     fn inspect_slicing() {
         let pdf = std::env::var("BASELINELENS_TEST_PDF").expect("set BASELINELENS_TEST_PDF");
-        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf))
-            .expect("PDF extraction");
+        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf)).expect("PDF extraction");
         let lines: Vec<&str> = text.lines().collect();
 
         let anchor = lines.iter().position(|l| l.trim() == "Recommendations");
@@ -438,9 +441,7 @@ mod tests {
         for (idx, line) in lines
             .iter()
             .enumerate()
-            .filter(|(_, l)| {
-                l.contains("(L1)") || l.contains("(L2)") || l.contains("(BL)")
-            })
+            .filter(|(_, l)| l.contains("(L1)") || l.contains("(L2)") || l.contains("(BL)"))
             .take(10)
         {
             eprintln!("  [{idx}] {line:?}");
@@ -457,8 +458,7 @@ mod tests {
                 drive with BASELINELENS_TEST_PDF"]
     fn inspect_profile_applicability_coverage() {
         let pdf = std::env::var("BASELINELENS_TEST_PDF").expect("set BASELINELENS_TEST_PDF");
-        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf))
-            .expect("PDF extraction");
+        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf)).expect("PDF extraction");
         let lines: Vec<&str> = text.lines().collect();
 
         let anchor = lines
@@ -530,8 +530,7 @@ mod tests {
                 bullets; drive with BASELINELENS_TEST_PDF"]
     fn inspect_multi_profile_recs() {
         let pdf = std::env::var("BASELINELENS_TEST_PDF").expect("set BASELINELENS_TEST_PDF");
-        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf))
-            .expect("PDF extraction");
+        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf)).expect("PDF extraction");
         let lines: Vec<&str> = text.lines().collect();
 
         let anchor = lines
@@ -562,9 +561,7 @@ mod tests {
             }
             let level_bullets = block
                 .iter()
-                .filter(|l| {
-                    l.contains("(L1)") || l.contains("(L2)") || l.contains("(BL)")
-                })
+                .filter(|l| l.contains("(L1)") || l.contains("(L2)") || l.contains("(BL)"))
                 .count();
             if level_bullets < 2 {
                 continue;
@@ -581,9 +578,7 @@ mod tests {
 
             let all_have_bl = block
                 .iter()
-                .filter(|l| {
-                    l.contains("(L1)") || l.contains("(L2)") || l.contains("(BL)")
-                })
+                .filter(|l| l.contains("(L1)") || l.contains("(L2)") || l.contains("(BL)"))
                 .all(|l| l.contains("(BL)"));
             if all_have_bl {
                 continue; // BitLocker add-on shape.
@@ -606,8 +601,7 @@ mod tests {
                 drive with BASELINELENS_TEST_PDF"]
     fn inspect_ng_presence() {
         let pdf = std::env::var("BASELINELENS_TEST_PDF").expect("set BASELINELENS_TEST_PDF");
-        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf))
-            .expect("PDF extraction");
+        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf)).expect("PDF extraction");
         let lines: Vec<&str> = text.lines().collect();
         let anchor = lines
             .iter()
@@ -661,11 +655,7 @@ mod tests {
                         .find(|l| is_section_id(l.split(' ').next().unwrap_or("")))
                         .copied()
                         .unwrap_or("<heading?>");
-                    samples.push(format!(
-                        "{}\n   {}",
-                        heading.trim(),
-                        block.join("\n   ")
-                    ));
+                    samples.push(format!("{}\n   {}", heading.trim(), block.join("\n   ")));
                 }
             }
         }
@@ -686,8 +676,7 @@ mod tests {
                 drive with BASELINELENS_TEST_PDF"]
     fn inspect_profile_shape_distribution() {
         let pdf = std::env::var("BASELINELENS_TEST_PDF").expect("set BASELINELENS_TEST_PDF");
-        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf))
-            .expect("PDF extraction");
+        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf)).expect("PDF extraction");
         let lines: Vec<&str> = text.lines().collect();
         let anchor = lines
             .iter()
@@ -744,8 +733,7 @@ mod tests {
                         .find(|l| is_section_id(l.split(' ').next().unwrap_or("")))
                         .copied()
                         .unwrap_or("<heading?>");
-                    bl_standalone_samples
-                        .push(format!("{}  ::  {}", heading.trim(), joined));
+                    bl_standalone_samples.push(format!("{}  ::  {}", heading.trim(), joined));
                 }
             } else if has_bl && has_l1 {
                 bl_with_l1 += 1;
@@ -818,10 +806,7 @@ Set the thing.
             rec.sections.audit.as_deref(),
             Some("HKLM\\SOFTWARE\\Foo:Bar")
         );
-        assert_eq!(
-            rec.sections.remediation.as_deref(),
-            Some("Set the thing.")
-        );
+        assert_eq!(rec.sections.remediation.as_deref(), Some("Set the thing."));
     }
 
     #[test]

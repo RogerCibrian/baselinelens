@@ -45,10 +45,7 @@ pub(super) fn extract_all(body: &str) -> Vec<JoinedPath> {
             // Blocks`), so multi-space continuations are glued. Once the
             // `:` is present the value name is a single token; a
             // multi-space line there is narrative and must not glue.
-            let whitespace_count = next_content
-                .chars()
-                .filter(|c| c.is_whitespace())
-                .count();
+            let whitespace_count = next_content.chars().filter(|c| c.is_whitespace()).count();
             let value_delim_seen = joined.contains(':');
             if next_content.is_empty()
                 || starts_with_hive(next_content)
@@ -146,10 +143,14 @@ SVOL
         // A value whose data is an SDDL string carries colons of its own.
         // The key path must still come out clean (no colon) rather than
         // swallowing the SDDL up to the last colon.
-        let body = "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa:SampleName O:AAG:BBD:(X;;RC;;;YZ)\n";
+        let body =
+            "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa:SampleName O:AAG:BBD:(X;;RC;;;YZ)\n";
         let paths = extract_all(body);
         assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].path, "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa");
+        assert_eq!(
+            paths[0].path,
+            "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa"
+        );
         assert!(!paths[0].path.contains(':'));
     }
 

@@ -20,10 +20,7 @@ pub(super) fn detect(ctx: &DetectCtx) -> Detection {
         .remediation
         .as_deref()
         .map(|remediation| {
-            super::policy_path_has(
-                remediation,
-                &["Security Options\\", "Account Policies\\"],
-            )
+            super::policy_path_has(remediation, &["Security Options\\", "Account Policies\\"])
         })
         .unwrap_or(false);
     if !is_secedit {
@@ -52,10 +49,7 @@ pub(super) fn try_parse(rec: &RawRecommendation) -> Option<AuditProcedure> {
 }
 
 fn extract_setting(remediation: &str) -> Option<String> {
-    super::policy_setting(
-        remediation,
-        &["Security Options\\", "Account Policies\\"],
-    )
+    super::policy_setting(remediation, &["Security Options\\", "Account Policies\\"])
 }
 
 /// Reads the expected value from the title's `is set to '<phrase>'`
@@ -118,7 +112,8 @@ mod tests {
 
     #[test]
     fn extracts_setting_from_remediation() {
-        let remediation = "Set the path:\nLocal Policies Security Options\\Accounts: Guest account status\n";
+        let remediation =
+            "Set the path:\nLocal Policies Security Options\\Accounts: Guest account status\n";
         assert_eq!(
             extract_setting(remediation).as_deref(),
             Some("Accounts: Guest account status")

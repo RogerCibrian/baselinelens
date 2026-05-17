@@ -99,10 +99,12 @@ mod tests {
 
     #[test]
     fn rejects_unknown_scope_token() {
-        assert!(parse_scope_and_area(
-            "HKLM\\SOFTWARE\\Microsoft\\PolicyManager\\current\\unknown\\Area"
-        )
-        .is_none());
+        assert!(
+            parse_scope_and_area(
+                "HKLM\\SOFTWARE\\Microsoft\\PolicyManager\\current\\unknown\\Area"
+            )
+            .is_none()
+        );
     }
 
     #[test]
