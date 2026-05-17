@@ -72,6 +72,13 @@ fn parse_heading(line: &str) -> Option<(String, String)> {
     if name.is_empty() {
         return None;
     }
+    // Section headings are capitalized title phrases. A lowercase start
+    // or a trailing period marks a wrapped sentence fragment (e.g.
+    // "5 days.", "5 times."), not a heading.
+    let first = name.chars().next()?;
+    if first.is_ascii_lowercase() || name.ends_with('.') {
+        return None;
+    }
     Some((number.to_string(), name))
 }
 
@@ -81,6 +88,33 @@ mod tests {
 
     fn valid_set(numbers: &[&str]) -> HashSet<String> {
         numbers.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    #[ignore = "diagnostic — dumps parse_heading hits for a number; BASELINELENS_TEST_PDF"]
+    fn inspect_heading_hits() {
+        let pdf = std::env::var("BASELINELENS_TEST_PDF").expect("set BASELINELENS_TEST_PDF");
+        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf))
+            .expect("PDF extraction");
+        let mut in_body = false;
+        let mut hits = 0;
+        for (idx, line) in text.lines().enumerate() {
+            if !in_body {
+                if line.trim() == "Recommendations" {
+                    in_body = true;
+                }
+                continue;
+            }
+            if let Some((number, name)) = parse_heading(line)
+                && number == "5"
+            {
+                eprintln!("line {idx}: number={number:?} name={name:?}  raw={line:?}");
+                hits += 1;
+                if hits > 12 {
+                    break;
+                }
+            }
+        }
     }
 
     #[test]
@@ -144,6 +178,24 @@ later body text mentioning 4.6.11 Different Name
         let valid = valid_set(&["4.6.11"]);
         let names = extract_local_names(text, &valid);
         assert_eq!(names.get("4.6.11"), Some(&"First Heading".to_string()));
+    }
+
+    #[test]
+    fn rejects_sentence_fragment_before_real_heading() {
+        // "5 days." is a wrapped prose fragment that precedes the real
+        // "5 System Services" heading; the heading must win.
+        let text = "\
+Recommendations
+
+5 days.
+
+5 times.
+
+5 System Services
+";
+        let valid = valid_set(&["5"]);
+        let names = extract_local_names(text, &valid);
+        assert_eq!(names.get("5"), Some(&"System Services".to_string()));
     }
 
     #[test]

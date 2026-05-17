@@ -392,6 +392,37 @@ Above Lock\\Allow Cortana Above Lock
     }
 
     #[test]
+    #[ignore = "diagnostic — dumps parsed categories; drive with BASELINELENS_TEST_PDF"]
+    fn inspect_categories() {
+        let pdf_path = std::env::var("BASELINELENS_TEST_PDF")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf")
+            });
+        let baseline =
+            parse_with_progress(&pdf_path, |_| {}).expect("parse should succeed");
+        let mut cats: Vec<_> = baseline.categories.iter().collect();
+        cats.sort_by(|a, b| a.number.cmp(&b.number));
+        for cat in cats {
+            let suspect = cat.name.is_empty()
+                || cat.name.ends_with('.')
+                || cat
+                    .name
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_lowercase())
+                    .unwrap_or(false);
+            eprintln!(
+                "{}[{}] {:?}",
+                if suspect { ">>SUSPECT " } else { "" },
+                cat.number,
+                cat.name
+            );
+        }
+    }
+
+    #[test]
     #[ignore = "requires dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf on disk"]
     fn parses_real_pdf_into_complete_baseline() {
         let pdf_path = Path::new(env!("CARGO_MANIFEST_DIR"))
