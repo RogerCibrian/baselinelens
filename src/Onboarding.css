@@ -327,6 +327,7 @@
   border-radius: 6px;
   font-size: 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .ob-error-headline {

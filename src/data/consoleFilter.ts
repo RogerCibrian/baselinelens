@@ -17,6 +17,9 @@ export type ConsoleFilter = {
    * directions, since a no-flip view would just be "everything that
    * didn't move", which the All view already covers. */
   delta: "all" | "improved" | "regressed";
+  /** Restricts to BitLocker-tagged recs when `"only"`. Keyed on the
+   * rec's `bitlocker` tag, which is independent of `level`. */
+  bitlocker: "all" | "only";
   search: string;
 };
 
@@ -25,5 +28,6 @@ export const defaultConsoleFilter: ConsoleFilter = {
   status: "all",
   category: null,
   delta: "all",
+  bitlocker: "all",
   search: "",
 };

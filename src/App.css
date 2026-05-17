@@ -440,6 +440,7 @@
 .stale-banner-detail {
   font-size: 11px;
   opacity: 0.75;
+  overflow-wrap: anywhere;
 }
 
 .stale-banner-action {
@@ -786,6 +787,21 @@
 .level-l1 { background: var(--v-l1-bg); color: var(--v-l1); }
 .level-l2 { background: var(--v-l2-bg); color: var(--v-l2); }
 .level-bl { background: var(--v-bl-bg); color: var(--v-bl); }
+
+/* Applicability tag, not a severity level: an outlined pill in the
+   BitLocker hue so it reads as related to but distinct from the filled
+   level chip it sits beside. */
+.tag-bitlocker {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--v-bl);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--v-bl);
+}
 
 .level-card-name {
   font-size: 10px;
@@ -2147,6 +2163,7 @@
   color: var(--v-fail);
   border-radius: var(--v-radius-md);
   text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .muted {

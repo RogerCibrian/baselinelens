@@ -116,6 +116,7 @@ export default function Console({
     const needle = filter.search.trim().toLowerCase();
     return baseline.recommendations.filter((rec) => {
       if (filter.level !== "all" && rec.level !== filter.level) return false;
+      if (filter.bitlocker === "only" && !rec.bitlocker) return false;
       if (filter.category && !matchesCategory(rec.categoryNumber, filter.category)) {
         return false;
       }
@@ -153,6 +154,18 @@ export default function Console({
     out.sort((a, b) => sign * compareRecs(a, b, sort.key, scan, userState));
     return out;
   }, [filtered, sort, scan, userState]);
+
+  // The level dropdown and BitLocker pill reflect the levels and tags
+  // present in the loaded benchmark.
+  const levelsPresent = useMemo(() => {
+    const order: Level[] = ["L1", "L2", "BL"];
+    const present = new Set(baseline.recommendations.map((r) => r.level));
+    return order.filter((lvl) => present.has(lvl));
+  }, [baseline]);
+  const hasBitlocker = useMemo(
+    () => baseline.recommendations.some((r) => r.bitlocker),
+    [baseline],
+  );
 
   const openRec = openRecId
     ? (baseline.recommendations.find((r) => r.id === openRecId) ?? null)
@@ -277,6 +290,8 @@ export default function Console({
           total={baseline.recommendations.length}
           shown={sorted.length}
           categoryName={categoryName}
+          levelsPresent={levelsPresent}
+          hasBitlocker={hasBitlocker}
           onExport={(format) => void exportResults(format)}
         />
         {exportError && (
@@ -468,7 +483,7 @@ const SAVED_VIEWS: SavedView[] = [
     id: "bitlocker",
     name: "BitLocker only",
     description: "BitLocker profile recommendations",
-    filter: { level: "BL" },
+    filter: { bitlocker: "only" },
   },
 ];
 
@@ -499,6 +514,7 @@ function SavedViewRail({
       const target = { ...defaultConsoleFilter, ...view.filter };
       result[view.id] = baseline.recommendations.filter((rec) => {
         if (target.level !== "all" && rec.level !== target.level) return false;
+        if (target.bitlocker === "only" && !rec.bitlocker) return false;
         if (target.status !== "all") {
           if (effectiveStatus(rec, scan, userState) !== target.status) {
             return false;
@@ -647,6 +663,7 @@ function isViewActive(view: SavedView, current: ConsoleFilter): boolean {
       current.status === "all" &&
       current.category === null &&
       current.delta === "all" &&
+      current.bitlocker === "all" &&
       current.search.trim() === ""
     );
   }
@@ -676,6 +693,8 @@ function FilterBar({
   total,
   shown,
   categoryName,
+  levelsPresent,
+  hasBitlocker,
   onExport,
 }: {
   filter: ConsoleFilter;
@@ -692,6 +711,12 @@ function FilterBar({
    * (parser couldn't extract a heading). Shown alongside the number in
    * the chip; absence means the chip falls back to the bare number. */
   categoryName: string | null;
+  /** Levels present in the loaded benchmark, in L1→L2→BL order; the
+   * level dropdown renders these. */
+  levelsPresent: Level[];
+  /** True when any rec carries the BitLocker tag; gates the BitLocker
+   * filter pill. */
+  hasBitlocker: boolean;
   onExport: (format: "csv" | "json") => void;
 }) {
   // Local draft so each keystroke is instant while the (per-rec
@@ -718,6 +743,7 @@ function FilterBar({
     filter.status !== "all" ||
     filter.category !== null ||
     filter.delta !== "all" ||
+    filter.bitlocker !== "all" ||
     filter.search.trim() !== "";
 
   return (
@@ -764,11 +790,25 @@ function FilterBar({
         }
         options={[
           { value: "all", label: "Any level" },
-          { value: "L1", label: "L1" },
-          { value: "L2", label: "L2" },
-          { value: "BL", label: "BL" },
+          ...levelsPresent.map((lvl) => ({ value: lvl, label: lvl })),
         ]}
       />
+      {hasBitlocker && (
+        <FilterPill
+          label="BitLocker"
+          value={filter.bitlocker}
+          onChange={(v) =>
+            onFilterChange({
+              ...filter,
+              bitlocker: v as ConsoleFilter["bitlocker"],
+            })
+          }
+          options={[
+            { value: "all", label: "Any" },
+            { value: "only", label: "BitLocker only" },
+          ]}
+        />
+      )}
       {filter.category && (
         <button
           type="button"
@@ -1078,6 +1118,9 @@ function RecTable({
                   <span className={`level-chip level-${rec.level.toLowerCase()}`}>
                     {rec.level}
                   </span>
+                  {rec.bitlocker && rec.level !== "BL" && (
+                    <span className="tag-bitlocker">BitLocker</span>
+                  )}
                 </td>
               )}
               {columns.title && <td>{rec.title}</td>}
@@ -1506,6 +1549,9 @@ function DetailDrawer({
                 <span className={`level-chip level-${rec.level.toLowerCase()}`}>
                   {rec.level}
                 </span>
+                {rec.bitlocker && rec.level !== "BL" && (
+                  <span className="tag-bitlocker">BitLocker</span>
+                )}
                 {status && <StatusPill status={status} />}
                 <span className="chip-neutral">
                   {rec.assessment === "Automated"
