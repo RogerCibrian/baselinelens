@@ -74,6 +74,34 @@ fn manual(reason: &str) -> AuditProcedure {
     }
 }
 
+/// True when the whitespace-normalized `remediation` contains any of
+/// `markers`. Normalizing first makes the match immune to PDF
+/// line-wraps falling inside a policy-path token.
+pub(super) fn policy_path_has(remediation: &str, markers: &[&str]) -> bool {
+    let normalized = expected::normalize_whitespace(remediation);
+    markers.iter().any(|marker| normalized.contains(marker))
+}
+
+/// Returns the policy setting/right name from the remediation's policy
+/// path: the segment after the final backslash following the first of
+/// `markers` found in the whitespace-normalized text. Intermediate
+/// sub-nodes (e.g. `Password Policy\`) are discarded; the trailing
+/// segment is the setting name in every policy tree we read.
+pub(super) fn policy_setting(remediation: &str, markers: &[&str]) -> Option<String> {
+    let normalized = expected::normalize_whitespace(remediation);
+    for marker in markers {
+        if let Some(idx) = normalized.find(marker) {
+            let tail = &normalized[idx + marker.len()..];
+            let bounded = tail.split(" Note:").next().unwrap_or(tail);
+            let segment = bounded.rsplit('\\').next().unwrap_or(bounded).trim();
+            if !segment.is_empty() {
+                return Some(segment.to_string());
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;

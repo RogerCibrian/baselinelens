@@ -438,6 +438,8 @@ $script:security_options_map = @{
     'Account lockout threshold'                                                  = 'LockoutBadCount'
     'Allow Administrator account lockout'                                        = 'AllowAdministratorLockout'
     'Reset account lockout counter after'                                        = 'ResetLockoutCount'
+    'Network access: Allow anonymous SID/Name translation'                       = 'LSAAnonymousNameLookup'
+    'Network security: Force logoff when logon hours expire'                     = 'ForceLogoffWhenHourExpire'
 }
 
 # ============================================================================

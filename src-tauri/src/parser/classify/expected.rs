@@ -394,7 +394,7 @@ fn split_list(snippet: &str) -> Vec<String> {
         .collect()
 }
 
-fn normalize_whitespace(text: &str) -> String {
+pub(super) fn normalize_whitespace(text: &str) -> String {
     let mut normalized = String::with_capacity(text.len());
     let mut prev_was_space = false;
     for c in text.chars() {

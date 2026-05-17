@@ -20,8 +20,10 @@ pub(super) fn detect(ctx: &DetectCtx) -> Detection {
         .remediation
         .as_deref()
         .map(|remediation| {
-            remediation.contains("User Rights\\")
-                || remediation.contains("User Rights Assignment\\")
+            super::policy_path_has(
+                remediation,
+                &["User Rights Assignment\\", "User Rights\\"],
+            )
         })
         .unwrap_or(false);
     if !is_ura {
@@ -49,27 +51,14 @@ pub(super) fn try_parse(rec: &RawRecommendation) -> Option<AuditProcedure> {
     })
 }
 
-/// Returns the right name from the remediation's policy path. Handles the
-/// Settings Catalog form (`User Rights\<Right>`) and the Local Security
-/// Policy form (`…\User Rights Assignment\<Right>`); the trailing segment
-/// is the right name in both.
+/// Returns the right name from the remediation's policy path — the
+/// Settings Catalog form (`User Rights\<Right>`) or the Local Security
+/// Policy form (`…\User Rights Assignment\<Right>`).
 fn extract_right_name(remediation: &str) -> Option<String> {
-    for line in remediation.lines() {
-        let trimmed = line.trim();
-        if let Some(idx) = trimmed.find("User Rights Assignment\\") {
-            let name = trimmed[idx + "User Rights Assignment\\".len()..].trim();
-            if !name.is_empty() {
-                return Some(name.to_string());
-            }
-        }
-        if let Some(rest) = trimmed.strip_prefix("User Rights\\") {
-            let name = rest.trim();
-            if !name.is_empty() {
-                return Some(name.to_string());
-            }
-        }
-    }
-    None
+    super::policy_setting(
+        remediation,
+        &["User Rights Assignment\\", "User Rights\\"],
+    )
 }
 
 /// Reads the principal list and match mode from the rec title.

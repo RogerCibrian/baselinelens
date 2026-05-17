@@ -10,9 +10,9 @@ use crate::parser::model::{AuditProcedure, ExpectedValue, SeceditSection, Value}
 use crate::parser::structure::RawRecommendation;
 
 /// Secedit owns recs whose remediation references a Security Options or
-/// Account Policies (password/lockout) path. The markers match the
-/// trailing path segments `extract_setting` keys on, so detection and
-/// extraction stay consistent across PDF line wraps.
+/// Account Policies path. Cue and extraction share the same parent
+/// markers, so a sub-node spelling difference or a PDF line-wrap can't
+/// split them.
 pub(super) fn detect(ctx: &DetectCtx) -> Detection {
     let is_secedit = ctx
         .rec
@@ -20,9 +20,10 @@ pub(super) fn detect(ctx: &DetectCtx) -> Detection {
         .remediation
         .as_deref()
         .map(|remediation| {
-            remediation.contains("Local Policies Security Options\\")
-                || remediation.contains("Password Policy\\")
-                || remediation.contains("Account Lockout Policy\\")
+            super::policy_path_has(
+                remediation,
+                &["Security Options\\", "Account Policies\\"],
+            )
         })
         .unwrap_or(false);
     if !is_secedit {
@@ -51,24 +52,10 @@ pub(super) fn try_parse(rec: &RawRecommendation) -> Option<AuditProcedure> {
 }
 
 fn extract_setting(remediation: &str) -> Option<String> {
-    for line in remediation.lines() {
-        let trimmed = line.trim();
-        for marker in ["Password Policy\\", "Account Lockout Policy\\"] {
-            if let Some(idx) = trimmed.find(marker) {
-                let name = trimmed[idx + marker.len()..].trim();
-                if !name.is_empty() {
-                    return Some(name.to_string());
-                }
-            }
-        }
-        if let Some(rest) = trimmed.strip_prefix("Local Policies Security Options\\") {
-            let name = rest.trim();
-            if !name.is_empty() {
-                return Some(name.to_string());
-            }
-        }
-    }
-    None
+    super::policy_setting(
+        remediation,
+        &["Security Options\\", "Account Policies\\"],
+    )
 }
 
 /// Reads the expected value from the title's `is set to '<phrase>'`

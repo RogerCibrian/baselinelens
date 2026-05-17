@@ -39,18 +39,20 @@ pub(super) fn extract_all(body: &str) -> Vec<JoinedPath> {
             let next_raw = lines[i];
             let next = next_raw.trim_end();
             let next_content = next.trim_start();
-            // Continuations are short tokens (`TLOGON`, `oveLock_WinningProvider`,
-            // `SID]\...`) or path fragments with at most one literal space
-            // inside a placeholder (`eClasses:<numeric value>`). Anything with
-            // multiple whitespace runs is narrative text and must not be glued
-            // onto the registry path.
+            // While the key path is still being built (no `:` value
+            // delimiter yet) it may wrap mid-path, and a key path can
+            // contain spaces (`Windows Defender\Behavioral Network
+            // Blocks`), so multi-space continuations are glued. Once the
+            // `:` is present the value name is a single token; a
+            // multi-space line there is narrative and must not glue.
             let whitespace_count = next_content
                 .chars()
                 .filter(|c| c.is_whitespace())
                 .count();
+            let value_delim_seen = joined.contains(':');
             if next_content.is_empty()
                 || starts_with_hive(next_content)
-                || whitespace_count > 1
+                || (value_delim_seen && whitespace_count > 1)
             {
                 break;
             }
