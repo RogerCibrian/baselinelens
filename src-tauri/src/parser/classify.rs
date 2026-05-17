@@ -53,7 +53,10 @@ pub(crate) fn audit_procedure(rec: &RawRecommendation) -> AuditProcedure {
         .sections
         .remediation
         .as_deref()
-        .map(|remediation| remediation.contains("User Rights\\"))
+        .map(|remediation| {
+            remediation.contains("User Rights\\")
+                || remediation.contains("User Rights Assignment\\")
+        })
         .unwrap_or(false)
     {
         if let Some(procedure) = user_rights_assignment::try_parse(rec) {
@@ -332,6 +335,61 @@ mod tests {
             }
         }
         eprintln!("\n--- total AuditPolicy recs: {count} ---");
+    }
+
+    #[test]
+    #[ignore = "diagnostic — title/audit/remediation for BASELINELENS_IDS; \
+                BASELINELENS_TEST_PDF"]
+    fn inspect_recs_by_id() {
+        let pdf_path = fixture_pdf_path();
+        let ids = std::env::var("BASELINELENS_IDS").unwrap_or_default();
+        let wanted: Vec<&str> = ids.split(',').map(str::trim).collect();
+        let text = pdf::extract(&pdf_path).expect("PDF extraction");
+        let recs = structure::slice(&text).expect("slicing");
+        for rec in &recs {
+            if !wanted.contains(&rec.id.as_str()) {
+                continue;
+            }
+            eprintln!("\n===== [{}] {} =====", rec.id, rec.title);
+            eprintln!("--AUDIT--\n{}", rec.sections.audit.as_deref().unwrap_or("<none>"));
+            eprintln!(
+                "--REMEDIATION--\n{}",
+                rec.sections.remediation.as_deref().unwrap_or("<none>")
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "diagnostic — compact manual-fallback summary; BASELINELENS_TEST_PDF"]
+    fn summarize_manual_fallbacks() {
+        let pdf_path = fixture_pdf_path();
+        let text = pdf::extract(&pdf_path).expect("PDF extraction");
+        let recs = structure::slice(&text).expect("slicing");
+
+        let mut by_reason: std::collections::BTreeMap<String, Vec<&_>> =
+            std::collections::BTreeMap::new();
+        for rec in &recs {
+            if let AuditProcedure::Manual { description } = audit_procedure(rec) {
+                by_reason.entry(description).or_default().push(rec);
+            }
+        }
+        for (reason, members) in &by_reason {
+            eprintln!("\n#### {} ({}) ####", reason, members.len());
+            for rec in members {
+                let snippet: String = rec
+                    .sections
+                    .audit
+                    .as_deref()
+                    .unwrap_or("")
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .take(3)
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                eprintln!("[{}] {}\n    {}", rec.id, rec.title, snippet);
+            }
+        }
     }
 
     #[test]

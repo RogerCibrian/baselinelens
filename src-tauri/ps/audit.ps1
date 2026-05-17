@@ -337,44 +337,84 @@ function Get-PrivilegeSids {
 # Display-name mappings
 # ============================================================================
 
-# Maps each User Rights Assignment setting to its LSP constant, which is
-# what secedit's INI is keyed on. Names not in this table fall through
-# to Manual rather than guess.
+# Maps a User Rights Assignment policy name to its LSP constant, which
+# is what secedit's INI is keyed on. Keyed on both the Windows
+# display-name form (used by the GPO benchmarks) and the Settings
+# Catalog short form (used by the Intune benchmarks); hashtable lookup
+# is case-insensitive. Names not in this table fall through to Manual
+# rather than guess.
 $script:user_rights_map = @{
+    # Windows display-name form.
+    'Access Credential Manager as a trusted caller'                      = 'SeTrustedCredManAccessPrivilege'
+    'Access this computer from the network'                              = 'SeNetworkLogonRight'
+    'Act as part of the operating system'                                = 'SeTcbPrivilege'
+    'Add workstations to domain'                                         = 'SeMachineAccountPrivilege'
+    'Adjust memory quotas for a process'                                 = 'SeIncreaseQuotaPrivilege'
+    'Allow log on locally'                                               = 'SeInteractiveLogonRight'
+    'Allow log on through Remote Desktop Services'                       = 'SeRemoteInteractiveLogonRight'
+    'Back up files and directories'                                      = 'SeBackupPrivilege'
+    'Bypass traverse checking'                                           = 'SeChangeNotifyPrivilege'
+    'Change the system time'                                             = 'SeSystemtimePrivilege'
+    'Change the time zone'                                               = 'SeTimeZonePrivilege'
+    'Create a pagefile'                                                  = 'SeCreatePagefilePrivilege'
+    'Create a token object'                                              = 'SeCreateTokenPrivilege'
+    'Create global objects'                                              = 'SeCreateGlobalPrivilege'
+    'Create permanent shared objects'                                    = 'SeCreatePermanentPrivilege'
+    'Create symbolic links'                                              = 'SeCreateSymbolicLinkPrivilege'
+    'Debug programs'                                                     = 'SeDebugPrivilege'
+    'Deny access to this computer from the network'                      = 'SeDenyNetworkLogonRight'
+    'Deny log on as a batch job'                                         = 'SeDenyBatchLogonRight'
+    'Deny log on as a service'                                           = 'SeDenyServiceLogonRight'
+    'Deny log on locally'                                                = 'SeDenyInteractiveLogonRight'
+    'Deny log on through Remote Desktop Services'                        = 'SeDenyRemoteInteractiveLogonRight'
+    'Enable computer and user accounts to be trusted for delegation'     = 'SeEnableDelegationPrivilege'
+    'Force shutdown from a remote system'                                = 'SeRemoteShutdownPrivilege'
+    'Generate security audits'                                           = 'SeAuditPrivilege'
+    'Impersonate a client after authentication'                          = 'SeImpersonatePrivilege'
+    'Increase a process working set'                                     = 'SeIncreaseWorkingSetPrivilege'
+    'Increase scheduling priority'                                       = 'SeIncreaseBasePriorityPrivilege'
+    'Load and unload device drivers'                                     = 'SeLoadDriverPrivilege'
+    'Lock pages in memory'                                               = 'SeLockMemoryPrivilege'
+    'Log on as a batch job'                                              = 'SeBatchLogonRight'
+    'Log on as a service'                                                = 'SeServiceLogonRight'
+    'Manage auditing and security log'                                   = 'SeSecurityPrivilege'
+    'Modify an object label'                                             = 'SeRelabelPrivilege'
+    'Modify firmware environment values'                                 = 'SeSystemEnvironmentPrivilege'
+    'Obtain an impersonation token for another user in the same session' = 'SeDelegateSessionUserImpersonatePrivilege'
+    'Perform volume maintenance tasks'                                   = 'SeManageVolumePrivilege'
+    'Profile single process'                                             = 'SeProfileSingleProcessPrivilege'
+    'Profile system performance'                                         = 'SeSystemProfilePrivilege'
+    'Remove computer from docking station'                               = 'SeUndockPrivilege'
+    'Replace a process level token'                                      = 'SeAssignPrimaryTokenPrivilege'
+    'Restore files and directories'                                      = 'SeRestorePrivilege'
+    'Shut down the system'                                                = 'SeShutdownPrivilege'
+    'Synchronize directory service data'                                 = 'SeSyncAgentPrivilege'
+    'Take ownership of files or other objects'                           = 'SeTakeOwnershipPrivilege'
+
+    # Settings Catalog short form (only those not already covered
+    # case-insensitively by a display-name key above).
     'Access Credential Manager As Trusted Caller' = 'SeTrustedCredManAccessPrivilege'
     'Access From Network'                         = 'SeNetworkLogonRight'
-    'Act As Part Of The Operating System'         = 'SeTcbPrivilege'
     'Allow Local Log On'                          = 'SeInteractiveLogonRight'
     'Backup Files And Directories'                = 'SeBackupPrivilege'
     'Change System Time'                          = 'SeSystemtimePrivilege'
-    'Create Global Objects'                       = 'SeCreateGlobalPrivilege'
     'Create Page File'                            = 'SeCreatePagefilePrivilege'
-    'Create Permanent Shared Objects'             = 'SeCreatePermanentPrivilege'
-    'Create Symbolic Links'                       = 'SeCreateSymbolicLinkPrivilege'
     'Create Token'                                = 'SeCreateTokenPrivilege'
-    'Debug Programs'                              = 'SeDebugPrivilege'
     'Deny Access From Network'                    = 'SeDenyNetworkLogonRight'
     'Deny Local Log On'                           = 'SeDenyInteractiveLogonRight'
     'Deny Log On As Batch Job'                    = 'SeDenyBatchLogonRight'
     'Deny Log On As Service Job'                  = 'SeDenyServiceLogonRight'
     'Deny Remote Desktop Services Log On'         = 'SeDenyRemoteInteractiveLogonRight'
     'Enable Delegation'                           = 'SeEnableDelegationPrivilege'
-    'Generate security audits'                    = 'SeAuditPrivilege'
     'Impersonate Client'                          = 'SeImpersonatePrivilege'
-    'Increase scheduling priority'                = 'SeIncreaseBasePriorityPrivilege'
     'Load Unload Device Drivers'                  = 'SeLoadDriverPrivilege'
     'Lock Memory'                                 = 'SeLockMemoryPrivilege'
     'Log On As Batch Job'                         = 'SeBatchLogonRight'
-    'Manage auditing and security log'            = 'SeSecurityPrivilege'
     'Manage Volume'                               = 'SeManageVolumePrivilege'
     'Modify Firmware Environment'                 = 'SeSystemEnvironmentPrivilege'
     'Modify Object Label'                         = 'SeRelabelPrivilege'
-    'Profile single process'                      = 'SeProfileSingleProcessPrivilege'
-    'Profile System Performance'                  = 'SeSystemProfilePrivilege'
     'Remote Shutdown'                             = 'SeRemoteShutdownPrivilege'
     'Replace Process Level Token'                 = 'SeAssignPrimaryTokenPrivilege'
-    'Restore files and directories'               = 'SeRestorePrivilege'
-    'Shut Down The System'                        = 'SeShutdownPrivilege'
     'Take Ownership'                              = 'SeTakeOwnershipPrivilege'
 }
 

@@ -23,14 +23,23 @@ pub(super) fn try_parse(rec: &RawRecommendation) -> Option<AuditProcedure> {
     })
 }
 
-/// Finds the `User Rights\<Right Name>` line in the remediation and returns
-/// the right name.
+/// Returns the right name from the remediation's policy path. Handles the
+/// Settings Catalog form (`User Rights\<Right>`) and the Local Security
+/// Policy form (`…\User Rights Assignment\<Right>`); the trailing segment
+/// is the right name in both.
 fn extract_right_name(remediation: &str) -> Option<String> {
     for line in remediation.lines() {
-        if let Some(rest) = line.trim().strip_prefix("User Rights\\") {
-            let trimmed = rest.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
+        let trimmed = line.trim();
+        if let Some(idx) = trimmed.find("User Rights Assignment\\") {
+            let name = trimmed[idx + "User Rights Assignment\\".len()..].trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+        if let Some(rest) = trimmed.strip_prefix("User Rights\\") {
+            let name = rest.trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
             }
         }
     }
@@ -101,6 +110,18 @@ mod tests {
     fn extracts_right_name_from_remediation() {
         let remediation = "Set the following Settings Catalog path:\nUser Rights\\Debug Programs\n";
         assert_eq!(extract_right_name(remediation).as_deref(), Some("Debug Programs"));
+    }
+
+    #[test]
+    fn extracts_right_name_from_gpo_local_security_policy_path() {
+        let remediation = "To establish the recommended configuration via GP, set the \
+            following UI path to Administrators, Remote Desktop Users:\n\
+            Computer Configuration\\Policies\\Windows Settings\\Security Settings\\Local \
+            Policies\\User Rights Assignment\\Access this computer from the network\n";
+        assert_eq!(
+            extract_right_name(remediation).as_deref(),
+            Some("Access this computer from the network")
+        );
     }
 
     #[test]
