@@ -418,9 +418,9 @@ $script:user_rights_map = @{
     'Take Ownership'                              = 'SeTakeOwnershipPrivilege'
 }
 
-# Local Security Policy -> Security Options display names -> secedit INI
-# key under [System Access]. The v4 benchmark only touches account-policy
-# entries; expand when newer benchmarks need more.
+# Maps a Local Security Policy display name to its secedit INI key under
+# [System Access]: the Security Options "Accounts:" entries and the
+# Account Policies password/lockout entries.
 $script:security_options_map = @{
     'Accounts: Administrator account status'                                     = 'EnableAdminAccount'
     'Accounts: Block Microsoft accounts'                                         = 'NoConnectedUser'
@@ -428,6 +428,16 @@ $script:security_options_map = @{
     'Accounts: Limit local account use of blank passwords to console logon only' = 'LimitBlankPasswordUse'
     'Accounts: Rename administrator account'                                     = 'NewAdministratorName'
     'Accounts: Rename guest account'                                             = 'NewGuestName'
+    'Enforce password history'                                                   = 'PasswordHistorySize'
+    'Maximum password age'                                                       = 'MaximumPasswordAge'
+    'Minimum password age'                                                       = 'MinimumPasswordAge'
+    'Minimum password length'                                                    = 'MinimumPasswordLength'
+    'Password must meet complexity requirements'                                 = 'PasswordComplexity'
+    'Store passwords using reversible encryption'                                = 'ClearTextPassword'
+    'Account lockout duration'                                                   = 'LockoutDuration'
+    'Account lockout threshold'                                                  = 'LockoutBadCount'
+    'Allow Administrator account lockout'                                        = 'AllowAdministratorLockout'
+    'Reset account lockout counter after'                                        = 'ResetLockoutCount'
 }
 
 # ============================================================================

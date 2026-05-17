@@ -2,7 +2,22 @@
 //! `auditpol /get /subcategory:"{GUID}"` line in the audit body and the
 //! expected mode from the rec title.
 
+use crate::parser::classify::{DetectCtx, Detection};
 use crate::parser::model::{AuditPolicyMode, AuditProcedure, MatchMode};
+
+/// AuditPolicy owns recs whose audit body runs `auditpol /get
+/// /subcategory:`.
+pub(super) fn detect(ctx: &DetectCtx) -> Detection {
+    if !ctx.body.contains("auditpol /get /subcategory:") {
+        return Detection::NotApplicable;
+    }
+    match try_parse(ctx.body, &ctx.rec.title) {
+        Some(procedure) => Detection::Parsed(procedure),
+        None => Detection::Recognized {
+            reason: "AuditPolicy body could not be parsed",
+        },
+    }
+}
 
 /// Returns an `AuditPolicy` `AuditProcedure` if the body has a recognizable
 /// auditpol command and the title carries a parseable mode. Returns `None`

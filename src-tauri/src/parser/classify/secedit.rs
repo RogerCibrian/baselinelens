@@ -1,18 +1,43 @@
-//! Secedit variant: extracts the setting name from the Settings Catalog
-//! path in the remediation and the expected value from either the title or
-//! the default-value section.
-//!
-//! The v1 benchmark surfaces three Secedit recs (49.1, 49.3, 49.4), all in
-//! the secedit `[System Access]` section. The "Configure 'X'" recs (no
-//! specific value in the title) verify that the value differs from the
-//! default — the audit semantically checks that the admin renamed the
-//! account.
+//! Secedit variant: extracts the setting name from the remediation's
+//! policy path and the expected value from the title (or, for a
+//! `Configure 'X'` rec with no value phrase, infers "differs from the
+//! default" from the default-value section). All settings handled here
+//! live in the secedit `[System Access]` INI section.
 
+use crate::parser::classify::expected;
+use crate::parser::classify::{DetectCtx, Detection};
 use crate::parser::model::{AuditProcedure, ExpectedValue, SeceditSection, Value};
 use crate::parser::structure::RawRecommendation;
 
+/// Secedit owns recs whose remediation references a Security Options or
+/// Account Policies (password/lockout) path. The markers match the
+/// trailing path segments `extract_setting` keys on, so detection and
+/// extraction stay consistent across PDF line wraps.
+pub(super) fn detect(ctx: &DetectCtx) -> Detection {
+    let is_secedit = ctx
+        .rec
+        .sections
+        .remediation
+        .as_deref()
+        .map(|remediation| {
+            remediation.contains("Local Policies Security Options\\")
+                || remediation.contains("Password Policy\\")
+                || remediation.contains("Account Lockout Policy\\")
+        })
+        .unwrap_or(false);
+    if !is_secedit {
+        return Detection::NotApplicable;
+    }
+    match try_parse(ctx.rec) {
+        Some(procedure) => Detection::Parsed(procedure),
+        None => Detection::Recognized {
+            reason: "Secedit body could not be parsed",
+        },
+    }
+}
+
 /// Returns a `Secedit` `AuditProcedure` if the rec's remediation has a
-/// `Local Policies Security Options\<Setting>` path and the title is
+/// recognizable Security Options or Account Policies path and the title is
 /// parseable.
 pub(super) fn try_parse(rec: &RawRecommendation) -> Option<AuditProcedure> {
     let remediation = rec.sections.remediation.as_deref()?;
@@ -27,30 +52,36 @@ pub(super) fn try_parse(rec: &RawRecommendation) -> Option<AuditProcedure> {
 
 fn extract_setting(remediation: &str) -> Option<String> {
     for line in remediation.lines() {
-        if let Some(rest) = line.trim().strip_prefix("Local Policies Security Options\\") {
-            let trimmed = rest.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
+        let trimmed = line.trim();
+        for marker in ["Password Policy\\", "Account Lockout Policy\\"] {
+            if let Some(idx) = trimmed.find(marker) {
+                let name = trimmed[idx + marker.len()..].trim();
+                if !name.is_empty() {
+                    return Some(name.to_string());
+                }
+            }
+        }
+        if let Some(rest) = trimmed.strip_prefix("Local Policies Security Options\\") {
+            let name = rest.trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
             }
         }
     }
     None
 }
 
-/// Reads the expected value from the title (`is set to 'X'`) or, when the
-/// title says only `Configure 'X'`, infers `NotEquals(default)` from the
-/// rec's default-value section.
+/// Reads the expected value from the title's `is set to '<phrase>'`
+/// segment, routed through the shared value-phrase parser. When the title
+/// says only `Configure 'X'` (no value phrase), infers `NotEquals(default)`
+/// from the rec's default-value section.
 fn parse_expected(rec: &RawRecommendation) -> Option<ExpectedValue> {
     let title = &rec.title;
 
     if let Some(idx) = title.find("is set to '") {
         let after = &title[idx + "is set to '".len()..];
         let end = after.find('\'')?;
-        return Some(ExpectedValue::Equals {
-            value: Value::Str {
-                value: after[..end].to_string(),
-            },
-        });
+        return Some(expected::parse_value_phrase(&after[..end]));
     }
 
     if title.contains("Configure '") {
@@ -120,14 +151,36 @@ mod tests {
                 setting, expected, ..
             } => {
                 assert_eq!(setting, "Accounts: Guest account status");
+                // Routed through the shared value-phrase parser:
+                // Disabled is the [System Access] boolean 0.
                 assert_eq!(
                     expected,
                     ExpectedValue::Equals {
-                        value: Value::Str {
-                            value: "Disabled".to_string()
-                        }
+                        value: Value::Dword { value: 0 }
                     }
                 );
+            }
+            _ => panic!("expected Secedit"),
+        }
+    }
+
+    #[test]
+    fn parses_gpo_account_policy_path_and_numeric_constraint() {
+        let rec = rec_for(
+            "Ensure 'Enforce password history' is set to '24 or more password(s)'",
+            "To establish the recommended configuration via GP, set the following \
+             UI path to 24 or more password(s):\n\
+             Computer Configuration\\Policies\\Windows Settings\\Security \
+             Settings\\Account Policies\\Password Policy\\Enforce password history\n",
+            None,
+        );
+        let procedure = try_parse(&rec).expect("should parse");
+        match procedure {
+            AuditProcedure::Secedit {
+                setting, expected, ..
+            } => {
+                assert_eq!(setting, "Enforce password history");
+                assert_eq!(expected, ExpectedValue::AtLeast { value: 24 });
             }
             _ => panic!("expected Secedit"),
         }

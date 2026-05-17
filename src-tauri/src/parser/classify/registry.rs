@@ -4,7 +4,22 @@
 
 use crate::parser::classify::expected;
 use crate::parser::classify::path::JoinedPath;
+use crate::parser::classify::{DetectCtx, Detection};
 use crate::parser::model::{AuditProcedure, RegistryCheck, RegistryScope};
+
+/// Registry owns recs with one or more HKLM/HKU paths. PolicyManager runs
+/// first, so any `_WinningProvider` rec is already claimed before this.
+pub(super) fn detect(ctx: &DetectCtx) -> Detection {
+    if ctx.paths.is_empty() {
+        return Detection::NotApplicable;
+    }
+    match try_parse(ctx.body, &ctx.paths) {
+        Some(procedure) => Detection::Parsed(procedure),
+        None => Detection::Recognized {
+            reason: "registry body could not be parsed",
+        },
+    }
+}
 
 /// Returns a `Registry` `AuditProcedure` if `paths` and `body` together
 /// describe a recognizable shape; returns `None` so the dispatcher falls

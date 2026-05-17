@@ -6,8 +6,34 @@
 //! cue that works for both explicit recs (whose audit body has an LSP path
 //! too) and the implicit one (89.14, whose audit body has no path).
 
+use crate::parser::classify::{DetectCtx, Detection};
 use crate::parser::model::{AuditProcedure, MatchMode, Principal, PrincipalKind};
 use crate::parser::structure::RawRecommendation;
+
+/// User Rights Assignment owns recs whose remediation references the
+/// rights path — the Settings Catalog form (`User Rights\`) or the Local
+/// Security Policy form (`User Rights Assignment\`).
+pub(super) fn detect(ctx: &DetectCtx) -> Detection {
+    let is_ura = ctx
+        .rec
+        .sections
+        .remediation
+        .as_deref()
+        .map(|remediation| {
+            remediation.contains("User Rights\\")
+                || remediation.contains("User Rights Assignment\\")
+        })
+        .unwrap_or(false);
+    if !is_ura {
+        return Detection::NotApplicable;
+    }
+    match try_parse(ctx.rec) {
+        Some(procedure) => Detection::Parsed(procedure),
+        None => Detection::Recognized {
+            reason: "URA body could not be parsed",
+        },
+    }
+}
 
 /// Returns a `UserRightsAssignment` `AuditProcedure` if `rec`'s remediation
 /// has a `User Rights\<Right>` line and the title is parseable; returns

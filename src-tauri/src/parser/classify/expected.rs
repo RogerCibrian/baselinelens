@@ -76,6 +76,36 @@ pub(super) fn parse(body: &str) -> Option<ExpectedValue> {
     None
 }
 
+/// Interprets a bare value phrase (the quoted target from a rec title,
+/// e.g. `24 or more password(s)`, `365 or fewer days, but not 0`,
+/// `Enabled`). `Enabled`/`Disabled` map to the secedit `[System Access]`
+/// boolean representation (`1`/`0`); a numeric-constraint phrase reuses
+/// `parse_dword_constraint`; anything else is an exact string match.
+pub(super) fn parse_value_phrase(phrase: &str) -> ExpectedValue {
+    let trimmed = phrase.trim();
+    match trimmed {
+        "Enabled" => {
+            return ExpectedValue::Equals {
+                value: Value::Dword { value: 1 },
+            };
+        }
+        "Disabled" => {
+            return ExpectedValue::Equals {
+                value: Value::Dword { value: 0 },
+            };
+        }
+        _ => {}
+    }
+    if let Some(constraint) = parse_dword_constraint(trimmed) {
+        return constraint;
+    }
+    ExpectedValue::Equals {
+        value: Value::Str {
+            value: trimmed.to_string(),
+        },
+    }
+}
+
 /// Parses the per-key-different DWORD pattern: `REG_DWORD value of N1 (NameA)
 /// and N2 (NameB)`. Returns `(value_name, expected)` pairs that callers can
 /// use to assign each registry check its own expected value.
@@ -450,6 +480,57 @@ mod tests {
                     },
                 ],
             })
+        );
+    }
+
+    #[test]
+    fn value_phrase_enabled_disabled_map_to_dword_bool() {
+        assert_eq!(
+            parse_value_phrase("Enabled"),
+            ExpectedValue::Equals {
+                value: Value::Dword { value: 1 }
+            }
+        );
+        assert_eq!(
+            parse_value_phrase("Disabled"),
+            ExpectedValue::Equals {
+                value: Value::Dword { value: 0 }
+            }
+        );
+    }
+
+    #[test]
+    fn value_phrase_numeric_constraints() {
+        assert_eq!(
+            parse_value_phrase("24 or more password(s)"),
+            ExpectedValue::AtLeast { value: 24 }
+        );
+        assert_eq!(
+            parse_value_phrase("365 or fewer days, but not 0"),
+            ExpectedValue::All {
+                values: vec![
+                    ExpectedValue::AtMost { value: 365 },
+                    ExpectedValue::NotEquals {
+                        value: Value::Dword { value: 0 }
+                    },
+                ],
+            }
+        );
+        assert_eq!(
+            parse_value_phrase("1 or more day(s)"),
+            ExpectedValue::AtLeast { value: 1 }
+        );
+    }
+
+    #[test]
+    fn value_phrase_falls_back_to_string() {
+        assert_eq!(
+            parse_value_phrase("Administrators"),
+            ExpectedValue::Equals {
+                value: Value::Str {
+                    value: "Administrators".to_string()
+                }
+            }
         );
     }
 

@@ -9,75 +9,62 @@ mod registry;
 mod secedit;
 mod user_rights_assignment;
 
+use crate::parser::classify::path::JoinedPath;
 use crate::parser::model::AuditProcedure;
 use crate::parser::structure::RawRecommendation;
 
+/// Inputs every variant detector needs, computed once per recommendation.
+struct DetectCtx<'a> {
+    rec: &'a RawRecommendation,
+    body: &'a str,
+    paths: Vec<JoinedPath>,
+}
+
+/// A variant's answer to "is this recommendation mine, and could I parse
+/// it?" — colocated with the variant's parser so detection and extraction
+/// can't drift apart.
+enum Detection {
+    /// Not this variant's shape; the dispatcher tries the next.
+    NotApplicable,
+    /// This variant's shape, but the body couldn't be fully parsed.
+    /// `reason` becomes the `Manual` description.
+    Recognized { reason: &'static str },
+    /// Successfully classified.
+    Parsed(AuditProcedure),
+}
+
 /// Returns the appropriate `AuditProcedure` variant for this recommendation.
 ///
-/// HKLM/HKU paths are extracted once via the shared `path` module; if any of
-/// them is a `_WinningProvider` lookup the rec is routed to PolicyManager,
-/// otherwise to Registry. Anything we don't yet recognize falls through to a
-/// `Manual` variant whose description names the reason.
+/// Each variant module owns a `detect` that decides whether the rec is its
+/// shape and, if so, parses it. The dispatcher tries them in priority
+/// order and takes the first non-`NotApplicable` answer. The order is
+/// intentional: some shapes are subsets of others (PolicyManager is the
+/// `_WinningProvider` subset of "has a registry path"), so a more specific
+/// detector must run before a more general one.
 pub(crate) fn audit_procedure(rec: &RawRecommendation) -> AuditProcedure {
     let Some(body) = rec.sections.audit.as_deref() else {
         return manual("missing audit section");
     };
+    let ctx = DetectCtx {
+        rec,
+        body,
+        paths: path::extract_all(body),
+    };
 
-    let paths = path::extract_all(body);
-
-    if paths
-        .iter()
-        .any(|joined| joined.value_name.ends_with("_WinningProvider"))
-    {
-        if let Some(procedure) = policy_manager::try_parse(body, &paths) {
-            return procedure;
+    let detectors: [fn(&DetectCtx) -> Detection; 5] = [
+        policy_manager::detect,
+        registry::detect,
+        audit_policy::detect,
+        user_rights_assignment::detect,
+        secedit::detect,
+    ];
+    for detect in detectors {
+        match detect(&ctx) {
+            Detection::NotApplicable => {}
+            Detection::Recognized { reason } => return manual(reason),
+            Detection::Parsed(procedure) => return procedure,
         }
-        return manual("PolicyManager body could not be parsed");
     }
-
-    if !paths.is_empty() {
-        if let Some(procedure) = registry::try_parse(body, &paths) {
-            return procedure;
-        }
-        return manual("registry body could not be parsed");
-    }
-
-    if body.contains("auditpol /get /subcategory:") {
-        if let Some(procedure) = audit_policy::try_parse(body, &rec.title) {
-            return procedure;
-        }
-        return manual("AuditPolicy body could not be parsed");
-    }
-
-    if rec
-        .sections
-        .remediation
-        .as_deref()
-        .map(|remediation| {
-            remediation.contains("User Rights\\")
-                || remediation.contains("User Rights Assignment\\")
-        })
-        .unwrap_or(false)
-    {
-        if let Some(procedure) = user_rights_assignment::try_parse(rec) {
-            return procedure;
-        }
-        return manual("URA body could not be parsed");
-    }
-
-    if rec
-        .sections
-        .remediation
-        .as_deref()
-        .map(|remediation| remediation.contains("Local Policies Security Options\\"))
-        .unwrap_or(false)
-    {
-        if let Some(procedure) = secedit::try_parse(rec) {
-            return procedure;
-        }
-        return manual("Secedit body could not be parsed");
-    }
-
     manual("unhandled audit body shape")
 }
 

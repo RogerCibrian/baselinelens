@@ -11,7 +11,26 @@
 
 use crate::parser::classify::expected;
 use crate::parser::classify::path::JoinedPath;
+use crate::parser::classify::{DetectCtx, Detection};
 use crate::parser::model::{AuditProcedure, PolicyScope};
+
+/// PolicyManager owns recs whose audit body has a `_WinningProvider`
+/// lookup path.
+pub(super) fn detect(ctx: &DetectCtx) -> Detection {
+    if !ctx
+        .paths
+        .iter()
+        .any(|joined| joined.value_name.ends_with("_WinningProvider"))
+    {
+        return Detection::NotApplicable;
+    }
+    match try_parse(ctx.body, &ctx.paths) {
+        Some(procedure) => Detection::Parsed(procedure),
+        None => Detection::Recognized {
+            reason: "PolicyManager body could not be parsed",
+        },
+    }
+}
 
 /// Returns a `PolicyManager` `AuditProcedure` if the audit body has a
 /// `_WinningProvider` path AND a recognizable expected-value text shape.
