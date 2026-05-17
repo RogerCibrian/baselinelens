@@ -26,7 +26,7 @@ use crate::parser::model::{
 /// or the `Baseline` shape changes in a way that should invalidate older
 /// cached output. The frontend compares this against a cached baseline's
 /// `parser_version` and surfaces a re-parse prompt on mismatch.
-pub(crate) const PARSER_VERSION: &str = "2";
+pub(crate) const PARSER_VERSION: &str = "3";
 
 /// Stages emitted by `parse_with_progress` so the UI can render a status
 /// label and progress bar. `ExtractingText` and `Classifying` carry
@@ -185,6 +185,7 @@ fn build_recommendation(raw: structure::RawRecommendation) -> Recommendation {
     Recommendation {
         id: raw.id,
         level: raw.level,
+        bitlocker: raw.bitlocker,
         category_number,
         title: raw.title,
         description: raw.sections.description.unwrap_or_default(),

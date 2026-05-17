@@ -12,6 +12,7 @@ use crate::parser::model::{Assessment, Level};
 pub(crate) struct RawRecommendation {
     pub(crate) id: String,
     pub(crate) level: Level,
+    pub(crate) bitlocker: bool,
     pub(crate) assessment: Assessment,
     pub(crate) title: String,
     pub(crate) sections: BodySections,
@@ -63,6 +64,7 @@ pub(crate) fn slice(text: &str) -> Result<Vec<RawRecommendation>, ParseError> {
         recs.push(RawRecommendation {
             id: heading.id.clone(),
             level: heading.level,
+            bitlocker: heading.bitlocker,
             assessment: heading.assessment,
             title,
             sections,
@@ -79,55 +81,111 @@ struct Heading {
     body_start: usize,
     id: String,
     level: Level,
+    bitlocker: bool,
     assessment: Assessment,
 }
 
 /// Walks `body` and returns the position and metadata of every recommendation
-/// heading. A heading starts on a line matching `<id> (L1|L2|BL) <title>` and
-/// ends on the line containing the trailing `(Automated)` or `(Manual)` token,
-/// which may be the same line or up to a few lines later when the title wraps.
+/// heading. A heading starts on a line whose first token is a dotted-numeric
+/// id, carries an `(Automated)`/`(Manual)` terminator on the id line or a
+/// contiguous wrap line, and is followed by a Profile Applicability section
+/// with a resolvable level.
 fn locate_headings(body: &[&str]) -> Vec<Heading> {
     let mut headings = Vec::new();
     let mut i = 0;
     while i < body.len() {
-        if let Some((id, level)) = parse_heading_start(body[i]) {
-            // Heading text wraps over up to a few lines, terminated by an
-            // "(Automated)" or "(Manual)" suffix on the final line.
+        if let Some(id) = parse_heading_start(body[i]) {
+            // The title may wrap over contiguous lines, terminated by an
+            // `(Automated)`/`(Manual)` suffix. The scan stops at the first
+            // blank line, bounding the terminator search to the heading.
             let scan_end = body.len().min(i + 6);
-            let found = body[i..scan_end]
-                .iter()
-                .enumerate()
-                .find_map(|(offset, line)| {
-                    trailing_assessment(line).map(|assessment| (i + offset, assessment))
-                });
-            if let Some((scan_idx, assessment)) = found {
+            let mut found = None;
+            for idx in i..scan_end {
+                if body[idx].trim().is_empty() {
+                    break;
+                }
+                if let Some(assessment) = trailing_assessment(body[idx]) {
+                    found = Some((idx, assessment));
+                    break;
+                }
+            }
+            // A heading is confirmed by a following Profile Applicability
+            // section with a resolvable level.
+            if let Some((scan_idx, assessment)) = found
+                && let Some((level, bitlocker)) = read_profile(body, scan_idx)
+            {
                 headings.push(Heading {
                     start: i,
                     body_start: scan_idx + 1,
                     id,
                     level,
+                    bitlocker,
                     assessment,
                 });
                 i = scan_idx + 1;
             }
-            // If we didn't find a terminator, fall through to i += 1 below.
         }
         i += 1;
     }
     headings
 }
 
-fn parse_heading_start(line: &str) -> Option<(String, Level)> {
-    let mut parts = line.splitn(3, ' ');
+/// Detects the start of a recommendation heading: a line whose first
+/// space-delimited token is a dotted-numeric section id followed by at
+/// least one more token. The level is read from the Profile Applicability
+/// section.
+fn parse_heading_start(line: &str) -> Option<String> {
+    let mut parts = line.split(' ').filter(|part| !part.is_empty());
     let id = parts.next()?;
-    let level_token = parts.next()?;
-    parts.next()?; // there must be a title fragment after the level
-
+    parts.next()?; // a token must follow the id
     if !is_section_id(id) {
         return None;
     }
-    let level = parse_level(level_token)?;
-    Some((id.to_string(), level))
+    Some(id.to_string())
+}
+
+/// Reads the recommendation's level and BitLocker tag from the Profile
+/// Applicability section that follows the heading terminator at
+/// `terminator_idx`. The level is the lowest base tier present across the
+/// bullets (`L1 < L2`), ignoring any `+ BitLocker` suffix; a block whose
+/// only tier is BitLocker resolves to `Level::BL`. `bitlocker` is true
+/// when any bullet carries a `(BL)` token.
+///
+/// Returns `None` when no Profile Applicability section follows or no
+/// tier token is present, which the caller treats as a non-heading.
+fn read_profile(body: &[&str], terminator_idx: usize) -> Option<(Level, bool)> {
+    let scan_end = body.len().min(terminator_idx + 1 + 6);
+    let label_idx = (terminator_idx + 1..scan_end)
+        .find(|&j| body[j].trim() == "Profile Applicability:")?;
+
+    let mut has_l1 = false;
+    let mut has_l2 = false;
+    let mut has_bl = false;
+    for &line in body[label_idx + 1..].iter() {
+        if section_label(line).is_some() {
+            break;
+        }
+        if line.contains("(L1)") {
+            has_l1 = true;
+        }
+        if line.contains("(L2)") {
+            has_l2 = true;
+        }
+        if line.contains("(BL)") {
+            has_bl = true;
+        }
+    }
+
+    let level = if has_l1 {
+        Level::L1
+    } else if has_l2 {
+        Level::L2
+    } else if has_bl {
+        Level::BL
+    } else {
+        return None;
+    };
+    Some((level, has_bl))
 }
 
 fn is_section_id(text: &str) -> bool {
@@ -158,19 +216,23 @@ fn trailing_assessment(line: &str) -> Option<Assessment> {
     }
 }
 
-/// Reconstructs the rec title from one-or-more wrapped heading lines, dropping
-/// the leading `<id> (L?)` tokens and the trailing `(Automated)` / `(Manual)`
-/// terminator.
+/// Reconstructs the rec title from one-or-more wrapped heading lines,
+/// dropping the leading id, an optional `(L?)` level token, and the
+/// trailing `(Automated)` / `(Manual)` terminator.
 fn read_title(heading_lines: &[&str]) -> String {
     if heading_lines.is_empty() {
         return String::new();
     }
-    let mut parts = heading_lines[0].splitn(3, ' ');
-    parts.next(); // id
-    parts.next(); // level
-    let first_after_level = parts.next().unwrap_or("");
+    let after_id = heading_lines[0]
+        .split_once(' ')
+        .map(|(_, rest)| rest.trim_start())
+        .unwrap_or("");
+    let title_start = match after_id.split_once(' ') {
+        Some((maybe_level, rest)) if parse_level(maybe_level).is_some() => rest,
+        _ => after_id,
+    };
 
-    let mut title = first_after_level.to_string();
+    let mut title = title_start.to_string();
     for &line in &heading_lines[1..] {
         title.push(' ');
         title.push_str(line.trim());
@@ -332,6 +394,391 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "diagnostic — inspects why slicing produces few/zero recs; \
+                drive with BASELINELENS_TEST_PDF"]
+    fn inspect_slicing() {
+        let pdf = std::env::var("BASELINELENS_TEST_PDF").expect("set BASELINELENS_TEST_PDF");
+        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf))
+            .expect("PDF extraction");
+        let lines: Vec<&str> = text.lines().collect();
+
+        let anchor = lines.iter().position(|l| l.trim() == "Recommendations");
+        eprintln!("total lines: {}", lines.len());
+        eprintln!("exact 'Recommendations' anchor at: {anchor:?}");
+
+        eprintln!("\n-- lines containing 'Recommendation' (first 12) --");
+        for (idx, line) in lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.contains("Recommendation"))
+            .take(12)
+        {
+            eprintln!("  [{idx}] {line:?}");
+        }
+
+        let body_start = anchor.map(|a| a + 1).unwrap_or(0);
+        let body = &lines[body_start..];
+        let headings = locate_headings(body);
+        eprintln!("\nheadings located: {}", headings.len());
+        for h in headings.iter().take(5) {
+            eprintln!("  id={} level={:?} at body[{}]", h.id, h.level, h.start);
+        }
+
+        eprintln!("\n-- lines with '(Automated)'/'(Manual)' terminator (first 10) --");
+        for (idx, line) in lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| trailing_assessment(l).is_some())
+            .take(10)
+        {
+            eprintln!("  [{idx}] {line:?}");
+        }
+
+        eprintln!("\n-- lines with a '(L1)'/'(L2)'/'(BL)' token (first 10) --");
+        for (idx, line) in lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| {
+                l.contains("(L1)") || l.contains("(L2)") || l.contains("(BL)")
+            })
+            .take(10)
+        {
+            eprintln!("  [{idx}] {line:?}");
+        }
+
+        eprintln!("\n-- first 60 body lines after anchor --");
+        for (offset, line) in body.iter().take(60).enumerate() {
+            eprintln!("  b[{offset}] {line:?}");
+        }
+    }
+
+    #[test]
+    #[ignore = "diagnostic — counts Profile Applicability coverage vs rec headings; \
+                drive with BASELINELENS_TEST_PDF"]
+    fn inspect_profile_applicability_coverage() {
+        let pdf = std::env::var("BASELINELENS_TEST_PDF").expect("set BASELINELENS_TEST_PDF");
+        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf))
+            .expect("PDF extraction");
+        let lines: Vec<&str> = text.lines().collect();
+
+        let anchor = lines
+            .iter()
+            .position(|l| l.trim() == "Recommendations")
+            .map(|a| a + 1)
+            .unwrap_or(0);
+        let body = &lines[anchor..];
+
+        let profile_markers = body
+            .iter()
+            .filter(|l| l.trim() == "Profile Applicability:")
+            .count();
+
+        // Heading-like lines: start with a dotted-numeric id and carry an
+        // (Automated)/(Manual) terminator within 6 lines (title may wrap).
+        let mut heading_like = 0usize;
+        let mut level_in_heading = 0usize;
+        let mut i = 0;
+        while i < body.len() {
+            let first = body[i].split(' ').next().unwrap_or("");
+            if is_section_id(first) {
+                let scan_end = body.len().min(i + 6);
+                if body[i..scan_end]
+                    .iter()
+                    .any(|l| trailing_assessment(l).is_some())
+                {
+                    heading_like += 1;
+                    let second = body[i].split(' ').nth(1).unwrap_or("");
+                    if parse_level(second).is_some() {
+                        level_in_heading += 1;
+                    }
+                }
+            }
+            i += 1;
+        }
+
+        // Of the Profile Applicability sections, how many have a parseable
+        // level bullet in the following few lines?
+        let mut profile_with_level = 0usize;
+        for (idx, _) in body
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.trim() == "Profile Applicability:")
+        {
+            let scan_end = body.len().min(idx + 8);
+            if body[idx + 1..scan_end].iter().any(|l| {
+                let t = l.trim();
+                t.contains("(L1)") || t.contains("(L2)") || t.contains("(BL)")
+            }) {
+                profile_with_level += 1;
+            }
+        }
+
+        eprintln!(
+            "{} :: profile_markers={profile_markers} \
+             heading_like={heading_like} \
+             level_in_heading={level_in_heading} \
+             profile_with_parseable_level={profile_with_level}",
+            std::path::Path::new(&pdf)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?")
+        );
+    }
+
+    #[test]
+    #[ignore = "diagnostic — dumps recs whose Profile Applicability has 2+ level \
+                bullets; drive with BASELINELENS_TEST_PDF"]
+    fn inspect_multi_profile_recs() {
+        let pdf = std::env::var("BASELINELENS_TEST_PDF").expect("set BASELINELENS_TEST_PDF");
+        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf))
+            .expect("PDF extraction");
+        let lines: Vec<&str> = text.lines().collect();
+
+        let anchor = lines
+            .iter()
+            .position(|l| l.trim() == "Recommendations")
+            .map(|a| a + 1)
+            .unwrap_or(0);
+        let body = &lines[anchor..];
+
+        let mut shown = 0usize;
+        for (idx, _) in body
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.trim() == "Profile Applicability:")
+        {
+            // Collect bullet/level lines until the next section label.
+            let mut block: Vec<&str> = Vec::new();
+            for &line in body[idx + 1..].iter() {
+                if section_label(line).is_some() {
+                    break;
+                }
+                if !line.trim().is_empty() {
+                    block.push(line.trim());
+                }
+                if block.len() > 12 {
+                    break;
+                }
+            }
+            let level_bullets = block
+                .iter()
+                .filter(|l| {
+                    l.contains("(L1)") || l.contains("(L2)") || l.contains("(BL)")
+                })
+                .count();
+            if level_bullets < 2 {
+                continue;
+            }
+
+            // Nearest preceding heading-ish line for context.
+            let heading = body[..idx]
+                .iter()
+                .rev()
+                .take(8)
+                .find(|l| is_section_id(l.split(' ').next().unwrap_or("")))
+                .copied()
+                .unwrap_or("<heading not found within 8 lines>");
+
+            let all_have_bl = block
+                .iter()
+                .filter(|l| {
+                    l.contains("(L1)") || l.contains("(L2)") || l.contains("(BL)")
+                })
+                .all(|l| l.contains("(BL)"));
+            if all_have_bl {
+                continue; // BitLocker add-on shape.
+            }
+
+            eprintln!("\n=== NON-BL MULTI-PROFILE: {} ===", heading.trim());
+            for l in &block {
+                eprintln!("   {l}");
+            }
+            shown += 1;
+            if shown >= 15 {
+                break;
+            }
+        }
+        eprintln!("\n(non-BL multi-profile recs shown: {shown})");
+    }
+
+    #[test]
+    #[ignore = "diagnostic — counts NG in Profile Applicability; \
+                drive with BASELINELENS_TEST_PDF"]
+    fn inspect_ng_presence() {
+        let pdf = std::env::var("BASELINELENS_TEST_PDF").expect("set BASELINELENS_TEST_PDF");
+        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf))
+            .expect("PDF extraction");
+        let lines: Vec<&str> = text.lines().collect();
+        let anchor = lines
+            .iter()
+            .position(|l| l.trim() == "Recommendations")
+            .map(|a| a + 1)
+            .unwrap_or(0);
+        let body = &lines[anchor..];
+
+        let mut ng_blocks = 0usize;
+        let mut ng_only = 0usize; // every level bullet carries (NG)
+        let mut samples: Vec<String> = Vec::new();
+        for (idx, _) in body
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.trim() == "Profile Applicability:")
+        {
+            let mut block: Vec<&str> = Vec::new();
+            for &line in body[idx + 1..].iter() {
+                if section_label(line).is_some() {
+                    break;
+                }
+                if !line.trim().is_empty() {
+                    block.push(line.trim());
+                }
+                if block.len() > 12 {
+                    break;
+                }
+            }
+            let level_bullets: Vec<&&str> = block
+                .iter()
+                .filter(|l| {
+                    l.contains("(L1)")
+                        || l.contains("(L2)")
+                        || l.contains("(BL)")
+                        || l.contains("(NG)")
+                })
+                .collect();
+            if level_bullets.is_empty() {
+                continue;
+            }
+            if level_bullets.iter().any(|l| l.contains("(NG)")) {
+                ng_blocks += 1;
+                if level_bullets.iter().all(|l| l.contains("(NG)")) {
+                    ng_only += 1;
+                }
+                if samples.len() < 4 {
+                    let heading = body[..idx]
+                        .iter()
+                        .rev()
+                        .take(8)
+                        .find(|l| is_section_id(l.split(' ').next().unwrap_or("")))
+                        .copied()
+                        .unwrap_or("<heading?>");
+                    samples.push(format!(
+                        "{}\n   {}",
+                        heading.trim(),
+                        block.join("\n   ")
+                    ));
+                }
+            }
+        }
+        eprintln!(
+            "{} :: profile_blocks_with_NG={ng_blocks} (all-bullets-NG={ng_only})",
+            std::path::Path::new(&pdf)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?")
+        );
+        for s in &samples {
+            eprintln!("--- {s}");
+        }
+    }
+
+    #[test]
+    #[ignore = "diagnostic — tallies Profile Applicability shape distribution; \
+                drive with BASELINELENS_TEST_PDF"]
+    fn inspect_profile_shape_distribution() {
+        let pdf = std::env::var("BASELINELENS_TEST_PDF").expect("set BASELINELENS_TEST_PDF");
+        let text = crate::parser::pdf::extract(std::path::Path::new(&pdf))
+            .expect("PDF extraction");
+        let lines: Vec<&str> = text.lines().collect();
+        let anchor = lines
+            .iter()
+            .position(|l| l.trim() == "Recommendations")
+            .map(|a| a + 1)
+            .unwrap_or(0);
+        let body = &lines[anchor..];
+
+        let mut l1_only = 0usize;
+        let mut l2_only = 0usize;
+        let mut l1_and_l2_no_bl = 0usize;
+        let mut bl_with_l1 = 0usize;
+        let mut bl_with_l2_no_l1 = 0usize;
+        let mut bl_standalone_only = 0usize; // BL present, NO L1 and NO L2 anywhere
+        let mut ng_any = 0usize;
+        let mut other = 0usize;
+        let mut bl_standalone_samples: Vec<String> = Vec::new();
+
+        for (idx, _) in body
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.trim() == "Profile Applicability:")
+        {
+            let mut block: Vec<&str> = Vec::new();
+            for &line in body[idx + 1..].iter() {
+                if section_label(line).is_some() {
+                    break;
+                }
+                if !line.trim().is_empty() {
+                    block.push(line.trim());
+                }
+                if block.len() > 12 {
+                    break;
+                }
+            }
+            let joined = block.join(" ");
+            let has_l1 = joined.contains("(L1)");
+            let has_l2 = joined.contains("(L2)");
+            let has_bl = joined.contains("(BL)");
+            let has_ng = joined.contains("(NG)");
+            if !has_l1 && !has_l2 && !has_bl && !has_ng {
+                continue; // not a rec profile block
+            }
+
+            if has_ng {
+                ng_any += 1;
+            } else if has_bl && !has_l1 && !has_l2 {
+                bl_standalone_only += 1;
+                if bl_standalone_samples.len() < 6 {
+                    let heading = body[..idx]
+                        .iter()
+                        .rev()
+                        .take(8)
+                        .find(|l| is_section_id(l.split(' ').next().unwrap_or("")))
+                        .copied()
+                        .unwrap_or("<heading?>");
+                    bl_standalone_samples
+                        .push(format!("{}  ::  {}", heading.trim(), joined));
+                }
+            } else if has_bl && has_l1 {
+                bl_with_l1 += 1;
+            } else if has_bl && has_l2 {
+                bl_with_l2_no_l1 += 1;
+            } else if has_l1 && has_l2 {
+                l1_and_l2_no_bl += 1;
+            } else if has_l1 {
+                l1_only += 1;
+            } else if has_l2 {
+                l2_only += 1;
+            } else {
+                other += 1;
+            }
+        }
+
+        let name = std::path::Path::new(&pdf)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("?");
+        eprintln!(
+            "===== {name}\n  L1_only={l1_only} L2_only={l2_only} \
+             L1&L2_noBL={l1_and_l2_no_bl}\n  \
+             BL+L1={bl_with_l1} BL+L2_noL1={bl_with_l2_no_l1} \
+             BL_standalone_only={bl_standalone_only}\n  \
+             NG_any={ng_any} other={other}"
+        );
+        for s in &bl_standalone_samples {
+            eprintln!("  [BL-standalone] {s}");
+        }
+    }
+
+    #[test]
     fn slices_a_minimal_recommendation() {
         let text = "\
 Front matter to skip
@@ -360,6 +807,7 @@ Set the thing.
         let rec = &recs[0];
         assert_eq!(rec.id, "1.1");
         assert_eq!(rec.level, Level::L1);
+        assert!(!rec.bitlocker);
         assert_eq!(rec.assessment, Assessment::Automated);
         assert_eq!(rec.title, "Ensure 'Test' is set to 'Block'");
         assert_eq!(
@@ -374,5 +822,119 @@ Set the thing.
             rec.sections.remediation.as_deref(),
             Some("Set the thing.")
         );
+    }
+
+    #[test]
+    fn slices_v5_style_heading_without_inline_level() {
+        // No inline level token; level lives in Profile Applicability;
+        // title wraps across two lines.
+        let text = "\
+Recommendations
+1.1.1 Ensure 'Enforce password history' is set to '24 or more
+password(s)' (Automated)
+
+Profile Applicability:
+
+\u{2022}  Level 1 (L1)
+
+Description:
+
+A short description.
+
+Audit:
+
+HKLM\\SOFTWARE\\Foo:Bar
+";
+        let recs = slice(text).expect("body should be found");
+        assert_eq!(recs.len(), 1);
+        let rec = &recs[0];
+        assert_eq!(rec.id, "1.1.1");
+        assert_eq!(rec.level, Level::L1);
+        assert!(!rec.bitlocker);
+        assert_eq!(rec.assessment, Assessment::Automated);
+        assert_eq!(
+            rec.title,
+            "Ensure 'Enforce password history' is set to '24 or more password(s)'"
+        );
+    }
+
+    #[test]
+    fn multi_bullet_bitlocker_resolves_to_l1_tagged() {
+        // BitLocker add-on shape: base level L1, tagged BitLocker.
+        let text = "\
+Recommendations
+18.9.7.1.1 Ensure 'Prevent installation of devices' is set to 'Enabled'
+(Automated)
+
+Profile Applicability:
+
+\u{2022}  Level 1 (L1) + BitLocker (BL)
+\u{2022}  Level 2 (L2) + BitLocker (BL)
+\u{2022}  BitLocker (BL)
+
+Description:
+
+A short description.
+";
+        let recs = slice(text).expect("body should be found");
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].level, Level::L1);
+        assert!(recs[0].bitlocker);
+    }
+
+    #[test]
+    fn intune_standalone_bitlocker_resolves_to_bl_level() {
+        let text = "\
+Recommendations
+4.10.9.1.1 (BL) Ensure 'Prevent installation of devices' is set to 'Enabled'
+(Automated)
+
+Profile Applicability:
+
+\u{2022}  BitLocker (BL)
+
+Description:
+
+A short description.
+";
+        let recs = slice(text).expect("body should be found");
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].level, Level::BL);
+        assert!(recs[0].bitlocker);
+        assert_eq!(
+            recs[0].title,
+            "Ensure 'Prevent installation of devices' is set to 'Enabled'"
+        );
+    }
+
+    #[test]
+    fn rejects_section_subheader_keeps_only_real_rec() {
+        // "1.1 Password Policy" is a section sub-header (numeric-dotted id,
+        // but no terminator and no Profile Applicability). Only the real
+        // rec that follows must be sliced.
+        let text = "\
+Recommendations
+1 Account Policies
+
+This section contains recommendations for account policies.
+
+1.1 Password Policy
+
+This section contains recommendations for password policy.
+
+1.1.1 Ensure 'Enforce password history' is set to '24 or more
+password(s)' (Automated)
+
+Profile Applicability:
+
+\u{2022}  Level 1 (L1)
+
+Description:
+
+A short description.
+";
+        let recs = slice(text).expect("body should be found");
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].id, "1.1.1");
     }
 }

@@ -86,14 +86,94 @@ fn manual(reason: &str) -> AuditProcedure {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::parser::{pdf, structure};
+
+    /// Path to the benchmark PDF the diagnostics run against. Defaults to the
+    /// v4.0.0 fixture under `dev/`; set `BASELINELENS_TEST_PDF` to an absolute
+    /// path to point any diagnostic at a different baseline.
+    fn fixture_pdf_path() -> PathBuf {
+        if let Ok(override_path) = std::env::var("BASELINELENS_TEST_PDF") {
+            return PathBuf::from(override_path);
+        }
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf")
+    }
+
+    #[test]
+    #[ignore = "diagnostic — prints classification breakdown without asserting; \
+                drive with BASELINELENS_TEST_PDF to survey any baseline"]
+    fn survey_classification() {
+        let pdf_path = fixture_pdf_path();
+        let text = match pdf::extract(&pdf_path) {
+            Ok(text) => text,
+            Err(err) => {
+                eprintln!("PDF extraction FAILED for {}: {err}", pdf_path.display());
+                return;
+            }
+        };
+        let recs = match structure::slice(&text) {
+            Ok(recs) => recs,
+            Err(err) => {
+                eprintln!("STRUCTURE SLICING FAILED for {}: {err}", pdf_path.display());
+                return;
+            }
+        };
+
+        let mut registry = 0usize;
+        let mut policy_manager = 0usize;
+        let mut audit_policy = 0usize;
+        let mut user_rights = 0usize;
+        let mut secedit_count = 0usize;
+        let mut manual_by_reason: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+
+        for rec in &recs {
+            match audit_procedure(rec) {
+                AuditProcedure::Registry { .. } => registry += 1,
+                AuditProcedure::PolicyManager { .. } => policy_manager += 1,
+                AuditProcedure::AuditPolicy { .. } => audit_policy += 1,
+                AuditProcedure::UserRightsAssignment { .. } => user_rights += 1,
+                AuditProcedure::Secedit { .. } => secedit_count += 1,
+                AuditProcedure::Manual { description } => {
+                    *manual_by_reason.entry(description).or_default() += 1;
+                }
+            }
+        }
+        let manual_total: usize = manual_by_reason.values().sum();
+        let automated =
+            registry + policy_manager + audit_policy + user_rights + secedit_count;
+
+        use crate::parser::model::Level;
+        let l1 = recs.iter().filter(|r| r.level == Level::L1).count();
+        let l2 = recs.iter().filter(|r| r.level == Level::L2).count();
+        let bl_level = recs.iter().filter(|r| r.level == Level::BL).count();
+        let bitlocker = recs.iter().filter(|r| r.bitlocker).count();
+
+        eprintln!("===== {} =====", pdf_path.display());
+        eprintln!(
+            "recs sliced: {}  |  automated: {automated}  |  manual: {manual_total}",
+            recs.len()
+        );
+        eprintln!(
+            "  level: L1={l1} L2={l2} BL={bl_level}  |  bitlocker_tagged={bitlocker}"
+        );
+        eprintln!(
+            "  registry={registry} policy_manager={policy_manager} \
+             audit_policy={audit_policy} user_rights={user_rights} \
+             secedit={secedit_count}"
+        );
+        for (reason, count) in &manual_by_reason {
+            eprintln!("  MANUAL [{count}]  {reason}");
+        }
+    }
 
     #[test]
     #[ignore = "requires dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf on disk"]
     fn classifies_real_pdf_recs() {
-        let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
+        let pdf_path = fixture_pdf_path();
         let text = pdf::extract(&pdf_path).expect("PDF extraction");
         let recs = structure::slice(&text).expect("slicing");
         assert_eq!(recs.len(), 457);
@@ -170,8 +250,7 @@ mod tests {
     #[test]
     #[ignore = "spot-check classifications for the oracle test-case sections"]
     fn inspects_oracle_section_classifications() {
-        let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
+        let pdf_path = fixture_pdf_path();
         let text = pdf::extract(&pdf_path).expect("PDF extraction");
         let recs = structure::slice(&text).expect("slicing");
 
@@ -206,8 +285,7 @@ mod tests {
     #[test]
     #[ignore = "diagnostic — dumps all PolicyManager rec bodies for pattern review"]
     fn dumps_all_policy_manager_audit_bodies() {
-        let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
+        let pdf_path = fixture_pdf_path();
         let text = pdf::extract(&pdf_path).expect("PDF extraction");
         let recs = structure::slice(&text).expect("slicing");
 
@@ -229,8 +307,7 @@ mod tests {
     #[test]
     #[ignore = "diagnostic — dumps all AuditPolicy rec bodies for pattern review"]
     fn dumps_all_audit_policy_bodies() {
-        let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
+        let pdf_path = fixture_pdf_path();
         let text = pdf::extract(&pdf_path).expect("PDF extraction");
         let recs = structure::slice(&text).expect("slicing");
 
@@ -260,8 +337,7 @@ mod tests {
     #[test]
     #[ignore = "diagnostic — dumps every Manual-fallback rec grouped by reason"]
     fn dumps_all_manual_fallbacks() {
-        let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
+        let pdf_path = fixture_pdf_path();
         let text = pdf::extract(&pdf_path).expect("PDF extraction");
         let recs = structure::slice(&text).expect("slicing");
 
@@ -287,8 +363,7 @@ mod tests {
     #[test]
     #[ignore = "diagnostic — dumps every URA-shaped audit body for pattern review"]
     fn dumps_all_user_rights_assignment_bodies() {
-        let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
+        let pdf_path = fixture_pdf_path();
         let text = pdf::extract(&pdf_path).expect("PDF extraction");
         let recs = structure::slice(&text).expect("slicing");
 
@@ -318,8 +393,7 @@ mod tests {
     #[test]
     #[ignore = "diagnostic — dumps Secedit + Services rec bodies for pattern review"]
     fn dumps_secedit_and_services_bodies() {
-        let pdf_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf");
+        let pdf_path = fixture_pdf_path();
         let text = pdf::extract(&pdf_path).expect("PDF extraction");
         let recs = structure::slice(&text).expect("slicing");
 

@@ -36,6 +36,13 @@ pub(crate) struct BaselineSource {
 pub(crate) struct Recommendation {
     pub(crate) id: String,
     pub(crate) level: Level,
+    /// True when the recommendation's CIS profile is BitLocker-related.
+    /// Independent of `level`: a BitLocker rec may carry `Level::BL` or a
+    /// base level with this flag set. `#[serde(default)]` lets a cache
+    /// written before this field deserialize (as stale) so the re-parse
+    /// prompt fires instead of a hard load error.
+    #[serde(default)]
+    pub(crate) bitlocker: bool,
     pub(crate) category_number: String,
     pub(crate) title: String,
     pub(crate) description: String,

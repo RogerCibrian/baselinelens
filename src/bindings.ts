@@ -288,6 +288,14 @@ export type PrincipalKind = "Sid" | "WellKnownName" | "AccountName";
 export type Recommendation = {
 	id: string,
 	level: Level,
+	/**
+	 *  True when the recommendation's CIS profile is BitLocker-related.
+	 *  Independent of `level`: in the Intune benchmarks BitLocker recs are
+	 *  their own standalone level (`Level::BL`), whereas in the v5.x
+	 *  Enterprise/Stand-alone benchmarks they are L1-severity recs tagged
+	 *  BitLocker. UI logic keys on this flag, not on `level == BL`.
+	 */
+	bitlocker: boolean,
 	categoryNumber: string,
 	title: string,
 	description: string,

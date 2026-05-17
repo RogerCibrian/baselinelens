@@ -87,6 +87,7 @@ mod tests {
         RawRecommendation {
             id: "test".to_string(),
             level: Level::L1,
+            bitlocker: false,
             assessment: Assessment::Automated,
             title: title.to_string(),
             sections: BodySections {

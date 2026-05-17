@@ -18,6 +18,7 @@ use crate::host;
 use crate::parser;
 use crate::parser::model::Baseline;
 use crate::parser::{ParserProgress, PARSER_VERSION};
+use crate::storage::error::StorageError;
 use crate::storage::model::{AppState, UserState};
 use crate::storage::persist::ScanLoadErrors;
 use crate::storage::{paths, persist};
@@ -258,7 +259,17 @@ pub(crate) fn write_export(dest_path: String, contents: String) -> Result<(), St
 #[tauri::command]
 #[specta::specta]
 pub(crate) fn load_cached_baseline(sha: String) -> Result<Option<CachedBaseline>, String> {
-    let baseline = persist::load_cached_baseline(&sha).map_err(|err| err.to_string())?;
+    let baseline = match persist::load_cached_baseline(&sha) {
+        Ok(value) => value,
+        // A cache written by an incompatible schema can't deserialize.
+        // Report it as absent so the app falls back to onboarding /
+        // re-parse rather than surfacing a raw serde error.
+        Err(StorageError::Json { path, source }) => {
+            eprintln!("discarding unreadable cached baseline at {path:?}: {source}");
+            None
+        }
+        Err(err) => return Err(err.to_string()),
+    };
     Ok(baseline.map(|baseline| {
         let is_stale = baseline.source.parser_version != PARSER_VERSION;
         CachedBaseline { baseline, is_stale }
