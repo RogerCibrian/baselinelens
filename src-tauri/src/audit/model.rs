@@ -152,9 +152,16 @@ pub(crate) struct ScanContext {
 impl ScanSummary {
     /// Derives a summary from a full `Scan` by tallying its results.
     /// A Fail whose `rec_id` appears in `exception_ids` is counted toward
-    /// `exception` instead of `fail`, mirroring the frontend's
-    /// `effectiveStatus` so trend math matches what the level cards show.
-    pub(crate) fn from_scan(scan: &Scan, exception_ids: &HashSet<&str>) -> Self {
+    /// `exception` instead of `fail`. A Manual whose `rec_id` appears in
+    /// `attested_pass` / `attested_fail` is counted as `pass` / `fail`
+    /// instead of `manual`. Both mirror the frontend's `effectiveStatus`
+    /// so trend math matches what the level cards show.
+    pub(crate) fn from_scan(
+        scan: &Scan,
+        exception_ids: &HashSet<&str>,
+        attested_pass: &HashSet<&str>,
+        attested_fail: &HashSet<&str>,
+    ) -> Self {
         let mut pass = 0u32;
         let mut fail = 0u32;
         let mut manual = 0u32;
@@ -170,7 +177,15 @@ impl ScanSummary {
                         fail += 1;
                     }
                 }
-                Status::Manual => manual += 1,
+                Status::Manual => {
+                    if attested_pass.contains(rec_id.as_str()) {
+                        pass += 1;
+                    } else if attested_fail.contains(rec_id.as_str()) {
+                        fail += 1;
+                    } else {
+                        manual += 1;
+                    }
+                }
                 Status::Error => error += 1,
             }
         }

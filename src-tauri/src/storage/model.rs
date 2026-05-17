@@ -14,6 +14,14 @@ pub(crate) struct UserState {
     pub(crate) baseline_sha256: String,
     pub(crate) exceptions: HashMap<String, Exception>,
     pub(crate) notes: HashMap<String, Note>,
+    /// Manual-check verdicts an admin recorded by hand, keyed by rec id.
+    /// Only meaningful for recs whose scan status is `Manual`; an entry
+    /// resolves that rec to its attested outcome in the In-scope rate
+    /// and trend math. `#[serde(default)]` lets a `user_state` file
+    /// written before this field deserialize as an empty map rather
+    /// than failing the whole load.
+    #[serde(default)]
+    pub(crate) attestations: HashMap<String, Attestation>,
 }
 
 /// An accepted-risk decision against a single recommendation. Excluded
@@ -25,6 +33,28 @@ pub(crate) struct Exception {
     pub(crate) reason: String,
     pub(crate) granted_at: DateTime<Utc>,
     pub(crate) granted_by: Option<String>,
+}
+
+/// The outcome an admin recorded for a manual check they performed by
+/// hand. Mirrors the automated pass/fail verdict so an attested manual
+/// folds into the same compliance buckets as a scanned result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum AttestationOutcome {
+    Pass,
+    Fail,
+}
+
+/// An admin's hand-recorded verdict for a `Manual` recommendation. The
+/// outcome counts toward the In-scope rate like an automated result;
+/// `attested_at` anchors the staleness badge the drawer shows once a
+/// later scan has run.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Attestation {
+    pub(crate) outcome: AttestationOutcome,
+    pub(crate) attested_at: DateTime<Utc>,
+    pub(crate) attested_by: Option<String>,
 }
 
 /// Free-form context attached to a recommendation. Doesn't affect status or

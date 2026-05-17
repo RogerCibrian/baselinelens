@@ -4,20 +4,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use tauri::State;
 use tauri::async_runtime;
 use tauri::ipc::Channel;
-use tauri::State;
 use tauri_plugin_opener::OpenerExt;
 
+use crate::audit::AUDIT_SCRIPT_VERSION;
 use crate::audit::generator;
 use crate::audit::merge::ScanCollector;
 use crate::audit::model::{DeviceInfo, Scan, ScanContext, ScanRecord};
 use crate::audit::runner::{self, AuditEvent};
-use crate::audit::AUDIT_SCRIPT_VERSION;
 use crate::host;
 use crate::parser;
 use crate::parser::model::Baseline;
-use crate::parser::{ParserProgress, PARSER_VERSION};
+use crate::parser::{PARSER_VERSION, ParserProgress};
 use crate::storage::error::StorageError;
 use crate::storage::model::{AppState, UserState};
 use crate::storage::persist::ScanLoadErrors;
@@ -295,8 +295,7 @@ pub(crate) async fn start_scan(
     // in-memory baseline is ahead of disk (e.g. a save-cached-baseline
     // failure earlier in the session).
     persist::save_cached_baseline(&baseline).map_err(|err| err.to_string())?;
-    let baseline_path = paths::baseline_cache_path(&baseline_sha)
-        .map_err(|err| err.to_string())?;
+    let baseline_path = paths::baseline_cache_path(&baseline_sha).map_err(|err| err.to_string())?;
 
     let cancel_path = cancel_sentinel_path();
     // Drop any stale sentinel from a prior run that died before cleanup,
@@ -343,20 +342,22 @@ pub(crate) async fn start_scan(
 
     let scan = scan_result.map_err(|err| format!("scan task panicked: {err}"))??;
 
-    // Load the saved exceptions so the trend summary credits closed-by-
-    // paperwork recs the same way the level cards do. Missing or
-    // unreadable user state degrades to "no exceptions" — the scan
-    // succeeded, an exception-count blip is a much smaller failure mode
-    // than failing the user-visible scan over an annotation read.
-    let exceptions = match persist::load_user_state(&scan.baseline_sha256) {
-        Ok(Some(state)) => state.exceptions,
+    // Load the saved exceptions and attestations so the trend summary
+    // credits closed-by-paperwork and hand-verified recs the same way
+    // the level cards do. Missing or unreadable user state degrades to
+    // "none" — the scan succeeded, an annotation-count blip is a much
+    // smaller failure mode than failing the user-visible scan over an
+    // annotation read.
+    let (exceptions, attestations) = match persist::load_user_state(&scan.baseline_sha256) {
+        Ok(Some(state)) => (state.exceptions, state.attestations),
         Ok(None) => Default::default(),
         Err(err) => {
             eprintln!("failed to load user state for scan summary: {err}");
             Default::default()
         }
     };
-    persist::save_scan_with_diff(&scan, &exceptions).map_err(|err| err.to_string())?;
+    persist::save_scan_with_diff(&scan, &exceptions, &attestations)
+        .map_err(|err| err.to_string())?;
     Ok(scan)
 }
 
@@ -372,8 +373,7 @@ pub(crate) fn cancel_scan(scan_control: State<'_, ScanControl>) -> Result<(), St
         .lock()
         .expect("scan-control mutex is never held across a panic");
     if let Some(path) = guard.as_ref() {
-        std::fs::write(path, b"")
-            .map_err(|err| format!("failed to signal cancellation: {err}"))?;
+        std::fs::write(path, b"").map_err(|err| format!("failed to signal cancellation: {err}"))?;
     }
     Ok(())
 }

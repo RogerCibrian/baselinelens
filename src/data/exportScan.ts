@@ -27,6 +27,9 @@ type ExportRow = {
   exceptionReason: string;
   exceptionGrantedBy: string;
   exceptionGrantedAt: string;
+  attestationOutcome: string;
+  attestationBy: string;
+  attestationAt: string;
   note: string;
   lastScanned: string;
 };
@@ -45,6 +48,9 @@ const COLUMNS: { key: keyof ExportRow; header: string }[] = [
   { key: "exceptionReason", header: "Exception reason" },
   { key: "exceptionGrantedBy", header: "Exception granted by" },
   { key: "exceptionGrantedAt", header: "Exception granted at" },
+  { key: "attestationOutcome", header: "Attestation outcome" },
+  { key: "attestationBy", header: "Attested by" },
+  { key: "attestationAt", header: "Attested at" },
   { key: "note", header: "Note" },
   { key: "lastScanned", header: "Last scanned" },
 ];
@@ -79,6 +85,7 @@ function buildRows(
   return baseline.recommendations.map((rec) => {
     const result = scan.results[rec.id];
     const exception = userState.exceptions[rec.id];
+    const attestation = userState.attestations?.[rec.id];
     const note = userState.notes[rec.id];
     return {
       id: rec.id,
@@ -94,6 +101,15 @@ function buildRows(
       exceptionReason: exception?.reason ?? "",
       exceptionGrantedBy: exception?.grantedBy ?? "",
       exceptionGrantedAt: exception ? formatTimestamp(exception.grantedAt) : "",
+      attestationOutcome: attestation
+        ? attestation.outcome === "pass"
+          ? "Pass"
+          : "Fail"
+        : "",
+      attestationBy: attestation?.attestedBy ?? "",
+      attestationAt: attestation
+        ? formatTimestamp(attestation.attestedAt)
+        : "",
       note: note?.text ?? "",
       lastScanned: result ? formatTimestamp(result.measuredAt) : "",
     };

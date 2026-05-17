@@ -510,6 +510,19 @@
   filter: brightness(1.08);
 }
 
+.button-primary.button-pass {
+  background: var(--v-pass);
+}
+
+.button-primary.button-fail {
+  background: var(--v-fail);
+}
+
+.button-primary.button-pass:hover,
+.button-primary.button-fail:hover {
+  filter: brightness(1.08);
+}
+
 /* Scan controls (top bar) */
 
 .top-bar-scan-status {
@@ -801,6 +814,36 @@
   font-weight: 600;
   letter-spacing: 0.03em;
   color: var(--v-bl);
+}
+
+.tag-attested {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--v-line-strong);
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--v-text-muted);
+}
+
+.attestation-current {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--v-text-muted);
+}
+
+.attestation-stale {
+  color: var(--v-warn);
+}
+
+.attestation-stale-badge {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v-warn);
 }
 
 .level-card-name {

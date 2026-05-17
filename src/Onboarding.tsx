@@ -182,11 +182,7 @@ function Action({
         <button
           type="button"
           className="ob-link"
-          onClick={() =>
-            void openUrl(
-              "https://www.cisecurity.org/benchmark/microsoft_windows_desktop",
-            )
-          }
+          onClick={() => void openUrl("https://downloads.cisecurity.org/")}
         >
           Download it from cisecurity.org
         </button>

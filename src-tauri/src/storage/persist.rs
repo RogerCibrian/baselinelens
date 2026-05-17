@@ -9,14 +9,14 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::audit::model::{ChangeEvent, Scan, ScanContext, ScanSummary};
 use crate::parser::model::Baseline;
 use crate::storage::error::StorageError;
-use crate::storage::model::{AppState, Exception, UserState};
+use crate::storage::model::{AppState, Attestation, AttestationOutcome, Exception, UserState};
 use crate::storage::paths;
 
 /// Reads a JSON file into `T`. Returns `Ok(None)` if the file is missing
@@ -101,8 +101,11 @@ pub(crate) struct ScanLoadErrors {
 
 /// Persists a finished `Scan` and updates the surrounding bookkeeping:
 /// appends a `ScanSummary` to the trend-chart history (counting
-/// exceptions as exception, not fail), then writes `ChangeEvent`s to
-/// the change log. The events vary by prior state:
+/// exceptions as exception not fail, and attested manuals as their
+/// recorded pass/fail), then writes `ChangeEvent`s to the change log.
+/// Attestations deliberately don't feed change events — they're user
+/// state that can change without a scan, so a status flip in the log
+/// would misrepresent device drift. The events vary by prior state:
 ///
 /// - No prior scan on disk — writes a first-observation event
 ///   (`from_status: None`) for every rec in the new scan so per-rec
@@ -114,6 +117,7 @@ pub(crate) struct ScanLoadErrors {
 pub(crate) fn save_scan_with_diff(
     scan: &Scan,
     exceptions: &HashMap<String, Exception>,
+    attestations: &HashMap<String, Attestation>,
 ) -> Result<(), StorageError> {
     let baseline_sha = scan.baseline_sha256.as_str();
     // Tolerate a parse failure on the existing latest — we're about to
@@ -142,7 +146,18 @@ pub(crate) fn save_scan_with_diff(
     }
 
     let exception_ids: HashSet<&str> = exceptions.keys().map(String::as_str).collect();
-    append_summary(baseline_sha, &ScanSummary::from_scan(scan, &exception_ids))?;
+    let mut attested_pass: HashSet<&str> = HashSet::new();
+    let mut attested_fail: HashSet<&str> = HashSet::new();
+    for (rec_id, attestation) in attestations {
+        match attestation.outcome {
+            AttestationOutcome::Pass => attested_pass.insert(rec_id.as_str()),
+            AttestationOutcome::Fail => attested_fail.insert(rec_id.as_str()),
+        };
+    }
+    append_summary(
+        baseline_sha,
+        &ScanSummary::from_scan(scan, &exception_ids, &attested_pass, &attested_fail),
+    )?;
     write_json_atomic(&paths::latest_scan_path(baseline_sha)?, scan)?;
     Ok(())
 }
@@ -236,10 +251,7 @@ fn diff_to_change_events(prior: &Scan, current: &Scan) -> Vec<ChangeEvent> {
 /// Appends one or more `ChangeEvent`s to the per-baseline JSONL file.
 /// Each event is written as a single line so a partial write at most
 /// truncates the trailing event rather than corrupting earlier history.
-fn append_change_events(
-    baseline_sha: &str,
-    events: &[ChangeEvent],
-) -> Result<(), StorageError> {
+fn append_change_events(baseline_sha: &str, events: &[ChangeEvent]) -> Result<(), StorageError> {
     let path = paths::changes_path(baseline_sha)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|source| StorageError::Io {
@@ -395,4 +407,3 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), Storage
     })?;
     Ok(())
 }
-

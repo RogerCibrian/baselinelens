@@ -12,6 +12,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { commands } from "./bindings";
 import type {
+  Attestation,
+  AttestationOutcome,
   Baseline,
   ChangeEvent,
   Density,
@@ -155,17 +157,13 @@ export default function Console({
     return out;
   }, [filtered, sort, scan, userState]);
 
-  // The level dropdown and BitLocker pill reflect the levels and tags
-  // present in the loaded benchmark.
+  // The level dropdown reflects the levels present in the loaded
+  // benchmark.
   const levelsPresent = useMemo(() => {
     const order: Level[] = ["L1", "L2", "BL"];
     const present = new Set(baseline.recommendations.map((r) => r.level));
     return order.filter((lvl) => present.has(lvl));
   }, [baseline]);
-  const hasBitlocker = useMemo(
-    () => baseline.recommendations.some((r) => r.bitlocker),
-    [baseline],
-  );
 
   const openRec = openRecId
     ? (baseline.recommendations.find((r) => r.id === openRecId) ?? null)
@@ -291,7 +289,6 @@ export default function Console({
           shown={sorted.length}
           categoryName={categoryName}
           levelsPresent={levelsPresent}
-          hasBitlocker={hasBitlocker}
           onExport={(format) => void exportResults(format)}
         />
         {exportError && (
@@ -439,9 +436,15 @@ const SAVED_VIEWS: SavedView[] = [
   { id: "all", name: "All recommendations", filter: {} },
   {
     id: "open-fails",
-    name: "Open fails",
+    name: "Failing",
     description: "Failing without an exception",
     filter: { status: "fail" },
+  },
+  {
+    id: "passing",
+    name: "Passing",
+    description: "Currently meeting the baseline",
+    filter: { status: "pass" },
   },
   {
     id: "exceptions",
@@ -460,12 +463,6 @@ const SAVED_VIEWS: SavedView[] = [
     name: "Errored",
     description: "Audit couldn't complete",
     filter: { status: "error" },
-  },
-  {
-    id: "passing",
-    name: "Passing",
-    description: "Currently meeting the baseline",
-    filter: { status: "pass" },
   },
   {
     id: "regressed",
@@ -551,7 +548,17 @@ function SavedViewRail({
         </button>
       </div>
       <ul className="saved-views">
-        {SAVED_VIEWS.map((view) => {
+        {SAVED_VIEWS.filter(
+          (view) =>
+            // "All" is the reset anchor and always shown. Otherwise a
+            // view is hidden once nothing matches it — a zero-count
+            // view is dead weight regardless of which status it is. The
+            // active view is kept even at zero so it stays highlighted
+            // and toggleable instead of vanishing mid-use.
+            view.id === "all" ||
+            counts[view.id] > 0 ||
+            isViewActive(view, filter),
+        ).map((view) => {
           const active = isViewActive(view, filter);
           return (
             <li key={view.id}>
@@ -708,7 +715,6 @@ function FilterBar({
   shown,
   categoryName,
   levelsPresent,
-  hasBitlocker,
   onExport,
 }: {
   filter: ConsoleFilter;
@@ -728,9 +734,6 @@ function FilterBar({
   /** Levels present in the loaded benchmark, in L1→L2→BL order; the
    * level dropdown renders these. */
   levelsPresent: Level[];
-  /** True when any rec carries the BitLocker tag; gates the BitLocker
-   * filter pill. */
-  hasBitlocker: boolean;
   onExport: (format: "csv" | "json") => void;
 }) {
   // Local draft so each keystroke is instant while the (per-rec
@@ -807,22 +810,6 @@ function FilterBar({
           ...levelsPresent.map((lvl) => ({ value: lvl, label: lvl })),
         ]}
       />
-      {hasBitlocker && (
-        <FilterPill
-          label="BitLocker"
-          value={filter.bitlocker}
-          onChange={(v) =>
-            onFilterChange({
-              ...filter,
-              bitlocker: v as ConsoleFilter["bitlocker"],
-            })
-          }
-          options={[
-            { value: "all", label: "Any" },
-            { value: "only", label: "BitLocker only" },
-          ]}
-        />
-      )}
       {filter.category && (
         <button
           type="button"
@@ -1105,6 +1092,9 @@ function RecTable({
           const delta = computeDelta(rec, changesIndex, scan, userState);
           const selected = rec.id === selectedRecId;
           const result = scan.results[rec.id];
+          const attested =
+            result?.status === "Manual" &&
+            userState.attestations?.[rec.id] !== undefined;
           const categoryLabel = categoryNames.get(rec.categoryNumber) ?? rec.categoryNumber;
           return (
             <tr
@@ -1125,7 +1115,7 @@ function RecTable({
             >
               <td className="mono">{rec.id}</td>
               <td>
-                <StatusPill status={status} />
+                <StatusPill status={status} attested={attested} />
               </td>
               {columns.level && (
                 <td>
@@ -1224,9 +1214,22 @@ function SortHeader({
   );
 }
 
-function StatusPill({ status }: { status: EffectiveStatus }) {
+function StatusPill({
+  status,
+  attested = false,
+}: {
+  status: EffectiveStatus;
+  attested?: boolean;
+}) {
   return (
-    <span className={`status-pill status-${status}`}>{status}</span>
+    <span className={`status-pill status-${status}`}>
+      {status}
+      {attested && (
+        <span className="tag-attested" title="Verdict recorded by an admin, not the automated scan">
+          attested
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -1311,9 +1314,11 @@ function DetailDrawer({
 }) {
   const [exceptionReason, setExceptionReason] = useState("");
   const [exceptionGrantedBy, setExceptionGrantedBy] = useState("");
+  const [attestationBy, setAttestationBy] = useState("");
   const [noteText, setNoteText] = useState("");
-  const [savedFlash, setSavedFlash] = useState<"exception" | "note" | null>(null);
-  const [saveError, setSaveError] = useState<"exception" | "note" | null>(null);
+  type SaveTarget = "exception" | "attestation" | "note";
+  const [savedFlash, setSavedFlash] = useState<SaveTarget | null>(null);
+  const [saveError, setSaveError] = useState<SaveTarget | null>(null);
   // Action deferred behind the unsaved-edits prompt. Holds the thing to
   // do (close, or navigate to another rec) once the user confirms the
   // discard; null when there's nothing pending. Stored as a thunk so
@@ -1325,9 +1330,11 @@ function DetailDrawer({
   useEffect(() => {
     if (!rec) return;
     const ex = userState.exceptions[rec.id];
+    const att = userState.attestations?.[rec.id];
     const note = userState.notes[rec.id];
     setExceptionReason(ex?.reason ?? "");
     setExceptionGrantedBy(ex?.grantedBy ?? "");
+    setAttestationBy(att?.attestedBy ?? "");
     setNoteText(note?.text ?? "");
     setSaveError(null);
   }, [rec, userState]);
@@ -1351,13 +1358,17 @@ function DetailDrawer({
   }, [isOpen, confirmDiscard]);
 
   const savedException = rec ? userState.exceptions[rec.id] : undefined;
+  const savedAttestation = rec ? userState.attestations?.[rec.id] : undefined;
   const savedNote = rec ? userState.notes[rec.id] : undefined;
   // Unsaved-edit guard: compare trimmed form values to what's persisted
   // so closing (×, backdrop, Esc) can warn before discarding an
-  // exception justification or note the user typed but didn't save.
+  // exception justification or a note the user typed but didn't save.
+  // The attestation outcome itself saves on the verdict button click,
+  // so only its "attested by" free-text field can be dirty.
   const dirty =
     exceptionReason.trim() !== (savedException?.reason ?? "") ||
     (exceptionGrantedBy.trim() || "") !== (savedException?.grantedBy ?? "") ||
+    (attestationBy.trim() || "") !== (savedAttestation?.attestedBy ?? "") ||
     noteText.trim() !== (savedNote?.text ?? "");
 
   // Runs `action` immediately when there's nothing unsaved; otherwise
@@ -1407,7 +1418,7 @@ function DetailDrawer({
 
   // Briefly shows "Saved" next to the action button. The closure-captured
   // `which` means rapid back-to-back saves don't clobber each other's flash.
-  function flashSaved(which: "exception" | "note") {
+  function flashSaved(which: SaveTarget) {
     setSavedFlash(which);
     setTimeout(() => {
       setSavedFlash((prev) => (prev === which ? null : prev));
@@ -1418,7 +1429,7 @@ function DetailDrawer({
   // "Saved": a failed write (disk error, etc.) leaves the in-memory
   // state ahead of disk, so the user needs to know to retry.
   async function persist(
-    which: "exception" | "note",
+    which: SaveTarget,
     next: UserState,
   ) {
     const ok = await onUpdate(next);
@@ -1454,6 +1465,30 @@ function DetailDrawer({
     void persist("exception", { ...userState, exceptions });
   }
 
+  function saveAttestation(outcome: AttestationOutcome) {
+    if (!rec) return;
+    const next: Attestation = {
+      outcome,
+      attestedBy: attestationBy.trim() || null,
+      // Stamp every save with the current time (not preserved like an
+      // exception's grantedAt): re-attesting means the admin re-checked
+      // against the current device state, so the timestamp must move
+      // forward to clear the "scan ran since" staleness badge.
+      attestedAt: new Date().toISOString(),
+    };
+    void persist("attestation", {
+      ...userState,
+      attestations: { ...userState.attestations, [rec.id]: next },
+    });
+  }
+
+  function clearAttestation() {
+    if (!rec) return;
+    const attestations = { ...userState.attestations };
+    delete attestations[rec.id];
+    void persist("attestation", { ...userState, attestations });
+  }
+
   function saveNote() {
     if (!rec) return;
     const next: Note = {
@@ -1476,6 +1511,18 @@ function DetailDrawer({
   const status = rec ? effectiveStatus(rec, scan, userState) : null;
   const hasException = rec ? userState.exceptions[rec.id] !== undefined : false;
   const hasNote = rec ? userState.notes[rec.id] !== undefined : false;
+  const machineStatus = rec ? scan.results[rec.id]?.status : undefined;
+  // Attestation is only meaningful for a Manual scan verdict — an
+  // automated Pass/Fail stands on its own and must not be overridable.
+  const isManual = machineStatus === "Manual";
+  const hasAttestation = savedAttestation !== undefined;
+  // The attestation predates the current scan: the device may have
+  // drifted since the admin hand-checked it, so the drawer nudges a
+  // re-attest. Visual only — the verdict still counts until changed.
+  const attestationStale =
+    savedAttestation !== undefined &&
+    new Date(scan.startedAt).getTime() >
+      new Date(savedAttestation.attestedAt).getTime();
 
   // Duration since the rec last flipped into its current status. Only
   // computed for pass/fail — Manual/Error/Pending have no meaningful
@@ -1566,7 +1613,12 @@ function DetailDrawer({
                 {rec.bitlocker && rec.level !== "BL" && (
                   <span className="tag-bitlocker">BitLocker</span>
                 )}
-                {status && <StatusPill status={status} />}
+                {status && (
+                  <StatusPill
+                    status={status}
+                    attested={isManual && hasAttestation}
+                  />
+                )}
                 <span className="chip-neutral">
                   {rec.assessment === "Automated"
                     ? "Automated"
@@ -1600,6 +1652,83 @@ function DetailDrawer({
                 result={scan.results[rec.id]}
                 stateAge={stateAge}
               />
+
+              {isManual && (
+                <section className="drawer-section">
+                  <h4>Attestation</h4>
+                  <p className="muted drawer-help">
+                    This check has no automated verdict. Record the
+                    result after verifying it by hand — it then counts
+                    in the In-scope pass rate like a scanned result.
+                  </p>
+                  {hasAttestation && savedAttestation && (
+                    <p
+                      className={`attestation-current${
+                        attestationStale ? " attestation-stale" : ""
+                      }`}
+                    >
+                      Attested{" "}
+                      <strong>
+                        {savedAttestation.outcome === "pass"
+                          ? "Pass"
+                          : "Fail"}
+                      </strong>
+                      {savedAttestation.attestedBy
+                        ? ` by ${savedAttestation.attestedBy}`
+                        : ""}{" "}
+                      on {formatTimestamp(savedAttestation.attestedAt)}
+                      {attestationStale && (
+                        <span className="attestation-stale-badge">
+                          A scan has run since — re-attest to confirm
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  <label>
+                    Attested by (optional)
+                    <input
+                      type="text"
+                      value={attestationBy}
+                      onChange={(e) => setAttestationBy(e.target.value)}
+                    />
+                  </label>
+                  <div className="drawer-actions">
+                    <button
+                      type="button"
+                      className="button-primary button-pass"
+                      onClick={() => saveAttestation("pass")}
+                    >
+                      Mark passing
+                    </button>
+                    <button
+                      type="button"
+                      className="button-primary button-fail"
+                      onClick={() => saveAttestation("fail")}
+                    >
+                      Mark failing
+                    </button>
+                    {hasAttestation && (
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={clearAttestation}
+                      >
+                        Remove
+                      </button>
+                    )}
+                    {savedFlash === "attestation" && (
+                      <span className="saved-flash" role="status">
+                        Saved
+                      </span>
+                    )}
+                    {saveError === "attestation" && (
+                      <span className="save-error" role="alert">
+                        Couldn't save — not stored on disk. Try again.
+                      </span>
+                    )}
+                  </div>
+                </section>
+              )}
 
               <section className="drawer-section">
                 <h4>Exception</h4>

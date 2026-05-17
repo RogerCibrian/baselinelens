@@ -33,6 +33,15 @@ export const commands = {
 	baselineSha256: string,
 	exceptions: { [key in string]: Exception },
 	notes: { [key in string]: Note },
+	/**
+	 *  Manual-check verdicts an admin recorded by hand, keyed by rec id.
+	 *  Only meaningful for recs whose scan status is `Manual`; an entry
+	 *  resolves that rec to its attested outcome in the In-scope rate
+	 *  and trend math. `#[serde(default)]` lets a `user_state` file
+	 *  written before this field deserialize as an empty map rather
+	 *  than failing the whole load.
+	 */
+	attestations?: { [key in string]: Attestation },
 } | null, string>(__TAURI_INVOKE("load_user_state", { baselineSha })),
 	saveUserState: (state: UserState) => typedError<null, string>(__TAURI_INVOKE("save_user_state", { state })),
 	loadCachedBaseline: (sha: string) => typedError<{
@@ -124,6 +133,25 @@ export type AppState = {
 };
 
 export type Assessment = "Automated" | "Manual";
+
+/**
+ *  An admin's hand-recorded verdict for a `Manual` recommendation. The
+ *  outcome counts toward the In-scope rate like an automated result;
+ *  `attested_at` anchors the staleness badge the drawer shows once a
+ *  later scan has run.
+ */
+export type Attestation = {
+	outcome: AttestationOutcome,
+	attestedAt: string,
+	attestedBy: string | null,
+};
+
+/**
+ *  The outcome an admin recorded for a manual check they performed by
+ *  hand. Mirrors the automated pass/fail verdict so an attested manual
+ *  folds into the same compliance buckets as a scanned result.
+ */
+export type AttestationOutcome = "pass" | "fail";
 
 export type AuditPolicyMode = "NoAuditing" | "Success" | "Failure" | "SuccessAndFailure";
 
@@ -290,12 +318,12 @@ export type Recommendation = {
 	level: Level,
 	/**
 	 *  True when the recommendation's CIS profile is BitLocker-related.
-	 *  Independent of `level`: in the Intune benchmarks BitLocker recs are
-	 *  their own standalone level (`Level::BL`), whereas in the v5.x
-	 *  Enterprise/Stand-alone benchmarks they are L1-severity recs tagged
-	 *  BitLocker. UI logic keys on this flag, not on `level == BL`.
+	 *  Independent of `level`: a BitLocker rec may carry `Level::BL` or a
+	 *  base level with this flag set. `#[serde(default)]` lets a cache
+	 *  written before this field deserialize (as stale) so the re-parse
+	 *  prompt fires instead of a hard load error.
 	 */
-	bitlocker: boolean,
+	bitlocker?: boolean,
 	categoryNumber: string,
 	title: string,
 	description: string,
@@ -479,6 +507,15 @@ export type UserState = {
 	baselineSha256: string,
 	exceptions: { [key in string]: Exception },
 	notes: { [key in string]: Note },
+	/**
+	 *  Manual-check verdicts an admin recorded by hand, keyed by rec id.
+	 *  Only meaningful for recs whose scan status is `Manual`; an entry
+	 *  resolves that rec to its attested outcome in the In-scope rate
+	 *  and trend math. `#[serde(default)]` lets a `user_state` file
+	 *  written before this field deserialize as an empty map rather
+	 *  than failing the whole load.
+	 */
+	attestations?: { [key in string]: Attestation },
 };
 
 export type Value = { type: "Dword"; value: number } | { type: "QDword"; value: number } | { type: "Str"; value: string } | { type: "MultiStr"; values: string[] } | { type: "Binary"; bytes: number[] };
