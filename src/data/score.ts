@@ -55,6 +55,11 @@ export function effectiveStatus(
       return "manual";
     case "Error":
       return "error";
+    default:
+      // A status outside the known set can only come from an old or
+      // hand-edited scan file. Treat it as the unknown bucket rather
+      // than returning undefined and silently skewing every tally.
+      return "error";
   }
 }
 

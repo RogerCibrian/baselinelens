@@ -86,5 +86,10 @@ function bucketRaw(status: Status): StatusBucket {
     case "Manual":
     case "Error":
       return "unknown";
+    default:
+      // Status read from the change log / scan on disk; an unrecognized
+      // value (old or hand-edited file) is treated as unknown rather
+      // than dropping out of every bucket.
+      return "unknown";
   }
 }
