@@ -453,6 +453,14 @@ async function loadOrInitUserState(sha: string): Promise<UserState> {
   return { baselineSha256: sha, exceptions: {}, notes: {} };
 }
 
+// Display string of `AuditError::Cancelled` in
+// src-tauri/src/audit/error.rs. A cancelled run is the only failed
+// outcome that shouldn't raise an error banner; the backend resolves
+// the true reason (so e.g. a denied elevation wins over a pending
+// cancel), so the decision keys off what it returned, not whether the
+// user happened to click Cancel.
+const SCAN_CANCELLED_MESSAGE = "Scan cancelled.";
+
 /**
  * Post-load shell: top bar with tabs and the currently-active panel.
  * Owns the Scan history — loaded from disk on mount, appended on
@@ -535,6 +543,10 @@ function Dashboard({
   // Set when the user clicks Cancel so the scan's error return is read
   // as an intentional stop (no error banner) rather than a failure.
   const cancelRequested = useRef(false);
+  // Synchronous re-entry guard: blocks a second rescan() fired before
+  // React re-renders the button out of its "Rescan" state, so a fast
+  // double-click starts exactly one scan.
+  const rescanInFlight = useRef(false);
   const [cancelling, setCancelling] = useState(false);
   // Records processed in the current run. Tracked independently of
   // `latest.results` because `latest` stays the prior completed scan
@@ -652,7 +664,8 @@ function Dashboard({
   }
 
   async function rescan() {
-    if (scanning) return;
+    if (scanning || rescanInFlight.current) return;
+    rescanInFlight.current = true;
     setScanning(true);
     setScanError(null);
     setScanProgress(0);
@@ -715,9 +728,12 @@ function Dashboard({
       // truth is unchanged and the user shouldn't lose visibility on
       // their last successful scan just because this attempt failed.
       setContext((prev) => ({ ...prev, latest: previousLatest }));
-      if (cancelRequested.current) {
-        // User-initiated stop: not a failure, so no error banner —
-        // the dashboard just returns to the prior scan.
+      if (result.error === SCAN_CANCELLED_MESSAGE) {
+        // Backend resolved this as a genuine cancel: not a failure, so
+        // no error banner — the dashboard just returns to the prior
+        // scan. Any other error (e.g. elevation denied) still surfaces
+        // even when the user also clicked Cancel, since the cancel
+        // didn't cause it.
         console.info("Scan cancelled by user.");
       } else {
         console.error("Scan failed:", result.error);
@@ -727,6 +743,7 @@ function Dashboard({
     cancelRequested.current = false;
     setCancelling(false);
     setScanning(false);
+    rescanInFlight.current = false;
   }
 
   const completed = scanProgress;
@@ -797,7 +814,23 @@ function Dashboard({
             </time>
           </>
         )}
-        {scanning ? (
+        {!scanning ? (
+          <button
+            type="button"
+            className="button-primary top-bar-action"
+            onClick={() => void rescan()}
+          >
+            Rescan
+          </button>
+        ) : completed === 0 ? (
+          // Scan kicked off but not yet running (waiting on the UAC
+          // prompt / script startup). No Cancel is armed: there's
+          // nothing to cancel, and it stops a fast double-click on
+          // Rescan from firing an unintended cancel.
+          <span className="top-bar-scan-status mono" aria-live="polite">
+            Starting…
+          </span>
+        ) : (
           <>
             <span
               className="top-bar-scan-status mono"
@@ -814,14 +847,6 @@ function Dashboard({
               Cancel
             </button>
           </>
-        ) : (
-          <button
-            type="button"
-            className="button-primary top-bar-action"
-            onClick={() => void rescan()}
-          >
-            Rescan
-          </button>
         )}
         <SettingsMenu
           theme={theme}

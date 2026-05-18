@@ -1730,6 +1730,26 @@
   background: var(--v-paper-3);
 }
 
+/* Warn variant — a caution-toned edge and tint for an integrity
+   caveat (controls the audit could not evaluate). */
+.surface-notice-warn {
+  color: var(--v-text-2);
+  background: var(--v-warn-bg);
+  border-color: var(--v-warn);
+}
+
+.surface-notice-warn strong {
+  color: var(--v-warn);
+}
+
+/* Sits directly above the score cards as a first-class integrity
+   line, so it carries more room than an inline recovery notice. */
+.overview-eval-notice {
+  margin: 0 0 1.5rem;
+  padding: 0.6rem 0.9rem;
+  font-size: 13px;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;

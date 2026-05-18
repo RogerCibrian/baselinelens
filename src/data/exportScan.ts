@@ -122,6 +122,16 @@ function csvField(value: string): string {
   return /["\n\r,]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
+/** Excel, LibreOffice, and Sheets evaluate a cell that begins with
+ * `=`, `+`, `-`, `@`, tab, or CR as a formula. Prefixing a single
+ * quote forces the cell to be read as text, so a note or title like
+ * `=HYPERLINK(...)` can't execute when the export is opened. Applied
+ * only to the CSV path — JSON consumers don't evaluate formulas, so
+ * the JSON export keeps the value verbatim. */
+function neutralizeFormula(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
 /** Recommendations in benchmark order as RFC-4180 CSV. */
 export function buildCsv(
   baseline: Baseline,
@@ -132,7 +142,9 @@ export function buildCsv(
   const lines = [
     COLUMNS.map((column) => csvField(column.header)).join(","),
     ...rows.map((row) =>
-      COLUMNS.map((column) => csvField(row[column.key])).join(","),
+      COLUMNS.map((column) =>
+        csvField(neutralizeFormula(row[column.key])),
+      ).join(","),
     ),
   ];
   return lines.join("\r\n") + "\r\n";

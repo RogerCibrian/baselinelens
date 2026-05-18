@@ -1,5 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 
+import { openUrl } from "@tauri-apps/plugin-opener";
+
 import type {
   Baseline,
   ChangeEvent,
@@ -30,6 +32,7 @@ const TREND_WINDOW_DAYS = 30;
 const TREND_CHART_POINTS = 6;
 const STABLE_THRESHOLD_PTS = 0.5;
 const WEAK_CATEGORY_THRESHOLD = 0.5;
+const ISSUES_URL = "https://github.com/RogerCibrian/baselinelens/issues";
 
 type RecentChange = {
   rec: Recommendation;
@@ -69,6 +72,13 @@ export default function Overview({
 }) {
   const levels = scoresByLevel(baseline, scan, userState);
   const weakest = weakestCategories(baseline, scan, userState, 6);
+
+  const errorCount = levels.reduce((n, s) => n + s.error, 0);
+  const evaluatedCount = levels.reduce((n, s) => n + s.pass + s.fail, 0);
+  // "Severe" means more controls failed to evaluate than were
+  // evaluated, so the rate reflects too thin a slice to assert a
+  // direction: the headline is neutralized and the trend fact hidden.
+  const errorsSevere = errorCount > 0 && errorCount > evaluatedCount;
 
   const { improved, regressed, improvedTotal, regressedTotal } = useMemo(
     () => recentChanges(baseline, scan, userState, changes),
@@ -126,8 +136,8 @@ export default function Overview({
           Compliance report ·{" "}
           <span className="mono">{formatDate(scan.startedAt)}</span>
         </p>
-        <HeadlineH1 headline={headline} />
-        <HeadlineFacts headline={headline} />
+        <HeadlineH1 headline={headline} errorsSevere={errorsSevere} />
+        <HeadlineFacts headline={headline} errorsSevere={errorsSevere} />
         <p className="meta">
           <span className="mono">{scan.device.hostname}</span> ·{" "}
           {scan.device.osName} {scan.device.osVersion} ·{" "}
@@ -136,6 +146,30 @@ export default function Overview({
           </span>
         </p>
       </header>
+
+      {errorCount > 0 && (
+        <p className="surface-notice surface-notice-warn overview-eval-notice">
+          <span>
+            <strong>
+              {errorCount} control{errorCount === 1 ? "" : "s"} could not be
+              evaluated
+            </strong>{" "}
+            — the audit couldn't complete these checks, so they're excluded
+            from the compliance rate. If the same controls keep erroring
+            across scans,{" "}
+            <a
+              href={ISSUES_URL}
+              onClick={(e) => {
+                e.preventDefault();
+                void openUrl(ISSUES_URL);
+              }}
+            >
+              report it on GitHub
+            </a>
+            .
+          </span>
+        </p>
+      )}
 
       <section className="overview-section">
         <h2 className="doc-section-heading serif">Score by level</h2>
@@ -286,12 +320,16 @@ function LevelCard({
   onJump: () => void;
 }) {
   const tone = toneFor(score.inScopePct);
-  // In-scope is the actionable set: Manual (no automated check),
-  // Pending (not scanned yet), and accepted exceptions are all
-  // excluded, so the % is a pure pass rate. The excluded counts
-  // surface separately in the note.
+  // In-scope is the set that was actually evaluated: pass + fail.
+  // Manual (no automated check), Pending (not scanned yet), accepted
+  // exceptions, and errored checks are all excluded. The excluded
+  // counts surface separately in the note.
   const inScopeDenom =
-    score.total - score.manual - score.pending - score.exception;
+    score.total -
+    score.manual -
+    score.pending -
+    score.exception -
+    score.error;
   const inScopePct =
     score.inScopePct === null ? null : Math.round(score.inScopePct * 100);
   return (
@@ -319,6 +357,7 @@ function LevelCard({
       </div>
       <p className="level-card-note muted mono">
         {score.pass} of {inScopeDenom} passing
+        {score.error > 0 && ` · ${score.error} errored`}
         {score.exception > 0 &&
           ` · ${score.exception} exception${score.exception === 1 ? "" : "s"}`}
         {score.pending > 0 && ` · ${score.pending} pending`}
@@ -373,6 +412,12 @@ function CategoryRow({
           <span>{score.fail} failing</span>
           <span aria-hidden="true">·</span>
           <span>{score.pass} passing</span>
+          {score.error > 0 && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>{score.error} errored</span>
+            </>
+          )}
           {score.exception > 0 && (
             <>
               <span aria-hidden="true">·</span>
@@ -485,17 +530,29 @@ function buildHeadline(
 /**
  * In-scope compliance rate for a `ScanSummary`. Matches the level
  * cards' methodology so the headline strip and trend chart move in
- * lockstep with the per-level breakdown: only pass counts as done;
- * fail and error count against; manual and accepted exceptions are
- * out of scope. Recomputed from the stored component counts, so the
- * whole trend reflects this methodology uniformly with no break.
+ * lockstep with the per-level breakdown: the rate is pass over the
+ * controls that were actually evaluated (pass + fail). Manual,
+ * accepted exceptions, and errored checks are out of scope, so a
+ * transient scan error never moves the trend. Recomputed from the
+ * stored component counts so the whole trend stays on one methodology.
  */
 function passPctOf(summary: ScanSummary): number {
-  const denom = summary.pass + summary.fail + summary.error;
+  const denom = summary.pass + summary.fail;
   return denom === 0 ? 0 : summary.pass / denom;
 }
 
-function HeadlineH1({ headline }: { headline: Headline }) {
+function HeadlineH1({
+  headline,
+  errorsSevere,
+}: {
+  headline: Headline;
+  errorsSevere: boolean;
+}) {
+  if (headline.kind === "trend" && errorsSevere) {
+    return (
+      <h1 className="serif overview-headline">Compliance read is incomplete.</h1>
+    );
+  }
   if (headline.kind === "empty") {
     // No summaries (trend history was reset) but a scan still exists —
     // a "snapshot" framing reads as a report headline; the bare
@@ -518,7 +575,13 @@ function HeadlineH1({ headline }: { headline: Headline }) {
   );
 }
 
-function HeadlineFacts({ headline }: { headline: Headline }) {
+function HeadlineFacts({
+  headline,
+  errorsSevere,
+}: {
+  headline: Headline;
+  errorsSevere: boolean;
+}) {
   if (headline.kind === "empty") {
     return (
       <p className="headline-facts headline-facts-first">
@@ -530,6 +593,13 @@ function HeadlineFacts({ headline }: { headline: Headline }) {
     return (
       <p className="headline-facts headline-facts-first">
         Trend metrics appear after the next scan.
+      </p>
+    );
+  }
+  if (errorsSevere) {
+    return (
+      <p className="headline-facts headline-facts-first">
+        Trend paused — most controls could not be evaluated.
       </p>
     );
   }

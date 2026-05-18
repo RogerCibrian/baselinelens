@@ -67,10 +67,10 @@ export type LevelScore = {
   error: number;
   exception: number;
   pending: number;
-  /** pass / (total - manual - pending - exception). Null when nothing
-   * is actionable yet. Manual, pending, and accepted exceptions are
-   * all out of scope, so this is the pass rate over the controls
-   * still being enforced. */
+  /** pass / (pass + fail). Null when nothing is actionable yet.
+   * Manual, pending, accepted exceptions, and errored checks are all
+   * out of scope, so this is the pass rate over the controls that
+   * were actually evaluated. */
   inScopePct: number | null;
   /** pass / total. */
   fullPct: number;
@@ -128,7 +128,7 @@ function scoreForRecs(
     }
   }
   const total = recs.length;
-  const inScopeDenom = total - manual - pending - exception;
+  const inScopeDenom = total - manual - pending - exception - error;
   return {
     level,
     total,
@@ -153,8 +153,10 @@ export type CategoryScore = {
   pass: number;
   fail: number;
   exception: number;
-  /** pass / inScope, where inScope excludes manual, pending, and
-   * accepted exceptions (the actionable controls only). */
+  error: number;
+  /** pass / inScope, where inScope is pass + fail only — manual,
+   * pending, accepted exceptions, and errored checks are all excluded
+   * (the controls that were actually evaluated). */
   inScopePct: number;
 };
 
@@ -186,12 +188,17 @@ export function categoryScores(
     let pass = 0;
     let fail = 0;
     let exception = 0;
+    let error = 0;
     let inScope = 0;
     for (const rec of recs) {
       const status = effectiveStatus(rec, scan, userState);
       if (status === "manual" || status === "pending") continue;
       if (status === "exception") {
         exception++;
+        continue;
+      }
+      if (status === "error") {
+        error++;
         continue;
       }
       inScope++;
@@ -207,6 +214,7 @@ export function categoryScores(
         pass,
         fail,
         exception,
+        error,
         inScopePct: pass / inScope,
       });
     }
@@ -246,12 +254,17 @@ export function topLevelCategoryScores(
     let pass = 0;
     let fail = 0;
     let exception = 0;
+    let error = 0;
     let inScope = 0;
     for (const rec of recs) {
       const status = effectiveStatus(rec, scan, userState);
       if (status === "manual" || status === "pending") continue;
       if (status === "exception") {
         exception++;
+        continue;
+      }
+      if (status === "error") {
+        error++;
         continue;
       }
       inScope++;
@@ -266,6 +279,7 @@ export function topLevelCategoryScores(
       pass,
       fail,
       exception,
+      error,
       inScopePct: inScope > 0 ? pass / inScope : 0,
     });
   }
