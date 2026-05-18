@@ -10,6 +10,7 @@ use tauri::ipc::Channel;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::audit::AUDIT_SCRIPT_VERSION;
+use crate::audit::error::AuditError;
 use crate::audit::generator;
 use crate::audit::merge::ScanCollector;
 use crate::audit::model::{DeviceInfo, Scan, ScanContext, ScanRecord};
@@ -23,10 +24,11 @@ use crate::storage::model::{AppState, UserState};
 use crate::storage::persist::ScanLoadErrors;
 use crate::storage::{paths, persist};
 
-/// Tauri-managed handle for cancelling the in-flight scan. Holds the
-/// path of the active scan's cooperative-cancel sentinel (see
-/// `runner::run`); `None` when no scan is running. The UI prevents
-/// concurrent scans, so a single slot is enough.
+/// Tauri-managed handle for the in-flight scan. Holds the path of the
+/// active scan's cooperative-cancel sentinel (see `runner::run`);
+/// `None` when no scan is running. `Some` also means "a scan is
+/// running": `start_scan` rejects a second run while it is set, so the
+/// backend enforces single-flight instead of trusting the UI to.
 #[derive(Default)]
 pub(crate) struct ScanControl {
     cancel_path: Mutex<Option<PathBuf>>,
@@ -49,15 +51,53 @@ fn cancel_sentinel_path() -> PathBuf {
 /// still points at `path`. The conditional clear means a subsequent
 /// scan that already published its own path can't be clobbered by a
 /// late-finishing prior run wiping the slot.
-fn clear_cancel_sentinel(scan_control: &ScanControl, path: &PathBuf) {
-    let _ = std::fs::remove_file(path);
-    let mut guard = scan_control
+/// Acquires the cancel-path lock, recovering the inner value if a prior
+/// holder panicked. The slot is a plain `Option<PathBuf>`, so a poisoned
+/// lock carries no torn invariant worth propagating — and this runs from
+/// `ScanSlot`'s `Drop`, where panicking would abort the process.
+fn lock_cancel(scan_control: &ScanControl) -> std::sync::MutexGuard<'_, Option<PathBuf>> {
+    scan_control
         .cancel_path
         .lock()
-        .expect("scan-control mutex is never held across a panic");
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn clear_cancel_sentinel(scan_control: &ScanControl, path: &PathBuf) {
+    let _ = std::fs::remove_file(path);
+    let mut guard = lock_cancel(scan_control);
     if guard.as_deref() == Some(path.as_path()) {
         *guard = None;
     }
+}
+
+/// Single-flight reservation for `start_scan`. While held, the cancel
+/// slot is `Some(path)`, so a second `start_scan` is rejected. `Drop`
+/// frees the slot and removes the sentinel on every exit path — `?`,
+/// panic, or normal return — so a failed setup can't wedge scanning.
+struct ScanSlot<'a> {
+    scan_control: &'a ScanControl,
+    path: PathBuf,
+}
+
+impl Drop for ScanSlot<'_> {
+    fn drop(&mut self) {
+        clear_cancel_sentinel(self.scan_control, &self.path);
+    }
+}
+
+/// Reserves the single-flight slot, or returns an error if a scan is
+/// already running. The check-and-set happens under one lock hold so
+/// two near-simultaneous calls can't both acquire.
+fn acquire_scan_slot(scan_control: &ScanControl, path: PathBuf) -> Result<ScanSlot<'_>, String> {
+    let mut guard = lock_cancel(scan_control);
+    if guard.is_some() {
+        return Err("A scan is already running.".into());
+    }
+    // Drop any stale sentinel from a prior run that died before cleanup.
+    let _ = std::fs::remove_file(&path);
+    *guard = Some(path.clone());
+    drop(guard);
+    Ok(ScanSlot { scan_control, path })
 }
 
 /// Wraps a cached `Baseline` with a staleness flag so the frontend can
@@ -289,6 +329,14 @@ pub(crate) async fn start_scan(
     scan_control: State<'_, ScanControl>,
 ) -> Result<Scan, String> {
     let baseline_sha = baseline.source.pdf_sha256.clone();
+
+    // Reserve the single-flight slot before any disk work: a second
+    // start_scan is rejected here, which also keeps two runs from racing
+    // on the baseline cache written just below. The slot frees on every
+    // exit path through ScanSlot's Drop.
+    let cancel_path = cancel_sentinel_path();
+    let _scan_slot = acquire_scan_slot(&scan_control, cancel_path.clone())?;
+
     // Persist the baseline to its cache path so the PS script can read
     // the same JSON the rest of the app already trusts as the source of
     // truth. Re-saving is cheap and protects against the case where the
@@ -296,15 +344,6 @@ pub(crate) async fn start_scan(
     // failure earlier in the session).
     persist::save_cached_baseline(&baseline).map_err(|err| err.to_string())?;
     let baseline_path = paths::baseline_cache_path(&baseline_sha).map_err(|err| err.to_string())?;
-
-    let cancel_path = cancel_sentinel_path();
-    // Drop any stale sentinel from a prior run that died before cleanup,
-    // then publish this run's path so `cancel_scan` can reach it.
-    let _ = std::fs::remove_file(&cancel_path);
-    *scan_control
-        .cancel_path
-        .lock()
-        .expect("scan-control mutex is never held across a panic") = Some(cancel_path.clone());
 
     let run_cancel_path = cancel_path.clone();
     let scan_result = async_runtime::spawn_blocking(move || -> Result<Scan, String> {
@@ -334,13 +373,19 @@ pub(crate) async fn start_scan(
     })
     .await;
 
-    // Run resolved (success, error, cancel, or panic) — retract the
-    // cancel handle and clear the sentinel so a later click can't target
-    // a dead run. Runs on every exit path below since it precedes the
-    // `?` that would short-circuit on a failed/panicked task.
-    clear_cancel_sentinel(&scan_control, &cancel_path);
-
+    // `_scan_slot`'s Drop retracts the cancel handle and clears the
+    // sentinel once this function returns — on success, error, cancel,
+    // or a panicked task — so a later click can't target a dead run.
     let scan = scan_result.map_err(|err| format!("scan task panicked: {err}"))??;
+
+    // Defense in depth behind the runner's own no-output detection: a
+    // scan that yielded zero results for a non-empty baseline is a
+    // failed run, not a device with nothing configured. Refuse to
+    // persist it so an empty scan can't overwrite real history or read
+    // as "every control vanished".
+    if scan.results.is_empty() && !baseline.recommendations.is_empty() {
+        return Err(AuditError::NoOutput.to_string());
+    }
 
     // Load the saved exceptions and attestations so the trend summary
     // credits closed-by-paperwork and hand-verified recs the same way
@@ -368,10 +413,7 @@ pub(crate) async fn start_scan(
 #[tauri::command]
 #[specta::specta]
 pub(crate) fn cancel_scan(scan_control: State<'_, ScanControl>) -> Result<(), String> {
-    let guard = scan_control
-        .cancel_path
-        .lock()
-        .expect("scan-control mutex is never held across a panic");
+    let guard = lock_cancel(&scan_control);
     if let Some(path) = guard.as_ref() {
         std::fs::write(path, b"").map_err(|err| format!("failed to signal cancellation: {err}"))?;
     }

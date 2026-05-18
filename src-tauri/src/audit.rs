@@ -13,4 +13,4 @@ pub(crate) mod runner;
 /// the output contract changes in a way that should invalidate the
 /// cached `.ps1` file on a user's machine — the script path embeds this
 /// number so a bump produces a fresh cache entry automatically.
-pub(crate) const AUDIT_SCRIPT_VERSION: &str = "2";
+pub(crate) const AUDIT_SCRIPT_VERSION: &str = "3";

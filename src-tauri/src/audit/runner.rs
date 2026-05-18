@@ -13,12 +13,28 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
 use crate::audit::elevation;
 use crate::audit::error::AuditError;
 use crate::audit::model::{DeviceInfo, ScanRecord};
+
+/// Hard ceiling on a single audit run. Real scans finish in seconds;
+/// this only fires when PowerShell is wedged (a blocked cmdlet, a modal
+/// stuck behind RunAs) so the app cannot hang forever. Generous enough
+/// to cover a slow machine plus the time a user spends at the UAC
+/// prompt, since that wait counts against this deadline too.
+const SCAN_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Deadline handed to the audit script itself via `-TimeoutSeconds`.
+/// Deliberately longer than `SCAN_TIMEOUT` so the runner reports the
+/// timeout first; the script's own check only backstops an elevated
+/// child left orphaned after the runner killed the unelevated launcher
+/// (a higher-integrity child can't be reaped from here).
+const SCRIPT_TIMEOUT: Duration = Duration::from_secs(SCAN_TIMEOUT.as_secs() + 120);
 
 /// One line of the NDJSON stream from the audit script. `Device` is
 /// emitted once at the top of the run; `Result` is emitted once per
@@ -56,15 +72,26 @@ where
     } else {
         run_elevated_child(script_path, baseline_path, cancel_path, on_event)
     };
-    // A cancelled run exits 0 (clean loop break), so the child's exit
-    // status looks like success — the sentinel's existence is the only
-    // signal that the user asked to stop. Check it before returning so
-    // a normal completion racing a late click still reads as cancelled.
-    if cancel_path.exists() {
-        let _ = fs::remove_file(cancel_path);
-        return Err(AuditError::Cancelled);
+    // A cancelled run exits 0 (clean loop break), so its status looks
+    // like success — the sentinel's existence is the only signal that
+    // the user asked to stop, and it reinterprets an otherwise-fine run
+    // as cancelled. But ElevationDenied and Spawn mean the scan never
+    // ran at all: a cancel is meaningless there, so the real reason must
+    // win instead of being masked as a cancel (e.g. a fast double-click
+    // that fires a cancel while the UAC prompt is still open).
+    match result {
+        Err(err @ (AuditError::ElevationDenied | AuditError::Spawn(_))) => {
+            let _ = fs::remove_file(cancel_path);
+            Err(err)
+        }
+        other => {
+            if cancel_path.exists() {
+                let _ = fs::remove_file(cancel_path);
+                return Err(AuditError::Cancelled);
+            }
+            other
+        }
     }
-    result
 }
 
 /// Direct path: spawn `powershell.exe` from this (already-elevated)
@@ -92,6 +119,8 @@ where
         .arg(baseline_path)
         .arg("-CancelPath")
         .arg(cancel_path)
+        .arg("-TimeoutSeconds")
+        .arg(SCRIPT_TIMEOUT.as_secs().to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -115,17 +144,49 @@ where
         .stdout
         .take()
         .expect("stdout is piped because we configured Stdio::piped()");
-    for line in BufReader::new(stdout).lines() {
-        let line = line.map_err(|source| AuditError::Io {
-            path: script_path.to_path_buf(),
-            source,
-        })?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
+    // Read stdout on a side thread and forward lines over a channel so
+    // the main loop can enforce SCAN_TIMEOUT — a blocking `lines()` read
+    // has no deadline and would hang here if PowerShell wedged.
+    let (tx, rx) = mpsc::channel::<std::io::Result<String>>();
+    let reader = std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            if tx.send(line).is_err() {
+                break;
+            }
         }
-        on_event(parse_event(trimmed)?);
+    });
+
+    let started = Instant::now();
+    let mut event_count = 0usize;
+    loop {
+        if started.elapsed() >= SCAN_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(AuditError::Timeout {
+                secs: SCAN_TIMEOUT.as_secs(),
+            });
+        }
+        match rx.recv_timeout(Duration::from_millis(150)) {
+            Ok(Ok(line)) => {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    on_event(parse_event(trimmed)?);
+                    event_count += 1;
+                }
+            }
+            Ok(Err(source)) => {
+                return Err(AuditError::Io {
+                    path: script_path.to_path_buf(),
+                    source,
+                });
+            }
+            // Reader hit EOF (PowerShell closed stdout): the run is
+            // finishing — reap the exit status below.
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
     }
+    let _ = reader.join();
 
     let status = child.wait().map_err(AuditError::Spawn)?;
     let stderr_text = stderr_join.join().unwrap_or_default();
@@ -140,6 +201,11 @@ where
                 Some(stderr_text)
             },
         });
+    }
+    // Clean exit but nothing emitted: the script started and stopped
+    // without producing the device line or any results.
+    if event_count == 0 {
+        return Err(AuditError::NoOutput);
     }
     Ok(())
 }
@@ -183,18 +249,29 @@ where
         .spawn()
         .map_err(AuditError::Spawn)?;
 
-    let tail_result = tail_output_file(&output_path, &mut outer_child, &mut on_event);
+    let mut event_count = 0usize;
+    let tail_result = {
+        let mut counting = |event| {
+            event_count += 1;
+            on_event(event);
+        };
+        tail_output_file(&output_path, &mut outer_child, &mut counting)
+    };
 
     // Best-effort cleanup; if it fails (file lock, permission) the next
     // scan reuses a fresh timestamped path anyway.
     let _ = fs::remove_file(&output_path);
 
-    // Outer-PS non-zero is always an elevation problem here — the
-    // outer PS only does `Start-Process -Verb RunAs -Wait`, which
-    // returns 0 once the elevated child launches regardless of how
-    // that child exits. So a non-zero outer exit means
-    // `Start-Process` itself threw.
+    // A non-zero outer exit means `Start-Process -Verb RunAs` itself
+    // threw — UAC denied/dismissed or no admin available — since the
+    // outer PS returns 0 once the elevated child launches regardless of
+    // how that child exits. A zero exit with zero events is the other
+    // case: UAC *was* granted but the elevated child wrote nothing
+    // (blocked by policy/security software, or it failed to start).
+    // That is distinct from a denial, so it carries its own message
+    // rather than the admin one.
     match tail_result {
+        Ok(()) if event_count == 0 => Err(AuditError::NoOutput),
         Ok(()) => Ok(()),
         Err(AuditError::NonZeroExit { .. }) => Err(AuditError::ElevationDenied),
         Err(other) => Err(other),
@@ -229,11 +306,12 @@ fn build_runas_command(script: &Path, baseline: &Path, output: &Path, cancel: &P
     let baseline_q = ps_squote(baseline);
     let output_q = ps_squote(output);
     let cancel_q = ps_squote(cancel);
+    let timeout_secs = SCRIPT_TIMEOUT.as_secs();
     format!(
         "Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -WindowStyle Hidden \
          -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',\
          '-File','{script_q}','-BaselinePath','{baseline_q}','-OutputPath','{output_q}',\
-         '-CancelPath','{cancel_q}')"
+         '-CancelPath','{cancel_q}','-TimeoutSeconds','{timeout_secs}')"
     )
 }
 
@@ -255,6 +333,7 @@ where
     })?;
     let mut pending = Vec::<u8>::new();
     let mut chunk = vec![0u8; 8 * 1024];
+    let started = Instant::now();
 
     loop {
         drain_available(&mut file, &mut chunk, &mut pending, path)?;
@@ -275,7 +354,20 @@ where
                 }
                 return Ok(());
             }
-            None => std::thread::sleep(poll_interval),
+            None => {
+                if started.elapsed() >= SCAN_TIMEOUT {
+                    // Killing the outer launcher unblocks us; the
+                    // elevated grandchild runs at a higher integrity and
+                    // can't be reaped from here, so it may linger until
+                    // it exits on its own.
+                    let _ = outer_child.kill();
+                    let _ = outer_child.wait();
+                    return Err(AuditError::Timeout {
+                        secs: SCAN_TIMEOUT.as_secs(),
+                    });
+                }
+                std::thread::sleep(poll_interval);
+            }
         }
     }
 }

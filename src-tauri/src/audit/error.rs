@@ -38,6 +38,19 @@ pub(crate) enum AuditError {
         source: serde_json::Error,
     },
 
+    #[error(
+        "The scan ran with admin rights but produced no results. The elevated \
+         process may have been blocked by security software or system policy, \
+         or failed to start. Try scanning again."
+    )]
+    NoOutput,
+
+    #[error(
+        "The scan timed out. PowerShell did not finish within {} minutes and was stopped.",
+        .secs / 60
+    )]
+    Timeout { secs: u64 },
+
     #[error("Scan cancelled.")]
     Cancelled,
 }

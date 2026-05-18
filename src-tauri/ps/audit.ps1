@@ -21,7 +21,13 @@ param(
     # the moment it appears. The Rust runner creates it on a cancel
     # request -- this avoids killing the (possibly elevated) child, which
     # an unelevated parent can't do reliably.
-    [string]$CancelPath
+    [string]$CancelPath,
+    # Optional wall-clock cap in seconds. When > 0, the per-rec loop
+    # stops once this many seconds have elapsed. Set deliberately longer
+    # than the Rust runner's own timeout so the runner reports a timeout
+    # first; this only backstops an elevated child left orphaned when the
+    # runner gave up and killed the unelevated launcher.
+    [int]$TimeoutSeconds = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -153,12 +159,14 @@ function Resolve-TenantId {
     return $null
 }
 
-# Resolves a registry check path before reading it. Returns a hashtable
-# with 'kind':
-#   'ok'    -> 'path' holds the concrete, readable path
-#   'fail'  -> a required '<Tenant-ID>' couldn't be resolved, so the
-#              per-tenant policy can't be confirmed (a real Fail, not an
-#              automation gap)
+# Resolves a registry check path before reading it. Substitutes the
+# '<Tenant-ID>' and '[USER SID]' placeholders, then maps the hive prefix
+# to a provider-qualified path. Returns a hashtable with 'kind':
+#   'ok'    -> 'path' is the provider-qualified path passed to
+#              Get-ItemProperty; 'display' is the readable resolved form
+#              used in the reported check detail
+#   'fail'  -> a required '<Tenant-ID>' could not be resolved; the
+#              per-tenant policy counts as a Fail
 #   'error' -> an unsupported placeholder or an unparseable path; the
 #              rec is reported Error with 'reason'
 function Resolve-CheckPath {
@@ -183,13 +191,45 @@ function Resolve-CheckPath {
             }
         }
     }
-    if ($resolved -notmatch '^HK(LM|U)\\' -or $resolved -match '[:<>]') {
+
+    # HKU paths carry a '[USER SID]' placeholder for the
+    # currently-logged-in user. Resolve it from the running identity, the
+    # same source the PolicyManager check uses, so user-scope reads stay
+    # consistent across check types.
+    if ($resolved -match '\[\s*USER\s*SID\s*\]') {
+        $usid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        if ([string]::IsNullOrWhiteSpace($usid)) {
+            return @{
+                kind   = 'error'
+                reason = 'Current user SID could not be determined'
+            }
+        }
+        $resolved = $resolved.Replace($Matches[0], $usid)
+    }
+
+    if ($resolved -match '[:<>]') {
         return @{
             kind   = 'error'
             reason = 'Registry path could not be parsed'
         }
     }
-    return @{ kind = 'ok'; path = $resolved }
+
+    # The parser emits colon-less, hive-prefixed paths. Get-ItemProperty
+    # resolves the registry only through a drive or a provider qualifier,
+    # and HKU has no default drive, so map both hives to the Registry
+    # provider form. The colon-less resolved form is kept for display.
+    if ($resolved -match '^HKLM\\(.+)$') {
+        $qualified = "Registry::HKEY_LOCAL_MACHINE\$($Matches[1])"
+    } elseif ($resolved -match '^HKU\\(.+)$') {
+        $qualified = "Registry::HKEY_USERS\$($Matches[1])"
+    } else {
+        return @{
+            kind   = 'error'
+            reason = 'Registry path could not be parsed'
+        }
+    }
+
+    return @{ kind = 'ok'; path = $qualified; display = $resolved }
 }
 
 # ============================================================================
@@ -636,7 +676,7 @@ function Invoke-Rec {
                     $current_summary += "$($check.valueName)=$display"
                     $expected_summary += "$($check.valueName) $exp_str"
                     $check_details += [ordered]@{
-                        path      = $resolution.path
+                        path      = $resolution.display
                         valueName = $check.valueName
                         expected  = $exp_str
                         actual    = $actual_str
@@ -911,8 +951,16 @@ try {
     Write-NdjsonDevice
 
     $check_cancel = -not [string]::IsNullOrEmpty($CancelPath)
+    $deadline = if ($TimeoutSeconds -gt 0) {
+        [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    } else {
+        $null
+    }
     foreach ($rec in $baseline.recommendations) {
         if ($check_cancel -and (Test-Path -LiteralPath $CancelPath)) {
+            break
+        }
+        if ($null -ne $deadline -and [DateTime]::UtcNow -gt $deadline) {
             break
         }
         Invoke-Rec $rec

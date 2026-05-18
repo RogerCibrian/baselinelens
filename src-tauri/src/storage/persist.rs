@@ -316,9 +316,22 @@ fn read_change_events(baseline_sha: &str) -> Result<Vec<ChangeEvent>, StorageErr
 /// Reads the existing array (or starts an empty one), pushes, and
 /// rewrites atomically. The file stays a JSON array (not JSONL) so the
 /// frontend can deserialize it in one shot for the trend chart.
+///
+/// An unreadable or corrupt existing file is tolerated the same way
+/// `save_scan_with_diff` tolerates an unreadable prior latest scan:
+/// log a breadcrumb and start a fresh history rather than propagate.
+/// Otherwise one bad summaries file would block `latest.json` and the
+/// change log from ever being written again. Starting fresh is the
+/// same outcome as the in-app "Clear trend history" recovery action.
 fn append_summary(baseline_sha: &str, summary: &ScanSummary) -> Result<(), StorageError> {
     let path = paths::summaries_path(baseline_sha)?;
-    let mut existing: Vec<ScanSummary> = read_json(&path)?.unwrap_or_default();
+    let mut existing: Vec<ScanSummary> = match read_json(&path) {
+        Ok(value) => value.unwrap_or_default(),
+        Err(err) => {
+            eprintln!("ignoring unreadable scan summaries; starting fresh: {err}");
+            Vec::new()
+        }
+    };
     existing.push(summary.clone());
     write_json_atomic(&path, &existing)
 }
