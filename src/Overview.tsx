@@ -70,8 +70,14 @@ export default function Overview({
    * inline recovery action when `loadErrors.changes` is set. */
   onResetChanges: () => void;
 }) {
-  const levels = scoresByLevel(baseline, scan, userState);
-  const weakest = weakestCategories(baseline, scan, userState, 6);
+  const levels = useMemo(
+    () => scoresByLevel(baseline, scan, userState),
+    [baseline, scan, userState],
+  );
+  const weakest = useMemo(
+    () => weakestCategories(baseline, scan, userState, 6),
+    [baseline, scan, userState],
+  );
 
   const errorCount = levels.reduce((n, s) => n + s.error, 0);
   const evaluatedCount = levels.reduce((n, s) => n + s.pass + s.fail, 0);

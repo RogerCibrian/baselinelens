@@ -165,6 +165,45 @@ export type CategoryScore = {
   inScopePct: number;
 };
 
+type CategoryTally = Pick<
+  CategoryScore,
+  "total" | "inScope" | "pass" | "fail" | "exception" | "error"
+>;
+
+/**
+ * Counts a category's recommendations into the scoring buckets. In
+ * scope is pass + fail only — manual, pending, accepted exceptions,
+ * and errored checks are tracked but excluded from `inScope`. Shared
+ * by both category-score functions so the bucketing can't drift.
+ */
+function tallyCategory(
+  recs: Recommendation[],
+  scan: Scan,
+  userState: UserState,
+): CategoryTally {
+  let pass = 0;
+  let fail = 0;
+  let exception = 0;
+  let error = 0;
+  let inScope = 0;
+  for (const rec of recs) {
+    const status = effectiveStatus(rec, scan, userState);
+    if (status === "manual" || status === "pending") continue;
+    if (status === "exception") {
+      exception++;
+      continue;
+    }
+    if (status === "error") {
+      error++;
+      continue;
+    }
+    inScope++;
+    if (status === "pass") pass++;
+    else if (status === "fail") fail++;
+  }
+  return { total: recs.length, inScope, pass, fail, exception, error };
+}
+
 /**
  * Returns one CategoryScore per recommendation category that has at
  * least three in-scope recommendations (fewer than that and the
@@ -190,37 +229,13 @@ export function categoryScores(
 
   const scores: CategoryScore[] = [];
   for (const [number, recs] of buckets) {
-    let pass = 0;
-    let fail = 0;
-    let exception = 0;
-    let error = 0;
-    let inScope = 0;
-    for (const rec of recs) {
-      const status = effectiveStatus(rec, scan, userState);
-      if (status === "manual" || status === "pending") continue;
-      if (status === "exception") {
-        exception++;
-        continue;
-      }
-      if (status === "error") {
-        error++;
-        continue;
-      }
-      inScope++;
-      if (status === "pass") pass++;
-      else if (status === "fail") fail++;
-    }
-    if (inScope >= 3) {
+    const tally = tallyCategory(recs, scan, userState);
+    if (tally.inScope >= 3) {
       scores.push({
         number,
         name: nameByNumber.get(number) ?? "",
-        total: recs.length,
-        inScope,
-        pass,
-        fail,
-        exception,
-        error,
-        inScopePct: pass / inScope,
+        ...tally,
+        inScopePct: tally.pass / tally.inScope,
       });
     }
   }
@@ -256,36 +271,12 @@ export function topLevelCategoryScores(
 
   const scores: CategoryScore[] = [];
   for (const [number, recs] of buckets) {
-    let pass = 0;
-    let fail = 0;
-    let exception = 0;
-    let error = 0;
-    let inScope = 0;
-    for (const rec of recs) {
-      const status = effectiveStatus(rec, scan, userState);
-      if (status === "manual" || status === "pending") continue;
-      if (status === "exception") {
-        exception++;
-        continue;
-      }
-      if (status === "error") {
-        error++;
-        continue;
-      }
-      inScope++;
-      if (status === "pass") pass++;
-      else if (status === "fail") fail++;
-    }
+    const tally = tallyCategory(recs, scan, userState);
     scores.push({
       number,
       name: topLevelNames.get(number) ?? "",
-      total: recs.length,
-      inScope,
-      pass,
-      fail,
-      exception,
-      error,
-      inScopePct: inScope > 0 ? pass / inScope : 0,
+      ...tally,
+      inScopePct: tally.inScope > 0 ? tally.pass / tally.inScope : 0,
     });
   }
 
