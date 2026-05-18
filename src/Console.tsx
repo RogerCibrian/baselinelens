@@ -1,9 +1,9 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 
 import { save } from "@tauri-apps/plugin-dialog";
@@ -47,14 +47,13 @@ import {
   SAVED_VIEWS,
   type Sort,
 } from "./data/consoleModel";
+import { RecTable } from "./console/RecTable";
 import {
   breakableRegistryPath,
-  DeltaCell,
   EmptyResults,
   NavChevron,
   RailChevronIcon,
   SelectCaret,
-  SortHeader,
   StatusPill,
 } from "./console/widgets";
 import ConfirmDialog from "./ConfirmDialog";
@@ -238,10 +237,12 @@ export default function Console({
     return () => window.removeEventListener("keydown", onKey);
   }, [openRecId, selectedRecId, sorted]);
 
-  function selectAndOpen(id: string) {
+  // Stable identity so changing the selection doesn't re-render every
+  // row in the table — only the rows whose highlight actually changes.
+  const selectAndOpen = useCallback((id: string) => {
     setSelectedRecId(id);
     setOpenRecId(id);
-  }
+  }, []);
 
   // Composed here (not in Rust) so the export matches the console
   // exactly — effective status, exceptions, notes, and the
@@ -890,149 +891,6 @@ function ColumnsMenu({
       )}
     </div>
   );
-}
-
-function RecTable({
-  recs,
-  scan,
-  changesIndex,
-  userState,
-  sort,
-  onSortChange,
-  columns,
-  categoryNames,
-  selectedRecId,
-  onOpen,
-}: {
-  recs: Recommendation[];
-  scan: Scan;
-  changesIndex: Map<string, ChangeEvent>;
-  userState: UserState;
-  sort: Sort;
-  onSortChange: (next: Sort) => void;
-  columns: ConsoleColumns;
-  /** Lookup from category number to its display name; used by the
-   * Category cell so the user sees "Account Policies" instead of
-   * "1.1.2". The number is preserved as a tooltip for reference. */
-  categoryNames: Map<string, string>;
-  selectedRecId: string | null;
-  onOpen: (recId: string) => void;
-}) {
-  return (
-    <table className="rec-table">
-      <thead>
-        <tr>
-          <th><SortHeader sort={sort} onChange={onSortChange} keyName="id">ID</SortHeader></th>
-          <th><SortHeader sort={sort} onChange={onSortChange} keyName="status">Status</SortHeader></th>
-          {columns.level && (
-            <th><SortHeader sort={sort} onChange={onSortChange} keyName="level">Level</SortHeader></th>
-          )}
-          {columns.title && (
-            <th><SortHeader sort={sort} onChange={onSortChange} keyName="title">Title</SortHeader></th>
-          )}
-          {columns.category && (
-            <th><SortHeader sort={sort} onChange={onSortChange} keyName="category">Category</SortHeader></th>
-          )}
-          {columns.expected && <th>Expected</th>}
-          {columns.found && <th>Found</th>}
-          <th
-            className="rec-table-delta-col"
-            title="Recent status change"
-          >
-            <span aria-hidden="true">Δ</span>
-            <span className="sr-only">Recent status change</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {recs.map((rec) => {
-          const status = effectiveStatus(rec, scan, userState);
-          const delta = computeDelta(rec, changesIndex, scan, userState);
-          const selected = rec.id === selectedRecId;
-          const result = scan.results[rec.id];
-          const attested =
-            result?.status === "Manual" &&
-            userState.attestations?.[rec.id] !== undefined;
-          const categoryLabel = categoryNames.get(rec.categoryNumber) ?? rec.categoryNumber;
-          return (
-            <tr
-              key={rec.id}
-              data-rec-id={rec.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => onOpen(rec.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onOpen(rec.id);
-                }
-              }}
-              className={selected ? "rec-row-selected" : ""}
-              aria-selected={selected}
-              aria-label={`${rec.id} ${rec.title} — open details`}
-            >
-              <td className="mono">{rec.id}</td>
-              <td>
-                <StatusPill status={status} attested={attested} />
-              </td>
-              {columns.level && (
-                <td>
-                  <LevelChip level={rec.level} />
-                  {rec.bitlocker && rec.level !== "BL" && (
-                    <span className="tag-bitlocker">BitLocker</span>
-                  )}
-                </td>
-              )}
-              {columns.title && <td>{rec.title}</td>}
-              {columns.category && (
-                <td className="muted" title={rec.categoryNumber}>
-                  {categoryLabel}
-                </td>
-              )}
-              {columns.expected && (
-                <td className="muted mono rec-table-value-col">
-                  {valueCell(result?.expected, result?.checks?.length)}
-                </td>
-              )}
-              {columns.found && (
-                <td className="muted mono rec-table-value-col">
-                  {valueCell(result?.currentValue, result?.checks?.length)}
-                </td>
-              )}
-              <td className="rec-table-delta-col">
-                <DeltaCell delta={delta} />
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
-}
-
-/**
- * Renders the flat Expected / Found string from a scan result, falling
- * back to an em-dash when absent. The flat string is null for recs
- * with multi-check structured output (registry recs with several
- * value names) where the drawer's check table is the canonical view.
- */
-function valueCell(
-  value: string | null | undefined,
-  checksLen: number | undefined,
-): ReactNode {
-  if (value && value.trim().length > 0) return value;
-  // Multi-check recs (registry recs with several value names) carry no
-  // flat string — the data lives in the drawer's check table. Surface
-  // the count instead of a bare em-dash so the cell doesn't read as
-  // "no data" for exactly the richest rows.
-  if (checksLen && checksLen > 0) {
-    return (
-      <span className="muted-italic">
-        {checksLen} check{checksLen === 1 ? "" : "s"}
-      </span>
-    );
-  }
-  return "—";
 }
 
 /**
