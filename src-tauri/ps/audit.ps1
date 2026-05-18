@@ -88,6 +88,38 @@ function Write-NdjsonResult {
     Emit-Line -Line $json
 }
 
+# Emits a Pass/Fail NDJSON result for a recommendation that reads
+# exactly one value: builds the single-row check detail, derives the
+# status, and delegates to Write-NdjsonResult. The single-check
+# dispatch arms share this so the detail-hashtable + status + emit
+# tail isn't rebuilt per arm. Registry stays bespoke -- it accumulates
+# multiple checks. $Actual is left untyped so a null reading stays
+# JSON null instead of being coerced to an empty string.
+function Write-SingleCheckResult {
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [Parameter(Mandatory)][bool]$Pass,
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$ValueName,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Expected,
+        $Actual,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$ExpectedText,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$CurrentValue
+    )
+    $details = @([ordered]@{
+        path      = $Path
+        valueName = $ValueName
+        expected  = $Expected
+        actual    = $Actual
+        pass      = $Pass
+    })
+    $status = if ($Pass) { 'Pass' } else { 'Fail' }
+    Write-NdjsonResult -Id $Id -Status $status `
+        -Expected $ExpectedText `
+        -CurrentValue $CurrentValue `
+        -Checks $details
+}
+
 # Emits the NDJSON device line by wrapping Get-BlDeviceInfo (defined in
 # device-info.ps1) with the 'type' discriminator the Rust runner expects.
 function Write-NdjsonDevice {
@@ -727,18 +759,10 @@ function Invoke-Rec {
                 $exp_str = Format-Expected $audit.expected
                 $actual_str = if ($null -eq $current) { $null } else { [string]$current }
                 $display = if ($null -eq $current) { '(absent)' } else { [string]$current }
-                $details = @([ordered]@{
-                    path      = $read_path
-                    valueName = $audit.setting
-                    expected  = $exp_str
-                    actual    = $actual_str
-                    pass      = $pass
-                })
-                $status = if ($pass) { 'Pass' } else { 'Fail' }
-                Write-NdjsonResult -Id $id -Status $status `
-                    -CurrentValue "$($audit.setting)=$display" `
-                    -Expected "$($audit.setting) $exp_str" `
-                    -Checks $details
+                Write-SingleCheckResult -Id $id -Pass $pass -Path $read_path `
+                    -ValueName $audit.setting -Expected $exp_str -Actual $actual_str `
+                    -ExpectedText "$($audit.setting) $exp_str" `
+                    -CurrentValue "$($audit.setting)=$display"
             }
             'UserRightsAssignment' {
                 $lsp_name = $script:user_rights_map[$audit.rightName]
@@ -794,18 +818,11 @@ function Invoke-Rec {
                 } else {
                     (@($actual_sids | ForEach-Object { Resolve-SidToName $_ })) -join ', '
                 }
-                $details = @([ordered]@{
-                    path      = 'User Rights Assignment'
-                    valueName = $audit.rightName
-                    expected  = $exp_str
-                    actual    = $actual_str
-                    pass      = $pass
-                })
-                $status = if ($pass) { 'Pass' } else { 'Fail' }
-                Write-NdjsonResult -Id $id -Status $status `
-                    -Expected "User Right '$($audit.rightName)' $exp_str" `
-                    -CurrentValue $actual_str `
-                    -Checks $details
+                Write-SingleCheckResult -Id $id -Pass $pass `
+                    -Path 'User Rights Assignment' -ValueName $audit.rightName `
+                    -Expected $exp_str -Actual $actual_str `
+                    -ExpectedText "User Right '$($audit.rightName)' $exp_str" `
+                    -CurrentValue $actual_str
             }
             'Secedit' {
                 $section_name = switch ($audit.section.type) {
@@ -848,18 +865,11 @@ function Invoke-Rec {
                 # "Not configured" rather than a null the UI would show
                 # as the misleading "absent".
                 $actual_str = if ($null -eq $raw) { 'Not configured' } else { [string]$raw }
-                $details = @([ordered]@{
-                    path      = 'Local Security Policy'
-                    valueName = $audit.setting
-                    expected  = $exp_str
-                    actual    = $actual_str
-                    pass      = $pass
-                })
-                $status = if ($pass) { 'Pass' } else { 'Fail' }
-                Write-NdjsonResult -Id $id -Status $status `
-                    -Expected "Local Security Policy / $($audit.setting) $exp_str" `
-                    -CurrentValue $actual_str `
-                    -Checks $details
+                Write-SingleCheckResult -Id $id -Pass $pass `
+                    -Path 'Local Security Policy' -ValueName $audit.setting `
+                    -Expected $exp_str -Actual $actual_str `
+                    -ExpectedText "Local Security Policy / $($audit.setting) $exp_str" `
+                    -CurrentValue $actual_str
             }
             'AuditPolicy' {
                 $dump = Get-AuditPolDump
@@ -908,18 +918,10 @@ function Invoke-Rec {
                 } else {
                     Format-AuditMode $current_text
                 }
-                $details = @([ordered]@{
-                    path      = 'Audit Policy'
-                    valueName = $sub_name
-                    expected  = $exp_str
-                    actual    = $found_str
-                    pass      = $pass
-                })
-                $status = if ($pass) { 'Pass' } else { 'Fail' }
-                Write-NdjsonResult -Id $id -Status $status `
-                    -Expected "Audit subcategory '$sub_name' $exp_str" `
-                    -CurrentValue $found_str `
-                    -Checks $details
+                Write-SingleCheckResult -Id $id -Pass $pass -Path 'Audit Policy' `
+                    -ValueName $sub_name -Expected $exp_str -Actual $found_str `
+                    -ExpectedText "Audit subcategory '$sub_name' $exp_str" `
+                    -CurrentValue $found_str
             }
             'Manual' {
                 $details = @([ordered]@{
