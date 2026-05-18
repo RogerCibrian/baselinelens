@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 
-import { useFocusTrap } from "./hooks";
+import { useEscapeDismiss, useFocusTrap } from "./hooks";
 
 /**
  * Styled, focus-trapped confirmation modal — replaces the native
@@ -25,14 +25,7 @@ export default function ConfirmDialog({
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(true, dialogRef);
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onCancel();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  useEscapeDismiss(onCancel);
 
   return (
     <div className="confirm-scrim" onClick={onCancel} aria-hidden="true">

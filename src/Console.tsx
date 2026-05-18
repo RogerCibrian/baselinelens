@@ -46,6 +46,7 @@ import {
 import ConfirmDialog from "./ConfirmDialog";
 import { formatAge, formatTimestamp } from "./format";
 import { useFocusTrap } from "./hooks";
+import { LevelChip, toneFor } from "./ui";
 
 type SortKey = "id" | "status" | "level" | "title" | "category";
 type SortDirection = "asc" | "desc";
@@ -664,12 +665,6 @@ function CategoryRailRow({
   );
 }
 
-function toneFor(pct: number): "pass" | "warn" | "fail" {
-  if (pct >= 0.8) return "pass";
-  if (pct >= 0.5) return "warn";
-  return "fail";
-}
-
 /**
  * A view is highlighted when the fields it defines match the current
  * filter — category and search (orthogonal refinements) are ignored so
@@ -1119,9 +1114,7 @@ function RecTable({
               </td>
               {columns.level && (
                 <td>
-                  <span className={`level-chip level-${rec.level.toLowerCase()}`}>
-                    {rec.level}
-                  </span>
+                  <LevelChip level={rec.level} />
                   {rec.bitlocker && rec.level !== "BL" && (
                     <span className="tag-bitlocker">BitLocker</span>
                   )}
@@ -1607,9 +1600,7 @@ function DetailDrawer({
                 </div>
               </div>
               <div className="drawer-chips">
-                <span className={`level-chip level-${rec.level.toLowerCase()}`}>
-                  {rec.level}
-                </span>
+                <LevelChip level={rec.level} />
                 {rec.bitlocker && rec.level !== "BL" && (
                   <span className="tag-bitlocker">BitLocker</span>
                 )}

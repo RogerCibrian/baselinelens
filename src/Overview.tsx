@@ -26,6 +26,7 @@ import {
   type CategoryScore,
   type LevelScore,
 } from "./data/score";
+import { LevelChip, toneFor } from "./ui";
 
 const RECENTLY_CHANGED_LIMIT = 6;
 const TREND_WINDOW_DAYS = 30;
@@ -341,9 +342,7 @@ function LevelCard({
   return (
     <button type="button" className="level-card" onClick={onJump}>
       <div className="level-card-head">
-        <span className={`level-chip level-${score.level.toLowerCase()}`}>
-          {score.level}
-        </span>
+        <LevelChip level={score.level} />
         <span className="level-card-name">{levelName(score.level)}</span>
       </div>
       <div className="level-card-numbers">
@@ -892,11 +891,7 @@ function RecentlyChangedColumn({
                 >
                   <div className="recently-changed-meta">
                     <span className="mono recently-changed-id">{rec.id}</span>
-                    <span
-                      className={`level-chip level-${rec.level.toLowerCase()}`}
-                    >
-                      {rec.level}
-                    </span>
+                    <LevelChip level={rec.level} />
                   </div>
                   <div className="recently-changed-title">{rec.title}</div>
                 </button>
@@ -916,13 +911,6 @@ function RecentlyChangedColumn({
       )}
     </div>
   );
-}
-
-function toneFor(pct: number | null): "pass" | "warn" | "fail" | "neutral" {
-  if (pct === null) return "neutral";
-  if (pct >= 0.8) return "pass";
-  if (pct >= 0.5) return "warn";
-  return "fail";
 }
 
 function levelName(level: Level): string {

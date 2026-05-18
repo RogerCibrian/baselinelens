@@ -15,6 +15,22 @@ const FOCUSABLE =
  * container holds it yet, so an explicit `autoFocus`/`ref.focus()`
  * still wins.
  */
+/**
+ * Calls `onDismiss` when Escape is pressed anywhere, for the lifetime
+ * of the calling component. Shared by the confirm dialogs (and any
+ * dismissable overlay) so the window keydown listener isn't hand-rolled
+ * per surface.
+ */
+export function useEscapeDismiss(onDismiss: () => void) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onDismiss();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onDismiss]);
+}
+
 export function useFocusTrap(
   active: boolean,
   containerRef: RefObject<HTMLElement | null>,

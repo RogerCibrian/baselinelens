@@ -11,7 +11,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type { Baseline, DeviceInfo, ParserProgress, Theme } from "./bindings";
-import { useFocusTrap } from "./hooks";
+import { useEscapeDismiss, useFocusTrap } from "./hooks";
 import ThemeSegment from "./ThemeSegment";
 
 import "./Onboarding.css";
@@ -491,14 +491,7 @@ function ConfirmModal({
   // Enter confirms when the modal opens.
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(true, dialogRef);
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onCancel();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  useEscapeDismiss(onCancel);
 
   return (
     <div className="ob-confirm-scrim" onClick={onCancel} aria-hidden="true">
