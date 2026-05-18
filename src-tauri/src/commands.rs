@@ -149,7 +149,7 @@ pub(crate) async fn parse_baseline(
         .map_err(|err| err.to_string())
     })
     .await
-    .map_err(|err| format!("parse task panicked: {err}"))??;
+    .map_err(|err| format!("Parse task panicked: {err}"))??;
 
     // Best-effort cache: a failure here just means the next launch has to
     // re-parse the PDF. Don't fail the user-visible parse.

@@ -6,14 +6,14 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub(crate) enum AuditError {
-    #[error("failed to read or write {path}")]
+    #[error("Failed to read or write {path}.")]
     Io {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
 
-    #[error("failed to spawn powershell.exe")]
+    #[error("Failed to spawn powershell.exe.")]
     Spawn(#[source] std::io::Error),
 
     #[error(
@@ -22,7 +22,7 @@ pub(crate) enum AuditError {
     )]
     ElevationDenied,
 
-    #[error("powershell.exe exited with status {status}{}", format_stderr(.stderr))]
+    #[error("PowerShell exited with status {status}{}", format_stderr(.stderr))]
     NonZeroExit {
         status: i32,
         /// Stderr captured from the audit child. Folded into the
@@ -31,7 +31,7 @@ pub(crate) enum AuditError {
         stderr: Option<String>,
     },
 
-    #[error("failed to parse NDJSON line: {line}")]
+    #[error("Failed to parse NDJSON line: {line}")]
     Ndjson {
         line: String,
         #[source]
