@@ -90,10 +90,12 @@ const RecRow = memo(function RecRow({
       </td>
       {columns.level && (
         <td>
-          <LevelChip level={rec.level} />
-          {rec.bitlocker && rec.level !== "BL" && (
-            <span className="tag-bitlocker">BitLocker</span>
-          )}
+          <span className="level-cell">
+            <LevelChip level={rec.level} />
+            {rec.bitlocker && rec.level !== "BL" && (
+              <span className="tag-bitlocker">BitLocker</span>
+            )}
+          </span>
         </td>
       )}
       {columns.title && <td>{rec.title}</td>}

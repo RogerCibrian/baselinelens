@@ -801,6 +801,22 @@
 .level-l2 { background: var(--v-l2-bg); color: var(--v-l2); }
 .level-bl { background: var(--v-bl-bg); color: var(--v-bl); }
 
+/* Keeps the level chip and its BitLocker tag on one line as a single
+   unit so the tag can't wrap beneath the chip when the column is
+   tight. */
+.level-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* The flex gap above already spaces the tag from the chip in the
+   table cell; the standalone margin would double it. */
+.level-cell .tag-bitlocker {
+  margin-left: 0;
+}
+
 /* Applicability tag, not a severity level: an outlined pill in the
    BitLocker hue so it reads as related to but distinct from the filled
    level chip it sits beside. */
