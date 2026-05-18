@@ -336,9 +336,12 @@ mod tests {
 
     #[test]
     fn returns_empty_strings_when_metadata_missing() {
+        // No version token and no "Terms of Use" trailer: the header
+        // isn't the expected shape, so both are empty rather than the
+        // whole preamble being captured as a name.
         let text = "No header at all\nJust some text\n";
         let (name, version) = extract_benchmark_metadata(text);
-        assert_eq!(name, "No header at all Just some text");
+        assert_eq!(name, "");
         assert_eq!(version, "");
     }
 

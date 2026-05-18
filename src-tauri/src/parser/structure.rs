@@ -100,12 +100,12 @@ fn locate_headings(body: &[&str]) -> Vec<Heading> {
             // blank line, bounding the terminator search to the heading.
             let scan_end = body.len().min(i + 6);
             let mut found = None;
-            for idx in i..scan_end {
-                if body[idx].trim().is_empty() {
+            for (offset, &line) in body[i..scan_end].iter().enumerate() {
+                if line.trim().is_empty() {
                     break;
                 }
-                if let Some(assessment) = trailing_assessment(body[idx]) {
-                    found = Some((idx, assessment));
+                if let Some(assessment) = trailing_assessment(line) {
+                    found = Some((i + offset, assessment));
                     break;
                 }
             }
@@ -188,12 +188,21 @@ fn read_profile(body: &[&str], terminator_idx: usize) -> Option<(Level, bool)> {
     Some((level, has_bl))
 }
 
-fn is_section_id(text: &str) -> bool {
-    let parts: Vec<&str> = text.split('.').collect();
-    parts.len() >= 2
-        && parts
-            .iter()
+/// True when every `.`-separated segment of `text` is a non-empty run
+/// of ASCII digits (e.g. `1`, `2.3`, `18.9.4.1`). Shared by the
+/// heading detector here and the category-heading parser so the
+/// dotted-id grammar is defined once.
+pub(super) fn is_dotted_numeric(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .split('.')
             .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// A section id is a dotted-numeric token with at least two segments
+/// (a bare `4` is a chapter number, not a recommendation id).
+fn is_section_id(text: &str) -> bool {
+    text.contains('.') && is_dotted_numeric(text)
 }
 
 fn parse_level(token: &str) -> Option<Level> {

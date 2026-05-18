@@ -394,11 +394,11 @@ pub(crate) fn clear_baseline_data(baseline_sha: &str) -> Result<(), StorageError
 pub(crate) fn remove_baseline(baseline_sha: &str) -> Result<(), StorageError> {
     clear_baseline_data(baseline_sha)?;
     remove_if_exists(&paths::baseline_cache_path(baseline_sha)?)?;
-    if let Some(mut state) = load_app_state()? {
-        if state.active_baseline_sha.as_deref() == Some(baseline_sha) {
-            state.active_baseline_sha = None;
-            save_app_state(&state)?;
-        }
+    if let Some(mut state) = load_app_state()?
+        && state.active_baseline_sha.as_deref() == Some(baseline_sha)
+    {
+        state.active_baseline_sha = None;
+        save_app_state(&state)?;
     }
     Ok(())
 }

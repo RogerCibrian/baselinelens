@@ -3,6 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::parser::structure;
+
 /// Returns the local name for each entry in `valid_numbers` whose heading
 /// appears in `text`.
 ///
@@ -51,14 +53,7 @@ pub(crate) fn build_full_path(number: &str, local_names: &HashMap<String, String
 fn parse_heading(line: &str) -> Option<(String, String)> {
     let trimmed = line.trim();
     let (number, rest) = trimmed.split_once(' ')?;
-    if number.is_empty() {
-        return None;
-    }
-    let parts: Vec<&str> = number.split('.').collect();
-    if !parts
-        .iter()
-        .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
-    {
+    if !structure::is_dotted_numeric(number) {
         return None;
     }
     let after = rest.trim_start();
