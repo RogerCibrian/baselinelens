@@ -21,8 +21,9 @@ use crate::error::ParseError;
 /// `parser::structure`.
 ///
 /// CIS benchmarks ship unencrypted, so we skip pdf-extract's optional
-/// no-password decryption attempt. Encrypted PDFs surface as a
-/// `PdfExtract` error from the per-page render.
+/// no-password decryption attempt. A page that fails to render (an
+/// encrypted or malformed page) aborts with a `PdfPage` error naming
+/// the page, rather than silently dropping its recommendations.
 pub(crate) fn extract_with_progress(
     bytes: &[u8],
     mut on_page: impl FnMut(u32, u32),
@@ -34,7 +35,17 @@ pub(crate) fn extract_with_progress(
         let mut page_text = String::new();
         {
             let mut writer = PlainTextOutput::new(&mut page_text);
-            pdf_extract::output_doc_page(&doc, &mut writer, page_num)?;
+            // Abort on a page that won't render rather than silently
+            // dropping its recommendations — a partial baseline the
+            // user trusts as complete is worse than a clear failure.
+            // The error names the page so it's actionable.
+            pdf_extract::output_doc_page(&doc, &mut writer, page_num).map_err(|source| {
+                ParseError::PdfPage {
+                    page: page_num,
+                    total,
+                    source,
+                }
+            })?;
         }
         out.push_str(&page_text);
         on_page(page_num, total);

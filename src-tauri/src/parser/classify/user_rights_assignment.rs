@@ -55,19 +55,11 @@ fn extract_right_name(remediation: &str) -> Option<String> {
     super::policy_setting(remediation, &["User Rights Assignment\\", "User Rights\\"])
 }
 
-/// Reads the principal list and match mode from the rec title.
-/// `is set to 'X'` → `(parse(X), Exact)`; `to include 'X'` → `(parse(X), Includes)`.
+/// Reads the principal list and match mode from the rec title via the
+/// shared title-target cue parser.
 fn parse_principals_from_title(title: &str) -> Option<(Vec<Principal>, MatchMode)> {
-    let (after_cue, matching) = if let Some(idx) = title.find("to include '") {
-        (&title[idx + "to include '".len()..], MatchMode::Includes)
-    } else if let Some(idx) = title.find("is set to '") {
-        (&title[idx + "is set to '".len()..], MatchMode::Exact)
-    } else {
-        return None;
-    };
-    let end = after_cue.find('\'')?;
-    let principals = parse_principal_list(&after_cue[..end]);
-    Some((principals, matching))
+    let (phrase, matching) = super::quoted_title_target(title)?;
+    Some((parse_principal_list(phrase), matching))
 }
 
 /// Parses a comma-separated principal list. The literal `No One` token

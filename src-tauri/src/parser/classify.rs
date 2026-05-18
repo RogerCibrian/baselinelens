@@ -10,7 +10,7 @@ mod secedit;
 mod user_rights_assignment;
 
 use crate::parser::classify::path::JoinedPath;
-use crate::parser::model::AuditProcedure;
+use crate::parser::model::{AuditProcedure, MatchMode};
 use crate::parser::structure::RawRecommendation;
 
 /// Inputs every variant detector needs, computed once per recommendation.
@@ -100,6 +100,26 @@ pub(super) fn policy_setting(remediation: &str, markers: &[&str]) -> Option<Stri
         }
     }
     None
+}
+
+/// The single-quoted target phrase in a rec title plus whether the
+/// benchmark wants an exact or an "includes" match. Recognizes
+/// `is set to '<X>'` (exact) and both include phrasings
+/// `is set to include '<X>'` / `to include '<X>'` (includes); `to
+/// include '` is a substring of the former so checking it first covers
+/// both. Returns the inner phrase and the mode, or `None` when the
+/// title carries neither cue. Shared by the secedit, user-rights, and
+/// audit-policy classifiers so the cue handling can't drift apart.
+pub(super) fn quoted_title_target(title: &str) -> Option<(&str, MatchMode)> {
+    let (rest, mode) = if let Some(idx) = title.find("to include '") {
+        (&title[idx + "to include '".len()..], MatchMode::Includes)
+    } else if let Some(idx) = title.find("is set to '") {
+        (&title[idx + "is set to '".len()..], MatchMode::Exact)
+    } else {
+        return None;
+    };
+    let end = rest.find('\'')?;
+    Some((&rest[..end], mode))
 }
 
 #[cfg(test)]

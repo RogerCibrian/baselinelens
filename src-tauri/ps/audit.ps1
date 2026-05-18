@@ -302,7 +302,7 @@ function Get-AuditPolDump {
     if ($null -ne $script:auditpol_cache) { return $script:auditpol_cache }
 
     try {
-        $csv_text = & auditpol.exe /get /category:* /r 2>&1
+        $csv_text = & auditpol.exe /get /category:* /r 2>$null
         if ($LASTEXITCODE -ne 0) {
             throw [System.UnauthorizedAccessException]::new(
                 "auditpol /get exited with code ${LASTEXITCODE}; typically means administrator is required"

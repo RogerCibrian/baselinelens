@@ -43,21 +43,11 @@ fn extract_subcategory_guid(audit_body: &str) -> Option<String> {
     Some(after_cue[..end].to_string())
 }
 
-/// Reads the mode and match kind out of the rec title.
-/// `is set to 'X'` → `(X, Exact)`; `is set to include 'X'` → `(X, Includes)`.
+/// Reads the audit mode and match kind out of the rec title via the
+/// shared title-target cue parser.
 fn parse_mode_from_title(title: &str) -> Option<(AuditPolicyMode, MatchMode)> {
-    let (cue, matching) = if let Some(idx) = title.find("is set to include '") {
-        (
-            &title[idx + "is set to include '".len()..],
-            MatchMode::Includes,
-        )
-    } else if let Some(idx) = title.find("is set to '") {
-        (&title[idx + "is set to '".len()..], MatchMode::Exact)
-    } else {
-        return None;
-    };
-    let end = cue.find('\'')?;
-    let mode = parse_mode_token(&cue[..end])?;
+    let (phrase, matching) = super::quoted_title_target(title)?;
+    let mode = parse_mode_token(phrase)?;
     Some((mode, matching))
 }
 

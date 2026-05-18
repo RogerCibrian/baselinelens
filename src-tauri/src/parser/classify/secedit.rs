@@ -52,17 +52,18 @@ fn extract_setting(remediation: &str) -> Option<String> {
     super::policy_setting(remediation, &["Security Options\\", "Account Policies\\"])
 }
 
-/// Reads the expected value from the title's `is set to '<phrase>'`
-/// segment, routed through the shared value-phrase parser. When the title
-/// says only `Configure 'X'` (no value phrase), infers `NotEquals(default)`
-/// from the rec's default-value section.
+/// Reads the expected value from the title's quoted target (the shared
+/// `is set to`/`to include` cue), routed through the shared value-phrase
+/// parser. When the title says only `Configure 'X'` (no value phrase),
+/// infers `NotEquals(default)` from the rec's default-value section.
 fn parse_expected(rec: &RawRecommendation) -> Option<ExpectedValue> {
     let title = &rec.title;
 
-    if let Some(idx) = title.find("is set to '") {
-        let after = &title[idx + "is set to '".len()..];
-        let end = after.find('\'')?;
-        return Some(expected::parse_value_phrase(&after[..end]));
+    if let Some((phrase, _matching)) = super::quoted_title_target(title) {
+        // Secedit checks are value comparisons; the match mode isn't
+        // representable in the Secedit procedure, so an "includes"
+        // phrasing is read as its value phrase the same as an exact one.
+        return Some(expected::parse_value_phrase(phrase));
     }
 
     if title.contains("Configure '") {

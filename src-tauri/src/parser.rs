@@ -134,7 +134,6 @@ pub(crate) fn parse_with_progress(
 /// callers should treat that as a parse anomaly worth logging.
 fn extract_benchmark_metadata(text: &str) -> (String, String) {
     let mut name_parts: Vec<String> = Vec::new();
-    let mut version = String::new();
 
     for line in text.lines().take(50) {
         let trimmed = line.trim();
@@ -142,17 +141,22 @@ fn extract_benchmark_metadata(text: &str) -> (String, String) {
             continue;
         }
         if trimmed == "Terms of Use" {
-            break;
+            // Reached the trailer without a version line: the header
+            // isn't the expected shape, so report the anomaly via
+            // empty strings rather than treating the whole preamble as
+            // a name.
+            return (String::new(), String::new());
         }
-        if let Some(parsed_version) = parse_version_token(trimmed) {
-            version = parsed_version;
-            break;
+        if let Some(version) = parse_version_token(trimmed) {
+            // The version line is the structural anchor; the lines
+            // before it are the name.
+            return (name_parts.join(" "), version);
         }
         name_parts.push(trimmed.to_string());
     }
 
-    let name = name_parts.join(" ");
-    (name, version)
+    // No version token within the scanned header — anomaly.
+    (String::new(), String::new())
 }
 
 /// Returns the leading `v<digits>(.<digits>)+` token from `line`, or `None`

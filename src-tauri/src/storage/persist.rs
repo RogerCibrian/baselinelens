@@ -41,8 +41,12 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, StorageError
         })
 }
 
-/// Writes `value` as pretty-printed JSON to `path`, creating any missing
-/// parent directories along the way.
+/// Writes `value` as pretty-printed JSON to `path` via a
+/// same-directory tempfile + rename, creating any missing parent
+/// directories along the way. The rename is atomic on the same
+/// filesystem on both Windows and Unix and replaces the destination,
+/// so a crash mid-write can't leave a partially-written file for the
+/// next read (the audit script reads the baseline cache this way).
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), StorageError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|source| StorageError::Io {
@@ -54,7 +58,12 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), StorageError> 
         path: path.to_path_buf(),
         source,
     })?;
-    fs::write(path, body).map_err(|source| StorageError::Io {
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, body).map_err(|source| StorageError::Io {
+        path: tmp.clone(),
+        source,
+    })?;
+    fs::rename(&tmp, path).map_err(|source| StorageError::Io {
         path: path.to_path_buf(),
         source,
     })
@@ -158,7 +167,7 @@ pub(crate) fn save_scan_with_diff(
         baseline_sha,
         &ScanSummary::from_scan(scan, &exception_ids, &attested_pass, &attested_fail),
     )?;
-    write_json_atomic(&paths::latest_scan_path(baseline_sha)?, scan)?;
+    write_json(&paths::latest_scan_path(baseline_sha)?, scan)?;
     Ok(())
 }
 
@@ -333,7 +342,7 @@ fn append_summary(baseline_sha: &str, summary: &ScanSummary) -> Result<(), Stora
         }
     };
     existing.push(summary.clone());
-    write_json_atomic(&path, &existing)
+    write_json(&path, &existing)
 }
 
 /// Removes `path` if it exists. A missing file is reported as `Ok(())`
@@ -391,32 +400,5 @@ pub(crate) fn remove_baseline(baseline_sha: &str) -> Result<(), StorageError> {
             save_app_state(&state)?;
         }
     }
-    Ok(())
-}
-
-/// Writes `value` to `path` via a same-directory tempfile + rename so
-/// a crash mid-write can't leave a partially-written file in place.
-/// `fs::rename` is atomic on the same filesystem on both Windows and
-/// Unix, and replaces the destination if it exists.
-fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), StorageError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| StorageError::Io {
-            path: parent.to_path_buf(),
-            source,
-        })?;
-    }
-    let body = serde_json::to_string_pretty(value).map_err(|source| StorageError::Json {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, body).map_err(|source| StorageError::Io {
-        path: tmp.clone(),
-        source,
-    })?;
-    fs::rename(&tmp, path).map_err(|source| StorageError::Io {
-        path: path.to_path_buf(),
-        source,
-    })?;
     Ok(())
 }
