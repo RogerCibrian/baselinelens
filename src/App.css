@@ -6,6 +6,41 @@
   min-height: 100vh;
 }
 
+.error-boundary {
+  max-width: 480px;
+  margin: 80px auto;
+  padding: 32px;
+  background: var(--v-paper);
+  border: 1px solid var(--v-line);
+  border-radius: var(--v-radius-lg);
+  color: var(--v-text);
+}
+
+.error-boundary h1 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.error-boundary p {
+  margin: 0 0 16px;
+  color: var(--v-text-2);
+  line-height: 1.5;
+}
+
+.error-boundary-detail {
+  margin: 0 0 20px;
+  padding: 12px;
+  background: var(--v-paper-2);
+  border: 1px solid var(--v-line);
+  border-radius: var(--v-radius-md);
+  font-family: var(--v-font-mono);
+  font-size: 12px;
+  color: var(--v-text-muted);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
 .top-bar {
   position: sticky;
   top: 0;
