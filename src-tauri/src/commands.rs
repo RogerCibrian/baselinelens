@@ -311,7 +311,19 @@ pub(crate) fn load_cached_baseline(sha: String) -> Result<Option<CachedBaseline>
         Err(err) => return Err(err.to_string()),
     };
     Ok(baseline.map(|baseline| {
-        let is_stale = baseline.source.parser_version != PARSER_VERSION;
+        // Stale only when the cache was parsed by an *older* parser, so
+        // re-parse picks up fields the newer parser captures. A cache
+        // made by a newer parser (the user downgraded the binary) is
+        // left alone — re-parsing here would lose those new fields.
+        // Parse failure on the cached value falls back to stale: when
+        // we can't verify the cache is at least as fresh as the
+        // running parser, force a re-parse.
+        let cached = baseline.source.parser_version.parse::<u32>().ok();
+        let running = PARSER_VERSION.parse::<u32>().ok();
+        let is_stale = match (cached, running) {
+            (Some(c), Some(r)) => c < r,
+            _ => true,
+        };
         CachedBaseline { baseline, is_stale }
     }))
 }

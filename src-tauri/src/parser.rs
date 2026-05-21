@@ -25,8 +25,10 @@ use crate::parser::model::{
 /// Version of the parser-output schema. Bumped whenever extraction logic
 /// or the `Baseline` shape changes in a way that should invalidate older
 /// cached output. The frontend compares this against a cached baseline's
-/// `parser_version` and surfaces a re-parse prompt on mismatch.
-pub(crate) const PARSER_VERSION: &str = "3";
+/// `parser_version` and surfaces a re-parse prompt when the cache was
+/// parsed by an older parser (a newer cache is left alone — running an
+/// older binary against a newer cache shouldn't churn the cache).
+pub(crate) const PARSER_VERSION: &str = "1";
 
 /// Stages emitted by `parse_with_progress` so the UI can render a status
 /// label and progress bar. `ExtractingText` and `Classifying` carry
