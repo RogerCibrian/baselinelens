@@ -50,7 +50,7 @@ $script:out_stream = if ([string]::IsNullOrEmpty($OutputPath)) {
     $sw
 }
 
-function Emit-Line {
+function Write-Line {
     param([Parameter(Mandatory)][string]$Line)
     if ($null -ne $script:out_stream) {
         $script:out_stream.WriteLine($Line)
@@ -85,7 +85,7 @@ function Write-NdjsonResult {
     # single-element collection still serializes as a JSON array.
     if ($PSBoundParameters.ContainsKey('Checks'))       { $payload['checks']       = @($Checks) }
     $json = $payload | ConvertTo-Json -Compress -Depth 6
-    Emit-Line -Line $json
+    Write-Line -Line $json
 }
 
 # Emits a Pass/Fail NDJSON result for a recommendation that reads
@@ -126,7 +126,7 @@ function Write-NdjsonDevice {
     $info = Get-BlDeviceInfo
     $payload = [ordered]@{ type = 'device' }
     foreach ($key in $info.Keys) { $payload[$key] = $info[$key] }
-    Emit-Line -Line ($payload | ConvertTo-Json -Compress -Depth 4)
+    Write-Line -Line ($payload | ConvertTo-Json -Compress -Depth 4)
 }
 
 # ============================================================================
