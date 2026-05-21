@@ -10,8 +10,6 @@ A two-audience desktop dashboard for evaluating a Windows 11 endpoint against a 
 
 **v1 scope:** local-only audit (the dashboard runs on the device being audited). Cross-machine PS export is deferred.
 
-Hi-fi design lives under `design/` — preserved as reference; the React port lives under `src/`.
-
 ## Critical rules
 
 - **Never commit CIS Benchmark prose.** Recommendation titles (their specific phrasing), descriptions, rationale text, and audit/remediation procedure text are off-limits. **Factual OS configuration data** — registry paths, GPO paths, expected DWORD/string/binary values — is fact, not prose, and is fine to ship. Test fixtures must use invented prose; real OS setting paths alongside is fine.
@@ -82,7 +80,7 @@ Follow the [Rust API Guidelines naming chapter](https://rust-lang.github.io/api-
 
 - No explicit `any`, even where TS would let you. Use `unknown` and narrow.
 - **Function components only.** Hooks for state; no class components.
-- **Styling**: CSS tokens from `src/styles/tokens.css` (ported from `design/v2/tokens-v2.css`). No inline styles for layout; inline only for one-off dynamic values that depend on data.
+- **Styling**: CSS tokens from `src/styles/tokens.css`. No inline styles for layout; inline only for one-off dynamic values that depend on data.
 - **Component file layout**: one component per file unless tightly-coupled siblings; co-locate component-local types at the top of the file.
 - **Imports**: external packages first, then `@/` aliases, then relative — separated by a blank line.
 
@@ -143,13 +141,12 @@ When branching, use `type/short-description` (`feat/parser-extraction`, `fix/reg
 baselinelens/
 ├── CLAUDE.md, .gitignore, .gitattributes
 ├── package.json, tsconfig.json, vite.config.ts, index.html
-├── src/                  # React frontend (TS) — to be populated from design/v2/
-├── src-tauri/            # Rust backend
-│   ├── Cargo.toml, tauri.conf.json, build.rs
-│   ├── src/
-│   ├── ps/               # PowerShell scripts baked into the binary via include_str!
-│   ├── capabilities/
-│   ├── icons/
-│   └── tests/fixtures/   # synthetic prose required; real OS setting paths/values OK
-└── design/               # design reference; HTML/JSX prototype + tokens
+├── src/                  # React frontend (TS)
+└── src-tauri/            # Rust backend
+    ├── Cargo.toml, tauri.conf.json, build.rs
+    ├── src/
+    ├── ps/               # PowerShell scripts baked into the binary via include_str!
+    ├── capabilities/
+    ├── icons/
+    └── tests/fixtures/   # synthetic prose required; real OS setting paths/values OK
 ```

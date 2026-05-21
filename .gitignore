@@ -2,7 +2,6 @@
 compliance-data.json
 **/compliance-data.json
 *.pdf
-design/screenshots/
 screenshots/
 dev/
 !src-tauri/tests/fixtures/synthetic-baseline.pdf
