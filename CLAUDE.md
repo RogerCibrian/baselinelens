@@ -6,7 +6,7 @@ A two-audience desktop dashboard for evaluating a Windows 11 endpoint against a 
 
 **Stack:** Tauri 2 (Rust backend) + React 19 + TypeScript (Vite frontend) + PowerShell (audit scripts spawned at runtime). Distributed as a single Windows `.msi` installer.
 
-**Architecture (settled):** the dashboard renders a structured `BenchmarkSpec` produced at runtime by a Rust parser that reads a CIS PDF the user supplies. The audit step generates a `.ps1` from that spec, spawns `powershell.exe`, captures JSON results, and merges them back. **No Benchmark-derived creative content ships in the repo.**
+**Architecture (settled):** the dashboard renders a structured `Baseline` produced at runtime by a Rust parser that reads a CIS PDF the user supplies. The audit step writes the baseline to disk as JSON, spawns `powershell.exe` against a static dispatcher script (`ps/audit.ps1`, baked into the binary via `include_str!`) that reads the baseline JSON and dispatches per recommendation, captures NDJSON results on stdout, and merges them back. **No Benchmark-derived creative content ships in the repo.**
 
 **v1 scope:** local-only audit (the dashboard runs on the device being audited). Cross-machine PS export is deferred.
 
@@ -86,6 +86,7 @@ Follow the [Rust API Guidelines naming chapter](https://rust-lang.github.io/api-
 ## PowerShell conventions
 
 - **Target version: PowerShell 5.1** (the default on Windows 11). PS 7 will run 5.1 syntax, but we don't require users to have PS 7. Avoid 7-only features: `??` (null-coalescing), `?.` (null-conditional), ternary `condition ? a : b`, `ForEach-Object -Parallel`, `Get-Error`, `pwsh`-only modules. Dev environment on Mac is PS 7 (`pwsh`); real audit-cmdlet testing must happen on Windows since most cmdlets we use (`Get-ItemProperty HKLM:\...`, `Get-BitLockerVolume`, `secedit`, etc.) are Windows-only.
+- **Layout**: `ps/audit.ps1` is one static dispatcher that reads the parsed baseline JSON at runtime and branches via `switch ($audit.type)`. There are no per-rule template files — a new rule type is a new dispatch arm here plus a new `AuditProcedure` variant in `parser/model.rs` and a classifier under `parser/classify/`. `ps/device-info.ps1` is dot-sourced by the dispatcher and also runs standalone for the onboarding device-info command.
 - **Output contract**: scripts emit NDJSON to stdout — one JSON object per line, discriminated by `type` (e.g. `{"type":"device",...}`, `{"type":"result",...}`). Errors go to stderr, never to stdout.
 - **Naming**: PowerShell-approved verbs (`Get-`, `Set-`, `Test-`, `Invoke-` — see `Get-Verb`).
 - **Style**: PSScriptAnalyzer defaults; no aliases (`gci` → `Get-ChildItem`); `param()` blocks at the top with explicit types.
