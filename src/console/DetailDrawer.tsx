@@ -548,8 +548,8 @@ export function DetailDrawer({
                 <section className="drawer-section">
                   <h4>References</h4>
                   <ul className="drawer-references">
-                    {rec.references.map((ref, i) => (
-                      <li key={i}>
+                    {rec.references.map((ref) => (
+                      <li key={`${ref.type}:${ref.type === "Url" ? ref.url : ref.text}`}>
                         {ref.type === "Url" ? (
                           <a
                             href={ref.url}
@@ -601,7 +601,10 @@ function DrawerText({ title, text }: { title: string; text: string }) {
     <section className="drawer-section">
       <h4>{title}</h4>
       {paragraphs(text).map((para, i) => (
-        <p key={i} className="drawer-text">
+        // Paragraphs are a pure function of immutable `text` — they
+        // can't reorder or get inserted — but pair the index with the
+        // content so duplicate paragraphs still get distinct keys.
+        <p key={`${i}:${para}`} className="drawer-text">
           {para}
         </p>
       ))}
@@ -649,7 +652,10 @@ function ScanResultSection({
   stateAge: { label: string; since: string } | null;
 }) {
   if (!result) return null;
-  const hasChecks = result.checks && result.checks.length > 0;
+  // Coalesce once up-front so the rest of the body can use `checks`
+  // without re-narrowing the optional and without `!` assertions.
+  const checks = result.checks ?? [];
+  const hasChecks = checks.length > 0;
   return (
     <section className="drawer-section">
       <h4>Scan result</h4>
@@ -687,8 +693,8 @@ function ScanResultSection({
       </dl>
       {hasChecks && (
         <ul className="check-cards">
-          {result.checks!.map((c, i) => (
-            <li key={i} className="check-card">
+          {checks.map((c) => (
+            <li key={`${c.path}|${c.valueName}`} className="check-card">
               <span
                 className={`check-verdict check-verdict-${verdictKey(c.pass)}`}
               >
