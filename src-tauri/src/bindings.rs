@@ -1,20 +1,15 @@
-//! Generates `src/bindings.ts` from the Rust commands and types annotated
-//! with `#[specta::specta]` / `#[derive(specta::Type)]`.
+//! Single source of truth for the typed Tauri command surface.
 //!
-//! Lives as a `pub fn` (rather than a `#[test]`) because the test-harness
-//! startup path interacts badly with `tauri::Wry` on Windows and crashes
-//! with `STATUS_ENTRYPOINT_NOT_FOUND` (upstream tauri-apps/tauri#13419,
-//! #14580). Invoked via the `generate-bindings` bin target.
+//! [`make_builder`] returns a `tauri_specta::Builder` that `lib::run`
+//! wires into `tauri::Builder::invoke_handler` AND (in debug builds)
+//! uses to regenerate `src/bindings.ts`. Listing commands in one place
+//! means the runtime handler and the TS bindings can never drift.
 
-use std::path::Path;
-
-use specta_typescript::Typescript;
 use tauri_specta::{Builder, collect_commands};
 
-/// Renders the typed-binding module for `commands::*` to `out_path`,
-/// overwriting any existing file.
-pub fn export_to(out_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let builder = Builder::<tauri::Wry>::new()
+/// Builds the Specta command/type collector for this app.
+pub(crate) fn make_builder() -> Builder<tauri::Wry> {
+    Builder::<tauri::Wry>::new()
         .commands(collect_commands![
             crate::commands::get_device_info,
             crate::commands::parse_baseline,
@@ -50,8 +45,5 @@ pub fn export_to(out_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .typ::<crate::storage::model::Preferences>()
         .typ::<crate::storage::model::Theme>()
         .typ::<crate::storage::model::TimeFormat>()
-        .typ::<crate::storage::model::Density>();
-
-    builder.export(Typescript::default(), out_path)?;
-    Ok(())
+        .typ::<crate::storage::model::Density>()
 }
