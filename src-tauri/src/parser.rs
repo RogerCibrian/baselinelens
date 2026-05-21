@@ -30,6 +30,12 @@ use crate::parser::model::{
 /// older binary against a newer cache shouldn't churn the cache).
 pub(crate) const PARSER_VERSION: &str = "1";
 
+/// One `ParserProgress::Classifying` event is emitted every N recs so the
+/// UI sees roughly 18 updates over ~450 recs rather than one per rec.
+/// The channel can carry per-rec traffic fine; this just keeps event
+/// volume readable in logs.
+const CLASSIFICATION_PROGRESS_BATCH: u32 = 25;
+
 /// Stages emitted by `parse_with_progress` so the UI can render a status
 /// label and progress bar. `ExtractingText` and `Classifying` carry
 /// `(done, total)` so the bar can move continuously through the slow
@@ -93,10 +99,7 @@ pub(crate) fn parse_with_progress(
         .map(|(idx, raw)| {
             let rec = build_recommendation(raw);
             let done = (idx as u32) + 1;
-            // Coalesce per-rec updates so we send roughly 18 events instead
-            // of 457 (the channel can keep up either way; this just keeps
-            // event traffic reasonable).
-            if done.is_multiple_of(25) || done == total {
+            if done.is_multiple_of(CLASSIFICATION_PROGRESS_BATCH) || done == total {
                 on_progress(ParserProgress::Classifying { done, total });
             }
             rec
