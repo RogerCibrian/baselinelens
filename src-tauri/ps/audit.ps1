@@ -311,6 +311,16 @@ function Get-SeceditExport {
             $val = $line.Substring($eq_idx + 1).Trim()
             $cache[$current_section][$key] = $val
         }
+        # secedit always emits [System Access] on a successful export; its
+        # absence means the file was empty, truncated, or otherwise didn't
+        # contain real policy data. Caching that would have every later
+        # lookup miss and report "Not configured" -- which is a lie, since
+        # we never actually saw the policy state.
+        if (-not $cache.ContainsKey('System Access')) {
+            throw [System.IO.InvalidDataException]::new(
+                'secedit /export produced no [System Access] section; policy could not be read'
+            )
+        }
         $script:secedit_cache = $cache
         return $cache
     } catch {
@@ -519,13 +529,19 @@ $script:security_options_map = @{
 # ============================================================================
 
 # Turns a Value object ({type, value/values/bytes}) into a short string.
+# String values go through ConvertTo-Json so quotes inside the string are
+# escaped properly -- single-quote wrapping would render strings like
+# `it's` as `'it's'`, which a reader has no way to disambiguate from a
+# closed quote followed by stray text.
 function Format-Value {
     param($Value)
     switch ($Value.type) {
         'Dword'    { [string]$Value.value }
         'QDword'   { [string]$Value.value }
-        'Str'      { "'$($Value.value)'" }
-        'MultiStr' { '[' + (($Value.values | ForEach-Object { "'$_'" }) -join ', ') + ']' }
+        'Str'      { ConvertTo-Json -InputObject $Value.value -Compress }
+        'MultiStr' {
+            '[' + (($Value.values | ForEach-Object { ConvertTo-Json -InputObject $_ -Compress }) -join ', ') + ']'
+        }
         'Binary'   { '0x' + (($Value.bytes | ForEach-Object { '{0:X2}' -f $_ }) -join '') }
         default    { "?$($Value.type)?" }
     }
@@ -732,27 +748,36 @@ function Invoke-Rec {
                 # provider tree that holds the value; the value itself lives
                 # under \PolicyManager\Providers\{GUID}\Default\<scope>\<area>.
                 # Both steps are plain registry reads, so the result is
-                # reported as a registry check against the concrete path read
-                # -- the provider path when a provider claimed the setting,
-                # the WinningProvider lookup path when none did.
-                $scope_current = if ($audit.scope -eq 'Device') { 'device' } else { '(USER SID)' }
-                # User-scope values live under the currently-logged-in user's
-                # SID per the data-model decision in project memory.
-                $scope_provider = if ($audit.scope -eq 'Device') {
-                    'Device'
+                # reported as a registry check against the concrete path read.
+                # User scope under both subtrees is keyed by the logged-in
+                # user's SID; the CIS PDF's `(USER SID)` token is a
+                # placeholder, not a real subkey name.
+                $user_sid = if ($audit.scope -eq 'Device') {
+                    $null
                 } else {
                     [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
                 }
+                $scope_current = if ($audit.scope -eq 'Device') { 'device' } else { $user_sid }
+                $scope_provider = if ($audit.scope -eq 'Device') { 'Device' } else { $user_sid }
 
                 $wp_path = "HKLM:\SOFTWARE\Microsoft\PolicyManager\current\$scope_current\$($audit.area)"
                 $wp_name = "$($audit.setting)_WinningProvider"
                 $provider = Get-RegValue -Path $wp_path -Name $wp_name
 
+                # When a provider claims the setting, the actual value lives
+                # under \Providers\{GUID}\Default\... — that's what was read.
+                # When none claims it, the only thing actually read is the
+                # WinningProvider name itself, so the displayed path/value
+                # name reflect *that* lookup rather than a Providers path
+                # we never touched.
                 $current = $null
-                $read_path = $wp_path
                 if ($null -ne $provider) {
                     $read_path = "HKLM:\SOFTWARE\Microsoft\PolicyManager\Providers\$provider\Default\$scope_provider\$($audit.area)"
+                    $read_value_name = $audit.setting
                     $current = Get-RegValue -Path $read_path -Name $audit.setting
+                } else {
+                    $read_path = $wp_path
+                    $read_value_name = $wp_name
                 }
 
                 $pass = Test-Expected $current $audit.expected
@@ -760,7 +785,7 @@ function Invoke-Rec {
                 $actual_str = if ($null -eq $current) { $null } else { [string]$current }
                 $display = if ($null -eq $current) { '(absent)' } else { [string]$current }
                 Write-SingleCheckResult -Id $id -Pass $pass -Path $read_path `
-                    -ValueName $audit.setting -Expected $exp_str -Actual $actual_str `
+                    -ValueName $read_value_name -Expected $exp_str -Actual $actual_str `
                     -ExpectedText "$($audit.setting) $exp_str" `
                     -CurrentValue "$($audit.setting)=$display"
             }
@@ -784,27 +809,21 @@ function Invoke-Rec {
                 }
 
                 $actual_sids = @(Get-PrivilegeSids -RightLspName $lsp_name)
-                $expected_sids = @($audit.expected `
-                    | ForEach-Object { Resolve-PrincipalToSid -Identifier $_.identifier } `
-                    | Where-Object { $null -ne $_ })
-
-                if ($audit.matching -eq 'Exact') {
-                    $a_sorted = (@($actual_sids) | Sort-Object) -join ','
-                    $e_sorted = (@($expected_sids) | Sort-Object) -join ','
-                    $pass = $a_sorted -eq $e_sorted
-                } else {
-                    # Includes: every expected principal must appear in the
-                    # actual set; extra principals on the device are OK.
-                    $missing = @($expected_sids | Where-Object { $_ -notin $actual_sids })
-                    $pass = ($missing.Count -eq 0)
+                # Track unresolved expected principals separately so the
+                # rec doesn't silently appear to pass when a name we
+                # couldn't translate to a SID gets dropped from the
+                # comparison set.
+                $expected_sids = @()
+                $unresolved = @()
+                foreach ($principal in $audit.expected) {
+                    $sid = Resolve-PrincipalToSid -Identifier $principal.identifier
+                    if ($null -eq $sid) {
+                        $unresolved += $principal.identifier
+                    } else {
+                        $expected_sids += $sid
+                    }
                 }
 
-                # Display in plain language. An empty expected set means
-                # the right must be granted to nobody ("No one"); the
-                # matching mode reads as a sentence rather than the raw
-                # enum + bracket form. Actual SIDs are translated back to
-                # account names so the reader sees `BUILTIN\Administrators`
-                # rather than `S-1-5-32-544`.
                 $exp_names = @($audit.expected | ForEach-Object { $_.identifier })
                 if ($exp_names.Count -eq 0) {
                     $exp_str = 'No one'
@@ -818,6 +837,39 @@ function Invoke-Rec {
                 } else {
                     (@($actual_sids | ForEach-Object { Resolve-SidToName $_ })) -join ', '
                 }
+
+                if ($unresolved.Count -gt 0) {
+                    # We can't conclude either way when an expected
+                    # principal doesn't resolve on this device -- the
+                    # comparison would be against a subset of what the
+                    # benchmark requires. Surface it as Error rather than
+                    # let it look like a real Pass/Fail.
+                    $unresolved_list = ($unresolved -join ', ')
+                    Write-NdjsonResult -Id $id -Status 'Error' `
+                        -ErrorMessage "Expected principal(s) could not be resolved to a SID on this device: $unresolved_list" `
+                        -Expected "User Right '$($audit.rightName)' $exp_str" `
+                        -CurrentValue $actual_str `
+                        -Checks @([ordered]@{
+                            path      = 'User Rights Assignment'
+                            valueName = $audit.rightName
+                            expected  = $exp_str
+                            actual    = $actual_str
+                            pass      = $null
+                        })
+                    break
+                }
+
+                if ($audit.matching -eq 'Exact') {
+                    $a_sorted = (@($actual_sids) | Sort-Object) -join ','
+                    $e_sorted = (@($expected_sids) | Sort-Object) -join ','
+                    $pass = $a_sorted -eq $e_sorted
+                } else {
+                    # Includes: every expected principal must appear in the
+                    # actual set; extra principals on the device are OK.
+                    $missing = @($expected_sids | Where-Object { $_ -notin $actual_sids })
+                    $pass = ($missing.Count -eq 0)
+                }
+
                 Write-SingleCheckResult -Id $id -Pass $pass `
                     -Path 'User Rights Assignment' -ValueName $audit.rightName `
                     -Expected $exp_str -Actual $actual_str `
@@ -825,28 +877,20 @@ function Invoke-Rec {
                     -CurrentValue $actual_str
             }
             'Secedit' {
-                $section_name = switch ($audit.section.type) {
-                    'SystemAccess'   { 'System Access' }
-                    'RegistryValues' { 'Registry Values' }
-                    'Service'        { 'Service General Setting' }
-                    'Other'          { $audit.section.name }
-                    default          { $null }
-                }
-                if ($null -eq $section_name) {
-                    throw "unknown SeceditSection type: $($audit.section.type)"
-                }
-
-                # SystemAccess settings reference the secedit INI key via a
-                # display-name map; other sections use the setting verbatim.
-                $ini_key = if ($section_name -eq 'System Access' `
-                    -and $script:security_options_map.ContainsKey($audit.setting)) {
+                # Every Secedit rec the parser emits targets the
+                # `[System Access]` INI section -- the only section the
+                # classifier produces. The Security Options display names
+                # map to short INI keys (e.g. `Accounts: Guest account
+                # status` -> `EnableGuestAccount`); password/lockout
+                # settings use their display name verbatim as the key.
+                $ini_key = if ($script:security_options_map.ContainsKey($audit.setting)) {
                     $script:security_options_map[$audit.setting]
                 } else {
                     $audit.setting
                 }
 
                 $data = Get-SeceditExport
-                $section = $data[$section_name]
+                $section = $data['System Access']
                 $raw = if ($section -and $section.ContainsKey($ini_key)) { $section[$ini_key] } else { $null }
                 # Secedit wraps string values in quotes -- strip so the
                 # predicate compares the unwrapped string.
@@ -874,7 +918,13 @@ function Invoke-Rec {
             'AuditPolicy' {
                 $dump = Get-AuditPolDump
                 $entry = $dump[$audit.subcategoryGuid]
-                $current_text = if ($null -ne $entry) { $entry.Setting } else { $null }
+                # A subcategory missing from the auditpol dump means the
+                # OS has never configured it: Windows treats that state
+                # as "No Auditing" (the system default for any subcategory
+                # without an explicit policy), so a rec expecting
+                # NoAuditing should pass for an absent entry rather than
+                # fail on the null comparison.
+                $current_text = if ($null -ne $entry) { $entry.Setting } else { 'No Auditing' }
                 $sub_name = if ($null -ne $entry `
                     -and -not [string]::IsNullOrWhiteSpace($entry.Name)) {
                     $entry.Name
@@ -947,8 +997,16 @@ function Invoke-Rec {
 # ============================================================================
 
 try {
-    $raw = Get-Content -LiteralPath $BaselinePath -Raw -Encoding UTF8
-    $baseline = $raw | ConvertFrom-Json
+    # Re-throw baseline-load failures with a clear, user-readable
+    # prefix. PS's default exception message ('Cannot find path ...') is
+    # surfaced verbatim to the UI through the Rust runner's NonZeroExit
+    # capture, so the wrapped form is what the user actually reads.
+    try {
+        $raw = Get-Content -LiteralPath $BaselinePath -Raw -Encoding UTF8
+        $baseline = $raw | ConvertFrom-Json
+    } catch {
+        throw "Failed to load baseline JSON from '$BaselinePath': $($_.Exception.Message)"
+    }
 
     Write-NdjsonDevice
 
