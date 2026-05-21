@@ -20,6 +20,7 @@ import { formatAge, formatTimestamp } from "../format";
 import { useFocusTrap } from "../hooks";
 import { LevelChip } from "../ui";
 import ConfirmDialog from "../ConfirmDialog";
+import { SaveStatus, useSavable } from "./savable";
 import { breakableRegistryPath, NavChevron, StatusPill } from "./widgets";
 
 /**
@@ -64,13 +65,34 @@ export function DetailDrawer({
   onClose: () => void;
   onUpdate: (next: UserState) => Promise<boolean>;
 }) {
-  const [exceptionReason, setExceptionReason] = useState("");
-  const [exceptionGrantedBy, setExceptionGrantedBy] = useState("");
-  const [attestationBy, setAttestationBy] = useState("");
-  const [noteText, setNoteText] = useState("");
-  type SaveTarget = "exception" | "attestation" | "note";
-  const [savedFlash, setSavedFlash] = useState<SaveTarget | null>(null);
-  const [saveError, setSaveError] = useState<SaveTarget | null>(null);
+  const savedException = rec ? userState.exceptions[rec.id] : undefined;
+  const savedAttestation = rec ? userState.attestations?.[rec.id] : undefined;
+  const savedNote = rec ? userState.notes[rec.id] : undefined;
+
+  const exception = useSavable({
+    rec,
+    saved: savedException,
+    initial: (saved: Exception | undefined) => ({
+      reason: saved?.reason ?? "",
+      grantedBy: saved?.grantedBy ?? "",
+    }),
+    onUpdate,
+  });
+  const attestation = useSavable({
+    rec,
+    saved: savedAttestation,
+    initial: (saved: Attestation | undefined) => ({
+      attestedBy: saved?.attestedBy ?? "",
+    }),
+    onUpdate,
+  });
+  const note = useSavable({
+    rec,
+    saved: savedNote,
+    initial: (saved: Note | undefined) => ({ text: saved?.text ?? "" }),
+    onUpdate,
+  });
+
   // Action deferred behind the unsaved-edits prompt. Holds the thing to
   // do (close, or navigate to another rec) once the user confirms the
   // discard; null when there's nothing pending. Stored as a function so
@@ -78,18 +100,6 @@ export function DetailDrawer({
   const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
   const confirmDiscard = pendingLeave !== null;
   const drawerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!rec) return;
-    const ex = userState.exceptions[rec.id];
-    const att = userState.attestations?.[rec.id];
-    const note = userState.notes[rec.id];
-    setExceptionReason(ex?.reason ?? "");
-    setExceptionGrantedBy(ex?.grantedBy ?? "");
-    setAttestationBy(att?.attestedBy ?? "");
-    setNoteText(note?.text ?? "");
-    setSaveError(null);
-  }, [rec, userState]);
 
   const isOpen = rec !== null;
 
@@ -109,19 +119,18 @@ export function DetailDrawer({
     if (isOpen && !confirmDiscard) drawerRef.current?.focus();
   }, [isOpen, confirmDiscard]);
 
-  const savedException = rec ? userState.exceptions[rec.id] : undefined;
-  const savedAttestation = rec ? userState.attestations?.[rec.id] : undefined;
-  const savedNote = rec ? userState.notes[rec.id] : undefined;
   // Unsaved-edit guard: compare trimmed form values to what's persisted
   // so closing (×, backdrop, Esc) can warn before discarding an
   // exception justification or a note the user typed but didn't save.
   // The attestation outcome itself saves on the verdict button click,
   // so only its "attested by" free-text field can be dirty.
-  const dirty =
-    exceptionReason.trim() !== (savedException?.reason ?? "") ||
-    (exceptionGrantedBy.trim() || "") !== (savedException?.grantedBy ?? "") ||
-    (attestationBy.trim() || "") !== (savedAttestation?.attestedBy ?? "") ||
-    noteText.trim() !== (savedNote?.text ?? "");
+  const exceptionDirty =
+    exception.form.reason.trim() !== (savedException?.reason ?? "") ||
+    (exception.form.grantedBy.trim() || "") !== (savedException?.grantedBy ?? "");
+  const attestationDirty =
+    (attestation.form.attestedBy.trim() || "") !== (savedAttestation?.attestedBy ?? "");
+  const noteDirty = note.form.text.trim() !== (savedNote?.text ?? "");
+  const dirty = exceptionDirty || attestationDirty || noteDirty;
 
   // Runs `action` immediately when there's nothing unsaved; otherwise
   // defers it behind the discard prompt. Both closing and prev/next go
@@ -168,43 +177,16 @@ export function DetailDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, confirmDiscard, dirty, prevRecId, nextRecId]);
 
-  // Briefly shows "Saved" next to the action button. The closure-captured
-  // `which` means rapid back-to-back saves don't clobber each other's flash.
-  function flashSaved(which: SaveTarget) {
-    setSavedFlash(which);
-    setTimeout(() => {
-      setSavedFlash((prev) => (prev === which ? null : prev));
-    }, 2000);
-  }
-
-  // Reflects the real persistence outcome instead of always flashing
-  // "Saved": a failed write (disk error, etc.) leaves the in-memory
-  // state ahead of disk, so the user needs to know to retry.
-  async function persist(
-    which: SaveTarget,
-    next: UserState,
-  ) {
-    const ok = await onUpdate(next);
-    if (ok) {
-      setSaveError((prev) => (prev === which ? null : prev));
-      flashSaved(which);
-    } else {
-      setSavedFlash((prev) => (prev === which ? null : prev));
-      setSaveError(which);
-    }
-  }
-
   function saveException() {
     if (!rec) return;
-    const existing = userState.exceptions[rec.id];
     const next: Exception = {
-      reason: exceptionReason.trim(),
+      reason: exception.form.reason.trim(),
       // Preserve the original timestamp on edits so the audit history
       // reflects when the decision was first made.
-      grantedAt: existing?.grantedAt ?? new Date().toISOString(),
-      grantedBy: exceptionGrantedBy.trim() || null,
+      grantedAt: savedException?.grantedAt ?? new Date().toISOString(),
+      grantedBy: exception.form.grantedBy.trim() || null,
     };
-    void persist("exception", {
+    void exception.commit({
       ...userState,
       exceptions: { ...userState.exceptions, [rec.id]: next },
     });
@@ -214,21 +196,21 @@ export function DetailDrawer({
     if (!rec) return;
     const exceptions = { ...userState.exceptions };
     delete exceptions[rec.id];
-    void persist("exception", { ...userState, exceptions });
+    void exception.commit({ ...userState, exceptions });
   }
 
   function saveAttestation(outcome: AttestationOutcome) {
     if (!rec) return;
     const next: Attestation = {
       outcome,
-      attestedBy: attestationBy.trim() || null,
+      attestedBy: attestation.form.attestedBy.trim() || null,
       // Stamp every save with the current time (not preserved like an
       // exception's grantedAt): re-attesting means the admin re-checked
       // against the current device state, so the timestamp must move
       // forward to clear the "scan ran since" staleness badge.
       attestedAt: new Date().toISOString(),
     };
-    void persist("attestation", {
+    void attestation.commit({
       ...userState,
       attestations: { ...userState.attestations, [rec.id]: next },
     });
@@ -238,16 +220,16 @@ export function DetailDrawer({
     if (!rec) return;
     const attestations = { ...userState.attestations };
     delete attestations[rec.id];
-    void persist("attestation", { ...userState, attestations });
+    void attestation.commit({ ...userState, attestations });
   }
 
   function saveNote() {
     if (!rec) return;
     const next: Note = {
-      text: noteText.trim(),
+      text: note.form.text.trim(),
       updatedAt: new Date().toISOString(),
     };
-    void persist("note", {
+    void note.commit({
       ...userState,
       notes: { ...userState.notes, [rec.id]: next },
     });
@@ -257,12 +239,12 @@ export function DetailDrawer({
     if (!rec) return;
     const notes = { ...userState.notes };
     delete notes[rec.id];
-    void persist("note", { ...userState, notes });
+    void note.commit({ ...userState, notes });
   }
 
   const status = rec ? effectiveStatus(rec, scan, userState) : null;
-  const hasException = rec ? userState.exceptions[rec.id] !== undefined : false;
-  const hasNote = rec ? userState.notes[rec.id] !== undefined : false;
+  const hasException = savedException !== undefined;
+  const hasNote = savedNote !== undefined;
   const machineStatus = rec ? scan.results[rec.id]?.status : undefined;
   // Attestation is only meaningful for a Manual scan verdict — an
   // automated Pass/Fail stands on its own and must not be overridable.
@@ -438,8 +420,13 @@ export function DetailDrawer({
                     Attested by (optional)
                     <input
                       type="text"
-                      value={attestationBy}
-                      onChange={(e) => setAttestationBy(e.target.value)}
+                      value={attestation.form.attestedBy}
+                      onChange={(e) =>
+                        attestation.setForm((f) => ({
+                          ...f,
+                          attestedBy: e.target.value,
+                        }))
+                      }
                     />
                   </label>
                   <div className="drawer-actions">
@@ -466,16 +453,7 @@ export function DetailDrawer({
                         Remove
                       </button>
                     )}
-                    {savedFlash === "attestation" && (
-                      <span className="saved-flash" role="status">
-                        Saved
-                      </span>
-                    )}
-                    {saveError === "attestation" && (
-                      <span className="save-error" role="alert">
-                        Couldn't save — not stored on disk. Try again.
-                      </span>
-                    )}
+                    <SaveStatus state={attestation.status} />
                   </div>
                 </section>
               )}
@@ -491,16 +469,23 @@ export function DetailDrawer({
                   Reason
                   <textarea
                     rows={3}
-                    value={exceptionReason}
-                    onChange={(e) => setExceptionReason(e.target.value)}
+                    value={exception.form.reason}
+                    onChange={(e) =>
+                      exception.setForm((f) => ({ ...f, reason: e.target.value }))
+                    }
                   />
                 </label>
                 <label>
                   Granted by (optional)
                   <input
                     type="text"
-                    value={exceptionGrantedBy}
-                    onChange={(e) => setExceptionGrantedBy(e.target.value)}
+                    value={exception.form.grantedBy}
+                    onChange={(e) =>
+                      exception.setForm((f) => ({
+                        ...f,
+                        grantedBy: e.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <div className="drawer-actions">
@@ -508,7 +493,7 @@ export function DetailDrawer({
                     type="button"
                     className="button-primary"
                     onClick={saveException}
-                    disabled={!exceptionReason.trim()}
+                    disabled={!exception.form.reason.trim()}
                   >
                     Save exception
                   </button>
@@ -521,14 +506,7 @@ export function DetailDrawer({
                       Remove
                     </button>
                   )}
-                  {savedFlash === "exception" && (
-                    <span className="saved-flash" role="status">Saved</span>
-                  )}
-                  {saveError === "exception" && (
-                    <span className="save-error" role="alert">
-                      Couldn't save — not stored on disk. Try again.
-                    </span>
-                  )}
+                  <SaveStatus state={exception.status} />
                 </div>
               </section>
 
@@ -538,8 +516,10 @@ export function DetailDrawer({
                   Investigation notes, links, decisions — won't change pass/fail.
                   <textarea
                     rows={4}
-                    value={noteText}
-                    onChange={(e) => setNoteText(e.target.value)}
+                    value={note.form.text}
+                    onChange={(e) =>
+                      note.setForm((f) => ({ ...f, text: e.target.value }))
+                    }
                   />
                 </label>
                 <div className="drawer-actions">
@@ -547,7 +527,7 @@ export function DetailDrawer({
                     type="button"
                     className="button-primary"
                     onClick={saveNote}
-                    disabled={!noteText.trim()}
+                    disabled={!note.form.text.trim()}
                   >
                     Save note
                   </button>
@@ -560,14 +540,7 @@ export function DetailDrawer({
                       Remove
                     </button>
                   )}
-                  {savedFlash === "note" && (
-                    <span className="saved-flash" role="status">Saved</span>
-                  )}
-                  {saveError === "note" && (
-                    <span className="save-error" role="alert">
-                      Couldn't save — not stored on disk. Try again.
-                    </span>
-                  )}
+                  <SaveStatus state={note.status} />
                 </div>
               </section>
 
