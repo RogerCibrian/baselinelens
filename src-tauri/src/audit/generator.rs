@@ -14,7 +14,6 @@ use std::path::PathBuf;
 
 use crate::audit::AUDIT_SCRIPT_VERSION;
 use crate::audit::error::AuditError;
-use crate::storage::error::StorageError;
 use crate::storage::paths;
 
 /// Static audit-script content, baked into the binary so the runtime
@@ -31,7 +30,7 @@ const DEVICE_INFO_SCRIPT: &str = include_str!("../../ps/device-info.ps1");
 /// microseconds, and "always current" is worth more than the saved I/O.
 pub(crate) fn ensure_script() -> Result<PathBuf, AuditError> {
     ensure_device_info_script()?;
-    let path = paths::audit_script_path(AUDIT_SCRIPT_VERSION).map_err(map_storage_err)?;
+    let path = paths::audit_script_path(AUDIT_SCRIPT_VERSION)?;
     write_script(&path, AUDIT_SCRIPT)?;
     Ok(path)
 }
@@ -41,7 +40,7 @@ pub(crate) fn ensure_script() -> Result<PathBuf, AuditError> {
 /// standalone) and by `ensure_script` (which co-locates it next to
 /// `audit.ps1` so dot-sourcing works).
 pub(crate) fn ensure_device_info_script() -> Result<PathBuf, AuditError> {
-    let path = paths::device_info_script_path().map_err(map_storage_err)?;
+    let path = paths::device_info_script_path()?;
     write_script(&path, DEVICE_INFO_SCRIPT)?;
     Ok(path)
 }
@@ -57,13 +56,6 @@ fn write_script(path: &PathBuf, body: &str) -> Result<(), AuditError> {
         path: path.clone(),
         source,
     })
-}
-
-fn map_storage_err(err: StorageError) -> AuditError {
-    AuditError::Io {
-        path: PathBuf::new(),
-        source: std::io::Error::other(err.to_string()),
-    }
 }
 
 #[cfg(test)]

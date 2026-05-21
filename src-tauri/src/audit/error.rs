@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+use crate::storage::error::StorageError;
+
 #[derive(Debug, Error)]
 pub(crate) enum AuditError {
     #[error("Failed to read or write {path}.")]
@@ -12,6 +14,14 @@ pub(crate) enum AuditError {
         #[source]
         source: std::io::Error,
     },
+
+    /// Propagated from the storage layer when resolving paths or
+    /// reading/writing baselines fails. Held as the original
+    /// `StorageError` so the path and source chain survive — its
+    /// `Display` is already user-readable and surfaces unchanged through
+    /// `#[error(transparent)]`.
+    #[error(transparent)]
+    Storage(#[from] StorageError),
 
     #[error("Failed to spawn powershell.exe.")]
     Spawn(#[source] std::io::Error),
