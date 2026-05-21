@@ -3,7 +3,7 @@
 // and src-tauri/Cargo.toml so they stay in sync.
 //
 // Usage:
-//   node scripts/bump-version.mjs <semver>
+//   node scripts/bump-version.js <semver>
 //   npm run bump-version -- <semver>      (the `--` is required so npm
 //                                          passes the version through)
 //
@@ -18,8 +18,8 @@ const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 const next = process.argv[2];
 if (!next || !SEMVER.test(next)) {
-  console.error("Usage: node scripts/bump-version.mjs <semver>");
-  console.error("       e.g. node scripts/bump-version.mjs 0.2.0");
+  console.error("Usage: node scripts/bump-version.js <semver>");
+  console.error("       e.g. node scripts/bump-version.js 0.2.0");
   process.exit(1);
 }
 
