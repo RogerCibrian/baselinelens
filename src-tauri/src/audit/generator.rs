@@ -10,7 +10,7 @@
 //! standalone entry point for the onboarding `get_device_info` command.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::audit::AUDIT_SCRIPT_VERSION;
 use crate::audit::error::AuditError;
@@ -45,7 +45,7 @@ pub(crate) fn ensure_device_info_script() -> Result<PathBuf, AuditError> {
     Ok(path)
 }
 
-fn write_script(path: &PathBuf, body: &str) -> Result<(), AuditError> {
+fn write_script(path: &Path, body: &str) -> Result<(), AuditError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|source| AuditError::Io {
             path: parent.to_path_buf(),
@@ -53,7 +53,7 @@ fn write_script(path: &PathBuf, body: &str) -> Result<(), AuditError> {
         })?;
     }
     fs::write(path, body).map_err(|source| AuditError::Io {
-        path: path.clone(),
+        path: path.to_path_buf(),
         source,
     })
 }

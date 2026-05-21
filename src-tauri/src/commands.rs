@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -62,10 +62,10 @@ fn lock_cancel(scan_control: &ScanControl) -> std::sync::MutexGuard<'_, Option<P
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn clear_cancel_sentinel(scan_control: &ScanControl, path: &PathBuf) {
+fn clear_cancel_sentinel(scan_control: &ScanControl, path: &Path) {
     let _ = std::fs::remove_file(path);
     let mut guard = lock_cancel(scan_control);
-    if guard.as_deref() == Some(path.as_path()) {
+    if guard.as_deref() == Some(path) {
         *guard = None;
     }
 }
