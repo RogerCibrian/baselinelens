@@ -6,7 +6,7 @@
 
 use crate::parser::classify::expected;
 use crate::parser::classify::{DetectCtx, Detection};
-use crate::parser::model::{AuditProcedure, ExpectedValue, SeceditSection, Value};
+use crate::parser::model::{AuditProcedure, ExpectedValue, Value};
 use crate::parser::structure::RawRecommendation;
 
 /// Secedit owns recs whose remediation references a Security Options or
@@ -41,11 +41,7 @@ pub(super) fn try_parse(rec: &RawRecommendation) -> Option<AuditProcedure> {
     let remediation = rec.sections.remediation.as_deref()?;
     let setting = extract_setting(remediation)?;
     let expected = parse_expected(rec)?;
-    Some(AuditProcedure::Secedit {
-        section: SeceditSection::SystemAccess,
-        setting,
-        expected,
-    })
+    Some(AuditProcedure::Secedit { setting, expected })
 }
 
 fn extract_setting(remediation: &str) -> Option<String> {

@@ -115,9 +115,9 @@ pub(crate) enum AuditProcedure {
         matching: MatchMode,
     },
 
-    /// Account Policies / Security Options (audited via secedit /export).
+    /// Account Policies / Security Options (audited via secedit /export
+    /// against the `[System Access]` INI section).
     Secedit {
-        section: SeceditSection,
         setting: String,
         expected: ExpectedValue,
     },
@@ -154,19 +154,6 @@ pub(crate) enum RegistryScope {
 pub(crate) enum PolicyScope {
     Device,
     User,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(tag = "type")]
-pub(crate) enum SeceditSection {
-    /// Account Policies (Rename Guest, password policy, etc.).
-    SystemAccess,
-    /// Security Options exposed via UI but no separate registry path.
-    RegistryValues,
-    /// System Services.
-    Service,
-    /// Escape hatch for sections we encounter outside the above.
-    Other { name: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]

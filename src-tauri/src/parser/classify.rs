@@ -37,10 +37,16 @@ enum Detection {
 ///
 /// Each variant module owns a `detect` that decides whether the rec is its
 /// shape and, if so, parses it. The dispatcher tries them in priority
-/// order and takes the first non-`NotApplicable` answer. The order is
-/// intentional: some shapes are subsets of others (PolicyManager is the
-/// `_WinningProvider` subset of "has a registry path"), so a more specific
-/// detector must run before a more general one.
+/// order and takes the first non-`NotApplicable` answer.
+///
+/// Order is from most-specific cue to least: PolicyManager owns the
+/// `_WinningProvider` subset, AuditPolicy owns recs that run `auditpol`,
+/// URA and Secedit own recs whose remediation references a Settings
+/// Catalog / Local Security Policy path. Registry runs last as the
+/// catch-all for anything with an HKLM/HKU path -- otherwise a rec whose
+/// audit body happens to cite a registry path alongside an LSP cue would
+/// be silently claimed as Registry and never reach the specific detector
+/// that actually matches its shape.
 pub(crate) fn audit_procedure(rec: &RawRecommendation) -> AuditProcedure {
     let Some(body) = rec.sections.audit.as_deref() else {
         return manual("missing audit section");
@@ -53,10 +59,10 @@ pub(crate) fn audit_procedure(rec: &RawRecommendation) -> AuditProcedure {
 
     let detectors: [fn(&DetectCtx) -> Detection; 5] = [
         policy_manager::detect,
-        registry::detect,
         audit_policy::detect,
         user_rights_assignment::detect,
         secedit::detect,
+        registry::detect,
     ];
     for detect in detectors {
         match detect(&ctx) {

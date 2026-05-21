@@ -49,24 +49,22 @@ pub(super) fn try_parse(body: &str, paths: &[JoinedPath]) -> Option<AuditProcedu
 
     // Per-key fallback: the audit text says "value of N1 (NameA) and N2 (NameB)" —
     // each check looks up its expected value by matching value_name to NameA/NameB.
+    // Every extracted path must match a labeled entry — anything less is a sign
+    // the body and the path list disagree (PDF wrap mangling a label, or a path
+    // the labels don't cover), and a partially-covered check would silently pass
+    // without flagging the missing keys. Bail to Manual instead.
     if let Some(per_key) = expected::parse_per_key_dword(body) {
-        let checks: Vec<RegistryCheck> = scoped
-            .into_iter()
-            .filter_map(|(scope, joined)| {
-                let entry = per_key
-                    .iter()
-                    .find(|(name, _)| name == &joined.value_name)?;
-                Some(RegistryCheck {
-                    path: joined.path.clone(),
-                    value_name: joined.value_name.clone(),
-                    expected: entry.1.clone(),
-                    scope,
-                })
-            })
-            .collect();
-        if !checks.is_empty() {
-            return Some(AuditProcedure::Registry { checks });
+        let mut checks = Vec::with_capacity(scoped.len());
+        for (scope, joined) in &scoped {
+            let entry = per_key.iter().find(|(name, _)| name == &joined.value_name)?;
+            checks.push(RegistryCheck {
+                path: joined.path.clone(),
+                value_name: joined.value_name.clone(),
+                expected: entry.1.clone(),
+                scope: *scope,
+            });
         }
+        return Some(AuditProcedure::Registry { checks });
     }
 
     None
@@ -159,6 +157,21 @@ HKLM\\SOFTWARE\\Y:DoReport
             }
             _ => panic!("expected Registry variant"),
         }
+    }
+
+    #[test]
+    fn try_parse_returns_none_when_per_key_label_missing_for_a_path() {
+        // Three paths but only two labels — the third path can't be mapped
+        // to an expected value, so try_parse must bail rather than silently
+        // produce a two-check rec that omits the third.
+        let body = "\
+REG_DWORD value of 1 (Disabled) and 0 (DoReport).
+HKLM\\SOFTWARE\\X:Disabled
+HKLM\\SOFTWARE\\Y:DoReport
+HKLM\\SOFTWARE\\Z:Extra
+";
+        let paths = paths_for(body);
+        assert!(try_parse(body, &paths).is_none());
     }
 
     #[test]

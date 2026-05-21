@@ -162,8 +162,11 @@ export type AuditProcedure =
 { type: "PolicyManager"; scope: PolicyScope; area: string; setting: string; expected: ExpectedValue } | 
 // User Rights Assignment (audited via secedit /export → [Privilege Rights]).
 { type: "UserRightsAssignment"; rightName: string; expected: Principal[]; matching: MatchMode } | 
-// Account Policies / Security Options (audited via secedit /export).
-{ type: "Secedit"; section: SeceditSection; setting: string; expected: ExpectedValue } | 
+/**
+ *  Account Policies / Security Options (audited via secedit /export
+ *  against the `[System Access]` INI section).
+ */
+{ type: "Secedit"; setting: string; expected: ExpectedValue } | 
 // Audit subcategory via auditpol /get /subcategory:"{GUID}".
 { type: "AuditPolicy"; subcategoryGuid: string; expected: AuditPolicyMode; matching: MatchMode } | 
 // No automated audit available.
@@ -472,16 +475,6 @@ export type ScanSummary = {
 	parserVersion: string,
 	auditScriptVersion: string,
 };
-
-export type SeceditSection = 
-// Account Policies (Rename Guest, password policy, etc.).
-{ type: "SystemAccess" } | 
-// Security Options exposed via UI but no separate registry path.
-{ type: "RegistryValues" } | 
-// System Services.
-{ type: "Service" } | 
-// Escape hatch for sections we encounter outside the above.
-{ type: "Other"; name: string };
 
 export type Status = "Pass" | "Fail" | "Manual" | "Error";
 
