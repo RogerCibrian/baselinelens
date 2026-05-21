@@ -15,7 +15,6 @@ A two-audience desktop dashboard for evaluating a Windows 11 endpoint against a 
 - **Never commit CIS Benchmark prose.** Recommendation titles (their specific phrasing), descriptions, rationale text, and audit/remediation procedure text are off-limits. **Factual OS configuration data** — registry paths, GPO paths, expected DWORD/string/binary values — is fact, not prose, and is fine to ship. Test fixtures must use invented prose; real OS setting paths alongside is fine.
 - **Marketing/UI copy stays nominative.** Acceptable: "parses CIS Microsoft Intune for Windows 11 Benchmark PDFs you provide." Never: "CIS-compliant," "CIS-certified," or anything implying CIS endorsement. Applies to in-app strings, error messages, docstrings.
 - **Don't commit without an explicit user ask.** A task list entry is not authorization; only a direct instruction is.
-- **Don't write README.md or other user-facing docs preemptively.** Defer until there's working code worth describing.
 
 ## Rust conventions
 
@@ -72,7 +71,7 @@ Follow the [Rust API Guidelines naming chapter](https://rust-lang.github.io/api-
 
 - **Commands** (`#[tauri::command]`): small, single-purpose, return `Result<T, String>`. `snake_case` on the Rust side; the same name is invoked from TS (`invoke('parse_pdf', { path })`).
 - **State**: managed via `tauri::State<T>`; never globals or `static mut`. State types implement `Send + Sync`; wrap mutability in `Mutex`/`RwLock`.
-- **TS bindings**: generate from Rust structs via `tauri-specta` (when added). Never hand-maintain dual definitions.
+- **TS bindings**: generate from Rust structs via `tauri-specta`. Never hand-maintain dual definitions.
 - **Capabilities** (`src-tauri/capabilities/`): minimum-permissions principle. Don't grant `fs:default` or `shell:allow-execute` blanket; allowlist specific commands and paths.
 - **`tauri.conf.json`**: edit by hand. The Tauri VS Code extension provides schema autocomplete.
 
@@ -87,8 +86,7 @@ Follow the [Rust API Guidelines naming chapter](https://rust-lang.github.io/api-
 ## PowerShell conventions
 
 - **Target version: PowerShell 5.1** (the default on Windows 11). PS 7 will run 5.1 syntax, but we don't require users to have PS 7. Avoid 7-only features: `??` (null-coalescing), `?.` (null-conditional), ternary `condition ? a : b`, `ForEach-Object -Parallel`, `Get-Error`, `pwsh`-only modules. Dev environment on Mac is PS 7 (`pwsh`); real audit-cmdlet testing must happen on Windows since most cmdlets we use (`Get-ItemProperty HKLM:\...`, `Get-BitLockerVolume`, `secedit`, etc.) are Windows-only.
-- **Templates** (`ps/templates/*.ps1.tera`): one rule type per template (registry, secedit, BitLocker, etc.). Tera variables only at the top of the file.
-- **Output contract**: every audit script emits a single JSON document to stdout — `[{id, status, current_value, expected_value}]`. Errors go to stderr, never to stdout.
+- **Output contract**: scripts emit NDJSON to stdout — one JSON object per line, discriminated by `type` (e.g. `{"type":"device",...}`, `{"type":"result",...}`). Errors go to stderr, never to stdout.
 - **Naming**: PowerShell-approved verbs (`Get-`, `Set-`, `Test-`, `Invoke-` — see `Get-Verb`).
 - **Style**: PSScriptAnalyzer defaults; no aliases (`gci` → `Get-ChildItem`); `param()` blocks at the top with explicit types.
 
@@ -140,7 +138,9 @@ When branching, use `type/short-description` (`feat/parser-extraction`, `fix/reg
 ```
 baselinelens/
 ├── CLAUDE.md, .gitignore, .gitattributes
+├── LICENSE-MIT, LICENSE-APACHE
 ├── package.json, tsconfig.json, vite.config.ts, index.html
+├── scripts/              # bump-version.js (sync version across package.json, tauri.conf.json, Cargo.toml)
 ├── src/                  # React frontend (TS)
 └── src-tauri/            # Rust backend
     ├── Cargo.toml, tauri.conf.json, build.rs
