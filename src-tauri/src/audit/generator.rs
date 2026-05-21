@@ -71,7 +71,7 @@ mod tests {
     use super::*;
     use crate::parser::model::{
         AuditPolicyMode, AuditProcedure, ExpectedValue, MatchMode, PolicyScope, RegistryCheck,
-        SeceditSection, Value,
+        Value,
     };
     use serde_json::Value as JsonValue;
 
@@ -169,7 +169,6 @@ mod tests {
                 matching: MatchMode::Exact,
             },
             AuditProcedure::Secedit {
-                section: SeceditSection::SystemAccess,
                 setting: String::new(),
                 expected: ExpectedValue::Absent,
             },
