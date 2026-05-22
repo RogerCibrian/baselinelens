@@ -78,7 +78,8 @@ Follow the [Rust API Guidelines naming chapter](https://rust-lang.github.io/api-
 ## Frontend conventions (React + TypeScript)
 
 - No explicit `any`, even where TS would let you. Use `unknown` and narrow.
-- **Function components only.** Hooks for state; no class components.
+- **Function components only.** Hooks for state; no class components. The sole exception is the top-level error boundary (`src/ErrorBoundary.tsx`).
+- **App-wide state goes through context, not prop drilling.** Display preferences (theme, time format, density) reach their consumers via `src/app/PreferencesContext.tsx` (`usePreferences()`), not threaded through intermediaries like Dashboard. `App` still owns the state and persistence; the context only delivers it. One context per concern; memoize the value (App re-renders often). Don't reach for context for state with a single consumer.
 - **Styling**: CSS tokens from `src/styles/tokens.css`. No inline styles for layout; inline only for one-off dynamic values that depend on data.
 - **Component file layout**: one component per file unless tightly-coupled siblings; co-locate component-local types at the top of the file.
 - **Imports**: external packages first, then `@/` aliases, then relative — separated by a blank line.
@@ -146,7 +147,7 @@ baselinelens/
 ├── src/                  # React frontend (TS)
 │   ├── App.tsx, main.tsx, ErrorBoundary.tsx   # shell + top-level boundary
 │   ├── Overview.tsx, Console.tsx, Onboarding.tsx  # the three top-level screens
-│   ├── app/             # post-load shell pieces (Dashboard, SettingsMenu, banners)
+│   ├── app/             # post-load shell (Dashboard, SettingsMenu, banners) + PreferencesContext
 │   ├── overview/        # Overview's per-section components + util.ts
 │   ├── console/         # Console table, filters, saved views
 │   │   └── drawer/      # the recommendation detail drawer's sections
