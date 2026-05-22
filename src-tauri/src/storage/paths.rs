@@ -54,6 +54,18 @@ pub(crate) fn device_info_script_path() -> Result<PathBuf, StorageError> {
     Ok(data_dir()?.join("device-info.ps1"))
 }
 
+/// Path to the cached `audit-registry.ps1` helper. Sits next to
+/// `audit.ps1` so it resolves through `$PSScriptRoot` when dot-sourced.
+pub(crate) fn audit_registry_script_path() -> Result<PathBuf, StorageError> {
+    Ok(data_dir()?.join("audit-registry.ps1"))
+}
+
+/// Path to the cached `audit-security-policy.ps1` helper. Sits next to
+/// `audit.ps1` so it resolves through `$PSScriptRoot` when dot-sourced.
+pub(crate) fn audit_security_policy_script_path() -> Result<PathBuf, StorageError> {
+    Ok(data_dir()?.join("audit-security-policy.ps1"))
+}
+
 /// Directory holding the scan-related files for one baseline.
 pub(crate) fn scans_dir_for_baseline(baseline_sha: &str) -> Result<PathBuf, StorageError> {
     Ok(data_dir()?.join("scans").join(baseline_sha))

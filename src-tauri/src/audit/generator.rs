@@ -1,13 +1,16 @@
-//! Ensures the static `audit.ps1` and its sibling `device-info.ps1` are
-//! on disk and returns the audit-script path. The audit body is the same
-//! for every baseline — it reads the baseline JSON at runtime and
-//! dispatches per recommendation — so there's no per-baseline rendering
-//! step. Versioning the audit filename means a script edit naturally
-//! invalidates the cache without each call having to compare contents.
+//! Ensures the static `audit.ps1`, its dot-sourced helper modules, and
+//! its sibling `device-info.ps1` are on disk and returns the
+//! audit-script path. The audit body is the same for every baseline — it
+//! reads the baseline JSON at runtime and dispatches per recommendation
+//! — so there's no per-baseline rendering step. Versioning the audit
+//! filename means a script edit naturally invalidates the cache without
+//! each call having to compare contents.
 //!
-//! `device-info.ps1` lives next to the audit script (so the audit
-//! script can dot-source it via `$PSScriptRoot`) and is also the
-//! standalone entry point for the onboarding `get_device_info` command.
+//! `audit.ps1` dot-sources `audit-registry.ps1`,
+//! `audit-security-policy.ps1`, and `device-info.ps1` via `$PSScriptRoot`,
+//! so all four are written to the same directory. `device-info.ps1` is
+//! also the standalone entry point for the onboarding `get_device_info`
+//! command.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,16 +23,28 @@ use crate::storage::paths;
 /// doesn't have to discover a `ps/` directory on disk.
 const AUDIT_SCRIPT: &str = include_str!("../../ps/audit.ps1");
 
+/// Registry-read helpers dot-sourced by `audit.ps1`.
+const AUDIT_REGISTRY_SCRIPT: &str = include_str!("../../ps/audit-registry.ps1");
+
+/// Local-security-policy helpers dot-sourced by `audit.ps1`.
+const AUDIT_SECURITY_POLICY_SCRIPT: &str = include_str!("../../ps/audit-security-policy.ps1");
+
 /// Static device-info script content. Same baking rationale as the
 /// audit script.
 const DEVICE_INFO_SCRIPT: &str = include_str!("../../ps/device-info.ps1");
 
-/// Writes both `audit.ps1` and `device-info.ps1` to disk and returns
-/// the audit-script path. Overwrites unconditionally on every call —
-/// the embedded scripts are a few kilobytes, the writes are
-/// microseconds, and "always current" is worth more than the saved I/O.
+/// Writes `audit.ps1`, its dot-sourced helper modules, and
+/// `device-info.ps1` to disk and returns the audit-script path.
+/// Overwrites unconditionally on every call — the embedded scripts are a
+/// few kilobytes, the writes are microseconds, and "always current" is
+/// worth more than the saved I/O.
 pub(crate) fn ensure_script() -> Result<PathBuf, AuditError> {
     ensure_device_info_script()?;
+    write_script(&paths::audit_registry_script_path()?, AUDIT_REGISTRY_SCRIPT)?;
+    write_script(
+        &paths::audit_security_policy_script_path()?,
+        AUDIT_SECURITY_POLICY_SCRIPT,
+    )?;
     let path = paths::audit_script_path(AUDIT_SCRIPT_VERSION)?;
     write_script(&path, AUDIT_SCRIPT)?;
     Ok(path)
