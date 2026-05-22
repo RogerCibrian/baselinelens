@@ -82,3 +82,72 @@ fn unknown_device() -> DeviceInfo {
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audit::model::Status;
+
+    fn record(id: &str, status: Status, current: Option<&str>) -> ScanRecord {
+        ScanRecord {
+            id: id.to_string(),
+            status,
+            measured_at: Utc::now(),
+            current_value: current.map(String::from),
+            expected: None,
+            checks: Vec::new(),
+            error: None,
+        }
+    }
+
+    fn collector() -> ScanCollector {
+        ScanCollector::new("sha".to_string(), 1, 1)
+    }
+
+    #[test]
+    fn record_keeps_latest_when_id_repeats() {
+        let mut collector = collector();
+        collector.record(record("1.1", Status::Fail, Some("old")));
+        collector.record(record("1.1", Status::Pass, Some("new")));
+        let scan = collector.finish(None);
+        assert_eq!(scan.results.len(), 1);
+        let result = &scan.results["1.1"];
+        assert_eq!(result.status, Status::Pass);
+        assert_eq!(result.current_value.as_deref(), Some("new"));
+    }
+
+    #[test]
+    fn finish_stamps_finished_at_and_carries_error() {
+        let mut collector = collector();
+        collector.record(record("1.1", Status::Pass, None));
+        let scan = collector.finish(Some("scan aborted".to_string()));
+        assert!(scan.finished_at.is_some());
+        assert_eq!(scan.error.as_deref(), Some("scan aborted"));
+    }
+
+    #[test]
+    fn finish_falls_back_to_unknown_device_when_unset() {
+        let scan = collector().finish(None);
+        assert_eq!(scan.device.hostname, "unknown");
+        assert!(!scan.device.managed_by.intune);
+        assert!(!scan.device.managed_by.group_policy);
+    }
+
+    #[test]
+    fn finish_uses_the_device_that_was_set() {
+        let mut collector = collector();
+        collector.set_device(DeviceInfo {
+            hostname: "HOST-1".to_string(),
+            os_name: "Windows 11".to_string(),
+            os_version: "10.0".to_string(),
+            os_build: "22631".to_string(),
+            managed_by: Management {
+                intune: true,
+                group_policy: false,
+            },
+        });
+        let scan = collector.finish(None);
+        assert_eq!(scan.device.hostname, "HOST-1");
+        assert!(scan.device.managed_by.intune);
+    }
+}
