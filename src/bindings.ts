@@ -428,7 +428,7 @@ export type ScanRecord = {
 	measuredAt: string,
 	currentValue: string | null,
 	expected: string | null,
-	checks: CheckDetail[] | null,
+	checks?: CheckDetail[],
 	error: string | null,
 };
 
@@ -446,7 +446,7 @@ export type ScanResult = {
 	 *  Registry recs, or a single conceptual row for the other variants.
 	 *  The drawer renders this as a Path / Value / Expected / Found table.
 	 */
-	checks: CheckDetail[] | null,
+	checks?: CheckDetail[],
 	error: string | null,
 	measuredAt: string,
 };

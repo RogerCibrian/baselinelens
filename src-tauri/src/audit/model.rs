@@ -53,7 +53,8 @@ pub(crate) struct ScanResult {
     /// Per-check structured breakdown: one entry per `RegistryCheck` for
     /// Registry recs, or a single conceptual row for the other variants.
     /// The drawer renders this as a Path / Value / Expected / Found table.
-    pub(crate) checks: Option<Vec<CheckDetail>>,
+    #[serde(default)]
+    pub(crate) checks: Vec<CheckDetail>,
     pub(crate) error: Option<String>,
     pub(crate) measured_at: DateTime<Utc>,
 }
@@ -91,9 +92,11 @@ pub(crate) struct ScanRecord {
     pub(crate) measured_at: DateTime<Utc>,
     pub(crate) current_value: Option<String>,
     pub(crate) expected: Option<String>,
-    pub(crate) checks: Option<Vec<CheckDetail>>,
+    #[serde(default)]
+    pub(crate) checks: Vec<CheckDetail>,
     pub(crate) error: Option<String>,
 }
+
 
 /// One status flip detected at scan time. Appended to `changes.jsonl`
 /// whenever a rec's status differs from its prior recorded value.
