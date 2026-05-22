@@ -23,15 +23,9 @@ pub(super) fn detect(ctx: &DetectCtx) -> Detection {
             super::policy_path_has(remediation, &["User Rights Assignment\\", "User Rights\\"])
         })
         .unwrap_or(false);
-    if !is_ura {
-        return Detection::NotApplicable;
-    }
-    match try_parse(ctx.rec) {
-        Some(procedure) => Detection::Parsed(procedure),
-        None => Detection::Recognized {
-            reason: "URA body could not be parsed",
-        },
-    }
+    super::run_detector(is_ura, "URA body could not be parsed", || {
+        try_parse(ctx.rec)
+    })
 }
 
 /// Returns a `UserRightsAssignment` `AuditProcedure` if `rec`'s remediation

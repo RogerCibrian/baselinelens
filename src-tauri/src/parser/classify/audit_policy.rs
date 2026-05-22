@@ -8,15 +8,11 @@ use crate::parser::model::{AuditPolicyMode, AuditProcedure, MatchMode};
 /// AuditPolicy owns recs whose audit body runs `auditpol /get
 /// /subcategory:`.
 pub(super) fn detect(ctx: &DetectCtx) -> Detection {
-    if !ctx.body.contains("auditpol /get /subcategory:") {
-        return Detection::NotApplicable;
-    }
-    match try_parse(ctx.body, &ctx.rec.title) {
-        Some(procedure) => Detection::Parsed(procedure),
-        None => Detection::Recognized {
-            reason: "AuditPolicy body could not be parsed",
-        },
-    }
+    super::run_detector(
+        ctx.body.contains("auditpol /get /subcategory:"),
+        "AuditPolicy body could not be parsed",
+        || try_parse(ctx.body, &ctx.rec.title),
+    )
 }
 
 /// Returns an `AuditPolicy` `AuditProcedure` if the body has a recognizable

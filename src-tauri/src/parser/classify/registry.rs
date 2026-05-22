@@ -10,15 +10,11 @@ use crate::parser::model::{AuditProcedure, RegistryCheck, RegistryScope};
 /// Registry owns recs with one or more HKLM/HKU paths. PolicyManager runs
 /// first, so any `_WinningProvider` rec is already claimed before this.
 pub(super) fn detect(ctx: &DetectCtx) -> Detection {
-    if ctx.paths.is_empty() {
-        return Detection::NotApplicable;
-    }
-    match try_parse(ctx.body, &ctx.paths) {
-        Some(procedure) => Detection::Parsed(procedure),
-        None => Detection::Recognized {
-            reason: "registry body could not be parsed",
-        },
-    }
+    super::run_detector(
+        !ctx.paths.is_empty(),
+        "registry body could not be parsed",
+        || try_parse(ctx.body, &ctx.paths),
+    )
 }
 
 /// Returns a `Registry` `AuditProcedure` if `paths` and `body` together
@@ -56,7 +52,9 @@ pub(super) fn try_parse(body: &str, paths: &[JoinedPath]) -> Option<AuditProcedu
     if let Some(per_key) = expected::parse_per_key_dword(body) {
         let mut checks = Vec::with_capacity(scoped.len());
         for (scope, joined) in &scoped {
-            let entry = per_key.iter().find(|(name, _)| name == &joined.value_name)?;
+            let entry = per_key
+                .iter()
+                .find(|(name, _)| name == &joined.value_name)?;
             checks.push(RegistryCheck {
                 path: joined.path.clone(),
                 value_name: joined.value_name.clone(),

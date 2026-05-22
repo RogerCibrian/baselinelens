@@ -82,6 +82,28 @@ fn manual(reason: &str) -> AuditProcedure {
     }
 }
 
+/// Shared body for every variant's `detect`. Returns `NotApplicable` when
+/// `applies` is false; otherwise runs `try_parse` and maps its result to
+/// `Parsed` or — when the shape is recognized but the body couldn't be
+/// read — `Recognized { reason: failure_reason }`. Keeps the
+/// applicable/parsed/recognized envelope identical across detectors so it
+/// can't drift from one to the next.
+fn run_detector(
+    applies: bool,
+    failure_reason: &'static str,
+    try_parse: impl FnOnce() -> Option<AuditProcedure>,
+) -> Detection {
+    if !applies {
+        return Detection::NotApplicable;
+    }
+    match try_parse() {
+        Some(procedure) => Detection::Parsed(procedure),
+        None => Detection::Recognized {
+            reason: failure_reason,
+        },
+    }
+}
+
 /// True when the whitespace-normalized `remediation` contains any of
 /// `markers`. Normalizing first makes the match immune to PDF
 /// line-wraps falling inside a policy-path token.

@@ -23,15 +23,9 @@ pub(super) fn detect(ctx: &DetectCtx) -> Detection {
             super::policy_path_has(remediation, &["Security Options\\", "Account Policies\\"])
         })
         .unwrap_or(false);
-    if !is_secedit {
-        return Detection::NotApplicable;
-    }
-    match try_parse(ctx.rec) {
-        Some(procedure) => Detection::Parsed(procedure),
-        None => Detection::Recognized {
-            reason: "Secedit body could not be parsed",
-        },
-    }
+    super::run_detector(is_secedit, "Secedit body could not be parsed", || {
+        try_parse(ctx.rec)
+    })
 }
 
 /// Returns a `Secedit` `AuditProcedure` if the rec's remediation has a
