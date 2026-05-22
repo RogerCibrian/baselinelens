@@ -11,12 +11,12 @@ import { commands } from "./bindings";
 import type {
   Baseline,
   ChangeEvent,
-  Density,
   Level,
   Scan,
   ScanLoadErrors,
   UserState,
 } from "./bindings";
+import { usePreferences } from "./app/PreferencesContext";
 import { computeDelta, indexLatestChanges } from "./data/changes";
 import { type ConsoleColumns } from "./data/consoleColumns";
 import {
@@ -50,7 +50,6 @@ export default function Console({
   onColumnsChange,
   railCollapsed,
   onRailCollapsedChange,
-  density,
   onUpdateUserState,
   onResetChanges,
 }: {
@@ -71,14 +70,12 @@ export default function Console({
    * that reopens it. */
   railCollapsed: boolean;
   onRailCollapsedChange: (next: boolean) => void;
-  /** Table row spacing — applied as `data-density` for the CSS to
-   * tighten or relax row padding. */
-  density: Density;
   onUpdateUserState: (next: UserState) => Promise<boolean>;
   /** Deletes the per-rec change log and reloads. Invoked from the inline
    * recovery action when `loadErrors.changes` is set. */
   onResetChanges: () => void;
 }) {
+  const { density } = usePreferences();
   const [openRecId, setOpenRecId] = useState<string | null>(null);
   const [selectedRecId, setSelectedRecId] = useState<string | null>(null);
   const [sort, setSort] = useState<Sort>(defaultSort);

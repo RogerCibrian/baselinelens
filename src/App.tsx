@@ -1,5 +1,7 @@
 import {
+  useCallback,
   useEffect,
+  useMemo,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -17,6 +19,10 @@ import {
   type UserState,
 } from "./bindings";
 import { Dashboard, type Tab } from "./app/Dashboard";
+import {
+  PreferencesProvider,
+  type PreferencesContextValue,
+} from "./app/PreferencesContext";
 import {
   loadOrInitUserState,
   parseAtPath,
@@ -105,8 +111,10 @@ function App() {
 
   // Merges a preference patch into app_state.json. Loads the current
   // state first and spreads the existing preferences so writing one
-  // preference can't clobber its siblings.
-  async function persistPreferences(patch: Partial<Preferences>) {
+  // preference can't clobber its siblings. Stable identity (no deps but
+  // the always-stable `commands` import) so the preference setters and
+  // the context value below stay memoizable.
+  const persistPreferences = useCallback(async (patch: Partial<Preferences>) => {
     const current = await commands.loadAppState();
     const base = current.status === "ok" && current.data
       ? current.data
@@ -118,34 +126,58 @@ function App() {
     if (result.status !== "ok") {
       console.error("Failed to save preferences:", result.error);
     }
-  }
+  }, []);
 
   // Persists a theme change to app_state.json (canonical) and writes a
   // localStorage mirror so the pre-paint script in index.html can apply
   // the same value on the next launch without an IPC round-trip.
-  function updateTheme(next: Theme) {
-    setTheme(next);
-    try {
-      localStorage.setItem("theme", next);
-    } catch {
-      // Storage can fail in locked-down contexts; the in-memory + Rust
-      // copies still drive the active session.
-    }
-    void persistPreferences({ theme: next });
-  }
+  const updateTheme = useCallback(
+    (next: Theme) => {
+      setTheme(next);
+      try {
+        localStorage.setItem("theme", next);
+      } catch {
+        // Storage can fail in locked-down contexts; the in-memory + Rust
+        // copies still drive the active session.
+      }
+      void persistPreferences({ theme: next });
+    },
+    [persistPreferences],
+  );
 
   // Applies a clock-format change immediately (the module mirror so
   // timestamps re-render in the new format) and persists it.
-  function updateTimeFormat(next: TimeFormat) {
-    applyTimeFormat(next);
-    setTimeFormatState(next);
-    void persistPreferences({ timeFormat: next });
-  }
+  const updateTimeFormat = useCallback(
+    (next: TimeFormat) => {
+      applyTimeFormat(next);
+      setTimeFormatState(next);
+      void persistPreferences({ timeFormat: next });
+    },
+    [persistPreferences],
+  );
 
-  function updateDensity(next: Density) {
-    setDensityState(next);
-    void persistPreferences({ density: next });
-  }
+  const updateDensity = useCallback(
+    (next: Density) => {
+      setDensityState(next);
+      void persistPreferences({ density: next });
+    },
+    [persistPreferences],
+  );
+
+  // Bundled for PreferencesContext. Memoized so a frequent App re-render
+  // (e.g. typing in the Console search updates `consoleFilter` here)
+  // doesn't hand consumers a fresh object and re-render them needlessly.
+  const preferences = useMemo<PreferencesContextValue>(
+    () => ({
+      theme,
+      timeFormat,
+      density,
+      setTheme: updateTheme,
+      setTimeFormat: updateTimeFormat,
+      setDensity: updateDensity,
+    }),
+    [theme, timeFormat, density, updateTheme, updateTimeFormat, updateDensity],
+  );
 
   // Applies a UserState change locally and persists it. The optimistic
   // update keeps the UI snappy; the returned boolean lets the caller
@@ -209,32 +241,28 @@ function App() {
 
   if (appState.kind === "loaded") {
     return (
-      <Dashboard
-        baseline={appState.baseline}
-        userState={appState.userState}
-        isStale={appState.isStale}
-        autoScan={appState.autoScan ?? false}
-        deviceInfo={deviceInfo}
-        tab={tab}
-        onTabChange={setTab}
-        onReparse={() => void selectAndParse(setAppState)}
-        onClearBaselineData={clearActiveBaselineData}
-        onRemoveBaseline={removeActiveBaseline}
-        onUpdateUserState={updateUserState}
-        consoleFilter={consoleFilter}
-        onConsoleFilterChange={setConsoleFilter}
-        consoleColumns={consoleColumns}
-        onConsoleColumnsChange={setConsoleColumns}
-        consoleRailCollapsed={consoleRailCollapsed}
-        onConsoleRailCollapsedChange={setConsoleRailCollapsed}
-        onJumpToConsole={jumpToConsole}
-        theme={theme}
-        onThemeChange={updateTheme}
-        timeFormat={timeFormat}
-        onTimeFormatChange={updateTimeFormat}
-        density={density}
-        onDensityChange={updateDensity}
-      />
+      <PreferencesProvider value={preferences}>
+        <Dashboard
+          baseline={appState.baseline}
+          userState={appState.userState}
+          isStale={appState.isStale}
+          autoScan={appState.autoScan ?? false}
+          deviceInfo={deviceInfo}
+          tab={tab}
+          onTabChange={setTab}
+          onReparse={() => void selectAndParse(setAppState)}
+          onClearBaselineData={clearActiveBaselineData}
+          onRemoveBaseline={removeActiveBaseline}
+          onUpdateUserState={updateUserState}
+          consoleFilter={consoleFilter}
+          onConsoleFilterChange={setConsoleFilter}
+          consoleColumns={consoleColumns}
+          onConsoleColumnsChange={setConsoleColumns}
+          consoleRailCollapsed={consoleRailCollapsed}
+          onConsoleRailCollapsedChange={setConsoleRailCollapsed}
+          onJumpToConsole={jumpToConsole}
+        />
+      </PreferencesProvider>
     );
   }
   return (

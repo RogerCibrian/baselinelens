@@ -6,15 +6,12 @@ import { Channel } from "@tauri-apps/api/core";
 import {
   commands,
   type Baseline,
-  type Density,
   type DeviceInfo,
   type Scan,
   type ScanContext,
   type ScanLoadErrors,
   type ScanRecord,
   type ScanResult,
-  type Theme,
-  type TimeFormat,
   type UserState,
 } from "../bindings";
 import { type ConsoleColumns } from "../data/consoleColumns";
@@ -63,12 +60,6 @@ function Dashboard({
   consoleRailCollapsed,
   onConsoleRailCollapsedChange,
   onJumpToConsole,
-  theme,
-  onThemeChange,
-  timeFormat,
-  onTimeFormatChange,
-  density,
-  onDensityChange,
 }: {
   baseline: Baseline;
   userState: UserState;
@@ -98,12 +89,6 @@ function Dashboard({
   consoleRailCollapsed: boolean;
   onConsoleRailCollapsedChange: (next: boolean) => void;
   onJumpToConsole: (filter: Partial<ConsoleFilter>) => void;
-  theme: Theme;
-  onThemeChange: (next: Theme) => void;
-  timeFormat: TimeFormat;
-  onTimeFormatChange: (next: TimeFormat) => void;
-  density: Density;
-  onDensityChange: (next: Density) => void;
 }) {
   const [context, setContext] = useState<ScanContext>(emptyScanContext);
   // App version for the settings readout. Fetched once; the command is
@@ -421,15 +406,9 @@ function Dashboard({
           </>
         )}
         <SettingsMenu
-          theme={theme}
-          timeFormat={timeFormat}
-          density={density}
           scanning={scanning}
           baselineSource={baseline.source}
           appVersion={appVersion}
-          onThemeChange={onThemeChange}
-          onTimeFormatChange={onTimeFormatChange}
-          onDensityChange={onDensityChange}
           onChangeBaseline={onReparse}
           onResetLatest={() => void resetScanFile("latest")}
           onResetSummaries={() => void resetScanFile("summaries")}
@@ -504,7 +483,6 @@ function Dashboard({
             onColumnsChange={onConsoleColumnsChange}
             railCollapsed={consoleRailCollapsed}
             onRailCollapsedChange={onConsoleRailCollapsedChange}
-            density={density}
             onUpdateUserState={onUpdateUserState}
             onResetChanges={() => void resetScanFile("changes")}
           />

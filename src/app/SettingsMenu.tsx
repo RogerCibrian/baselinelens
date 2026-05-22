@@ -5,13 +5,13 @@ import {
   commands,
   type BaselineSource,
   type Density,
-  type Theme,
   type TimeFormat,
 } from "../bindings";
 import { formatDate } from "../format";
 import ConfirmDialog from "../ConfirmDialog";
 import SettingSegment from "../SettingSegment";
 import ThemeSegment from "../ThemeSegment";
+import { usePreferences } from "./PreferencesContext";
 
 type PendingConfirm = {
   title: string;
@@ -42,15 +42,9 @@ const DENSITY_LABELS: Record<Density, string> = {
  * error context.
  */
 export function SettingsMenu({
-  theme,
-  timeFormat,
-  density,
   scanning,
   baselineSource,
   appVersion,
-  onThemeChange,
-  onTimeFormatChange,
-  onDensityChange,
   onChangeBaseline,
   onResetLatest,
   onResetSummaries,
@@ -58,9 +52,6 @@ export function SettingsMenu({
   onClearAll,
   onRemoveBaseline,
 }: {
-  theme: Theme;
-  timeFormat: TimeFormat;
-  density: Density;
   /** While a scan runs, baseline-switch and the destructive resets are
    * disabled — they'd race the in-flight run (re-parse swaps the
    * baseline out from under it; a reset clears files it's about to
@@ -70,9 +61,6 @@ export function SettingsMenu({
    * the user can see what they're being measured against. */
   baselineSource: BaselineSource;
   appVersion: string;
-  onThemeChange: (next: Theme) => void;
-  onTimeFormatChange: (next: TimeFormat) => void;
-  onDensityChange: (next: Density) => void;
   onChangeBaseline: () => void;
   onResetLatest: () => void;
   onResetSummaries: () => void;
@@ -82,6 +70,8 @@ export function SettingsMenu({
   /** Removes the baseline entirely; app returns to onboarding. */
   onRemoveBaseline: () => void;
 }) {
+  const { theme, timeFormat, density, setTheme, setTimeFormat, setDensity } =
+    usePreferences();
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   // The three destructive resets sit behind a disclosure so a stray
@@ -177,7 +167,7 @@ export function SettingsMenu({
           <span className="settings-group-label">Preferences</span>
           <div className="settings-section">
             <span className="settings-section-label">Appearance</span>
-            <ThemeSegment theme={theme} onThemeChange={onThemeChange} />
+            <ThemeSegment theme={theme} onThemeChange={setTheme} />
           </div>
           <div className="settings-section">
             <span className="settings-section-label">Time format</span>
@@ -186,7 +176,7 @@ export function SettingsMenu({
               labels={TIME_FORMAT_LABELS}
               value={timeFormat}
               ariaLabel="Time format"
-              onChange={onTimeFormatChange}
+              onChange={setTimeFormat}
             />
           </div>
           <div className="settings-section">
@@ -196,7 +186,7 @@ export function SettingsMenu({
               labels={DENSITY_LABELS}
               value={density}
               ariaLabel="Table density"
-              onChange={onDensityChange}
+              onChange={setDensity}
             />
           </div>
 
