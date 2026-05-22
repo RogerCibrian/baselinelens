@@ -352,11 +352,7 @@ pub(crate) async fn start_scan(
     let run_cancel_path = cancel_path.clone();
     let scan_result = async_runtime::spawn_blocking(move || -> Result<Scan, String> {
         let script_path = generator::ensure_script().map_err(|err| err.to_string())?;
-        let mut collector = ScanCollector::new(
-            baseline_sha,
-            PARSER_VERSION,
-            AUDIT_SCRIPT_VERSION,
-        );
+        let mut collector = ScanCollector::new(baseline_sha, PARSER_VERSION, AUDIT_SCRIPT_VERSION);
         runner::run(
             &script_path,
             &baseline_path,

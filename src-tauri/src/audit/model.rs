@@ -97,7 +97,6 @@ pub(crate) struct ScanRecord {
     pub(crate) error: Option<String>,
 }
 
-
 /// One status flip detected at scan time. Appended to `changes.jsonl`
 /// whenever a rec's status differs from its prior recorded value.
 /// `from_status` is `None` for the first observation of a rec (no prior
