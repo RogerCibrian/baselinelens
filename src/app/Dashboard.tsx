@@ -303,14 +303,11 @@ function Dashboard({
       // truth is unchanged and the user shouldn't lose visibility on
       // their last successful scan just because this attempt failed.
       setContext((prev) => ({ ...prev, latest: previousLatest }));
-      if (result.error === SCAN_CANCELLED_MESSAGE) {
-        // Backend resolved this as a genuine cancel: not a failure, so
-        // no error banner — the dashboard just returns to the prior
-        // scan. Any other error (e.g. elevation denied) still surfaces
-        // even when the user also clicked Cancel, since the cancel
-        // didn't cause it.
-        console.info("Scan cancelled by user.");
-      } else {
+      // A genuine cancel isn't a failure — no banner, the dashboard just
+      // returns to the prior scan. Any other error (e.g. elevation
+      // denied) still surfaces even when the user also clicked Cancel,
+      // since the cancel didn't cause it.
+      if (result.error !== SCAN_CANCELLED_MESSAGE) {
         console.error("Scan failed:", result.error);
         setScanError(result.error);
       }
