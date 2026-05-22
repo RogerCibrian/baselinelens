@@ -140,16 +140,7 @@ pub(crate) fn save_scan_with_diff(
         }
     };
 
-    let events = match prior_latest.as_ref() {
-        None => first_observation_events(scan),
-        Some(prior)
-            if prior.parser_version == scan.parser_version
-                && prior.audit_script_version == scan.audit_script_version =>
-        {
-            diff_to_change_events(prior, scan)
-        }
-        Some(_) => Vec::new(),
-    };
+    let events = change_events_for(prior_latest.as_ref(), scan);
     if !events.is_empty() {
         append_change_events(baseline_sha, &events)?;
     }
@@ -214,6 +205,27 @@ pub(crate) fn load_scan_context(
         },
         errors,
     ))
+}
+
+/// Decides which change events a new scan should record, given the prior
+/// scan if one exists:
+///
+/// - No prior scan — a first-observation event for every rec.
+/// - Prior scan, same parser and script versions — one event per rec
+///   whose status differs from the prior.
+/// - Prior scan, different versions — no events, so a methodology change
+///   doesn't read as device drift in the change log.
+fn change_events_for(prior: Option<&Scan>, scan: &Scan) -> Vec<ChangeEvent> {
+    match prior {
+        None => first_observation_events(scan),
+        Some(prior)
+            if prior.parser_version == scan.parser_version
+                && prior.audit_script_version == scan.audit_script_version =>
+        {
+            diff_to_change_events(prior, scan)
+        }
+        Some(_) => Vec::new(),
+    }
 }
 
 /// Emits a `ChangeEvent` per rec in `scan` with `from_status: None`,
@@ -401,4 +413,77 @@ pub(crate) fn remove_baseline(baseline_sha: &str) -> Result<(), StorageError> {
         save_app_state(&state)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+
+    use super::*;
+    use crate::audit::model::{DeviceInfo, Management, ScanResult, Status};
+
+    fn scan(parser_version: u32, results: &[(&str, Status)]) -> Scan {
+        let results = results
+            .iter()
+            .map(|(id, status)| {
+                (
+                    (*id).to_string(),
+                    ScanResult {
+                        status: *status,
+                        current_value: None,
+                        expected: None,
+                        checks: Vec::new(),
+                        error: None,
+                        measured_at: Utc::now(),
+                    },
+                )
+            })
+            .collect();
+        Scan {
+            baseline_sha256: "sha".to_string(),
+            started_at: Utc::now(),
+            finished_at: Some(Utc::now()),
+            device: DeviceInfo {
+                hostname: "HOST".to_string(),
+                os_name: "Windows 11".to_string(),
+                os_version: "10.0".to_string(),
+                os_build: "22631".to_string(),
+                managed_by: Management {
+                    intune: false,
+                    group_policy: false,
+                },
+            },
+            results,
+            error: None,
+            parser_version,
+            audit_script_version: 1,
+        }
+    }
+
+    #[test]
+    fn no_prior_scan_anchors_every_rec_with_a_first_observation() {
+        let current = scan(1, &[("1.1", Status::Pass), ("1.2", Status::Fail)]);
+        let events = change_events_for(None, &current);
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().all(|event| event.from_status.is_none()));
+    }
+
+    #[test]
+    fn matching_versions_record_only_the_changed_rec() {
+        let prior = scan(1, &[("1.1", Status::Pass), ("1.2", Status::Pass)]);
+        let current = scan(1, &[("1.1", Status::Pass), ("1.2", Status::Fail)]);
+        let events = change_events_for(Some(&prior), &current);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].rec_id, "1.2");
+        assert_eq!(events[0].from_status, Some(Status::Pass));
+        assert_eq!(events[0].to_status, Status::Fail);
+    }
+
+    #[test]
+    fn a_version_change_records_no_events_even_when_status_flips() {
+        let prior = scan(1, &[("1.1", Status::Pass)]);
+        let current = scan(2, &[("1.1", Status::Fail)]);
+        let events = change_events_for(Some(&prior), &current);
+        assert!(events.is_empty());
+    }
 }
