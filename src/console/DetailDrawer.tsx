@@ -11,17 +11,20 @@ import type {
   Note,
   Recommendation,
   Scan,
-  ScanResult,
   UserState,
 } from "../bindings";
-import { paragraphs, verdictKey, verdictLabel } from "../data/consoleModel";
 import { effectiveStatus } from "../data/score";
-import { formatAge, formatTimestamp } from "../format";
 import { useFocusTrap } from "../hooks";
 import { LevelChip } from "../ui";
 import ConfirmDialog from "../ConfirmDialog";
-import { SaveStatus, useSavable } from "./savable";
-import { breakableRegistryPath, NavChevron, StatusPill } from "./widgets";
+import { useSavable } from "./savable";
+import { NavChevron, StatusPill } from "./widgets";
+import { AttestationSection } from "./drawer/AttestationSection";
+import { DrawerCategoryMeta } from "./drawer/DrawerCategoryMeta";
+import { DrawerText } from "./drawer/DrawerText";
+import { ExceptionSection } from "./drawer/ExceptionSection";
+import { NoteSection } from "./drawer/NoteSection";
+import { ScanResultSection } from "./drawer/ScanResultSection";
 
 /**
  * Slide-in detail panel for a single recommendation. Exception and note
@@ -386,163 +389,34 @@ export function DetailDrawer({
               />
 
               {isManual && (
-                <section className="drawer-section">
-                  <h4>Attestation</h4>
-                  <p className="muted drawer-help">
-                    This check has no automated verdict. Record the
-                    result after verifying it by hand — it then counts
-                    in the In-scope pass rate like a scanned result.
-                  </p>
-                  {hasAttestation && savedAttestation && (
-                    <p
-                      className={`attestation-current${
-                        attestationStale ? " attestation-stale" : ""
-                      }`}
-                    >
-                      Attested{" "}
-                      <strong>
-                        {savedAttestation.outcome === "pass"
-                          ? "Pass"
-                          : "Fail"}
-                      </strong>
-                      {savedAttestation.attestedBy
-                        ? ` by ${savedAttestation.attestedBy}`
-                        : ""}{" "}
-                      on {formatTimestamp(savedAttestation.attestedAt)}
-                      {attestationStale && (
-                        <span className="attestation-stale-badge">
-                          A scan has run since — re-attest to confirm
-                        </span>
-                      )}
-                    </p>
-                  )}
-                  <label>
-                    Attested by (optional)
-                    <input
-                      type="text"
-                      value={attestation.form.attestedBy}
-                      onChange={(e) =>
-                        attestation.setForm((f) => ({
-                          ...f,
-                          attestedBy: e.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <div className="drawer-actions">
-                    <button
-                      type="button"
-                      className="button-primary button-pass"
-                      onClick={() => saveAttestation("pass")}
-                    >
-                      Mark passing
-                    </button>
-                    <button
-                      type="button"
-                      className="button-primary button-fail"
-                      onClick={() => saveAttestation("fail")}
-                    >
-                      Mark failing
-                    </button>
-                    {hasAttestation && (
-                      <button
-                        type="button"
-                        className="button-secondary"
-                        onClick={clearAttestation}
-                      >
-                        Remove
-                      </button>
-                    )}
-                    <SaveStatus state={attestation.status} />
-                  </div>
-                </section>
+                <AttestationSection
+                  form={attestation.form}
+                  setForm={attestation.setForm}
+                  status={attestation.status}
+                  saved={savedAttestation}
+                  stale={attestationStale}
+                  onSave={saveAttestation}
+                  onClear={clearAttestation}
+                />
               )}
 
-              <section className="drawer-section">
-                <h4>Exception</h4>
-                <p className="muted drawer-help">
-                  Granting an exception records an accepted risk. The rec
-                  is excluded from the In-scope pass rate and counts
-                  toward Strict compliance.
-                </p>
-                <label>
-                  Reason
-                  <textarea
-                    rows={3}
-                    value={exception.form.reason}
-                    onChange={(e) =>
-                      exception.setForm((f) => ({ ...f, reason: e.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  Granted by (optional)
-                  <input
-                    type="text"
-                    value={exception.form.grantedBy}
-                    onChange={(e) =>
-                      exception.setForm((f) => ({
-                        ...f,
-                        grantedBy: e.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <div className="drawer-actions">
-                  <button
-                    type="button"
-                    className="button-primary"
-                    onClick={saveException}
-                    disabled={!exception.form.reason.trim()}
-                  >
-                    Save exception
-                  </button>
-                  {hasException && (
-                    <button
-                      type="button"
-                      className="button-secondary"
-                      onClick={clearException}
-                    >
-                      Remove
-                    </button>
-                  )}
-                  <SaveStatus state={exception.status} />
-                </div>
-              </section>
+              <ExceptionSection
+                form={exception.form}
+                setForm={exception.setForm}
+                status={exception.status}
+                hasException={hasException}
+                onSave={saveException}
+                onClear={clearException}
+              />
 
-              <section className="drawer-section">
-                <h4>Note</h4>
-                <label>
-                  Investigation notes, links, decisions — won't change pass/fail.
-                  <textarea
-                    rows={4}
-                    value={note.form.text}
-                    onChange={(e) =>
-                      note.setForm((f) => ({ ...f, text: e.target.value }))
-                    }
-                  />
-                </label>
-                <div className="drawer-actions">
-                  <button
-                    type="button"
-                    className="button-primary"
-                    onClick={saveNote}
-                    disabled={!note.form.text.trim()}
-                  >
-                    Save note
-                  </button>
-                  {hasNote && (
-                    <button
-                      type="button"
-                      className="button-secondary"
-                      onClick={clearNote}
-                    >
-                      Remove
-                    </button>
-                  )}
-                  <SaveStatus state={note.status} />
-                </div>
-              </section>
+              <NoteSection
+                form={note.form}
+                setForm={note.setForm}
+                status={note.status}
+                hasNote={hasNote}
+                onSave={saveNote}
+                onClear={clearNote}
+              />
 
               {rec.references.length > 0 && (
                 <section className="drawer-section">
@@ -589,133 +463,5 @@ export function DetailDrawer({
         />
       )}
     </div>
-  );
-}
-
-/**
- * Renders one text section of the drawer body — a heading and one
- * `<p>` per paragraph parsed out of `text`.
- */
-function DrawerText({ title, text }: { title: string; text: string }) {
-  return (
-    <section className="drawer-section">
-      <h4>{title}</h4>
-      {paragraphs(text).map((para, i) => (
-        // Paragraphs are a pure function of immutable `text` — they
-        // can't reorder or get inserted — but pair the index with the
-        // content so duplicate paragraphs still get distinct keys.
-        <p key={`${i}:${para}`} className="drawer-text">
-          {para}
-        </p>
-      ))}
-    </section>
-  );
-}
-
-/**
- * Renders the small "{number} {local name}" context line beneath the
- * drawer's title. Falls back to the bare number when the parser
- * couldn't extract a heading for that section.
- */
-function DrawerCategoryMeta({
-  baseline,
-  number,
-}: {
-  baseline: Baseline;
-  number: string;
-}) {
-  const cat = baseline.categories.find((c) => c.number === number);
-  // `cat.name` is the parser's full hierarchical path joined with " - ";
-  // the leaf segment is the local section heading.
-  const localName = cat?.name ? (cat.name.split(" - ").pop() ?? null) : null;
-  return (
-    <p className="drawer-meta">
-      <span className="mono drawer-meta-num">{number}</span>
-      {localName && <span className="drawer-meta-name">{localName}</span>}
-    </p>
-  );
-}
-
-/**
- * Shows the scan verdict for the open rec. When `result.checks` is
- * populated, renders one card per check: a pass/fail/manual marker,
- * the location read, the value name, and the expected/found pair.
- * Falls back to the single `expected` / `currentValue` strings when
- * checks aren't available (mock scans, or errors that stopped before
- * any check ran).
- */
-function ScanResultSection({
-  result,
-  stateAge,
-}: {
-  result: ScanResult | undefined;
-  stateAge: { label: string; since: string } | null;
-}) {
-  if (!result) return null;
-  // Coalesce once up-front so the rest of the body can use `checks`
-  // without re-narrowing the optional and without `!` assertions.
-  const checks = result.checks ?? [];
-  const hasChecks = checks.length > 0;
-  return (
-    <section className="drawer-section">
-      <h4>Scan result</h4>
-      <dl className="drawer-kv">
-        <dt>Status</dt>
-        <dd className={`scan-status scan-status-${result.status.toLowerCase()}`}>
-          {result.status}
-        </dd>
-        <dt>Last scanned</dt>
-        <dd className="mono">{formatTimestamp(result.measuredAt)}</dd>
-        {stateAge && (
-          <>
-            <dt>{stateAge.label}</dt>
-            <dd className="mono">{formatAge(stateAge.since)}</dd>
-          </>
-        )}
-        {result.error && (
-          <>
-            <dt>Error</dt>
-            <dd className="mono">{result.error}</dd>
-          </>
-        )}
-        {!hasChecks && result.expected && (
-          <>
-            <dt>Expected</dt>
-            <dd className="mono">{result.expected}</dd>
-          </>
-        )}
-        {!hasChecks && result.currentValue && (
-          <>
-            <dt>Found</dt>
-            <dd className="mono">{result.currentValue}</dd>
-          </>
-        )}
-      </dl>
-      {hasChecks && (
-        <ul className="check-cards">
-          {checks.map((c) => (
-            <li key={`${c.path}|${c.valueName}`} className="check-card">
-              <span
-                className={`check-verdict check-verdict-${verdictKey(c.pass)}`}
-              >
-                {verdictLabel(c.pass)}
-              </span>
-              <p className="check-loc mono">{breakableRegistryPath(c.path)}</p>
-              {c.valueName && <p className="check-name mono">{c.valueName}</p>}
-              <dl className="check-kv">
-                <dt>Expected</dt>
-                <dd className="mono">{c.expected}</dd>
-                <dt>Found</dt>
-                <dd className="mono">
-                  {c.actual ?? (
-                    <span className="muted-italic">Not configured</span>
-                  )}
-                </dd>
-              </dl>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }
