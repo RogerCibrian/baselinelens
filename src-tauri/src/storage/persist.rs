@@ -229,8 +229,8 @@ fn first_observation_events(scan: &Scan) -> Vec<ChangeEvent> {
             from_status: None,
             to_status: result.status,
             observed_at: scan.started_at,
-            parser_version: scan.parser_version.clone(),
-            audit_script_version: scan.audit_script_version.clone(),
+            parser_version: scan.parser_version,
+            audit_script_version: scan.audit_script_version,
         })
         .collect()
 }
@@ -249,8 +249,8 @@ fn diff_to_change_events(prior: &Scan, current: &Scan) -> Vec<ChangeEvent> {
                 from_status: prior_status,
                 to_status: current_result.status,
                 observed_at: current.started_at,
-                parser_version: current.parser_version.clone(),
-                audit_script_version: current.audit_script_version.clone(),
+                parser_version: current.parser_version,
+                audit_script_version: current.audit_script_version,
             });
         }
     }

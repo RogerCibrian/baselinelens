@@ -17,11 +17,11 @@ pub(crate) struct Scan {
     /// Snapshot of `PARSER_VERSION` at scan time. Lets the UI detect when
     /// a saved scan was produced under a different parser/script schema
     /// before drawing cross-scan comparisons (deltas, trend chart).
-    pub(crate) parser_version: String,
+    pub(crate) parser_version: u32,
     /// Snapshot of `AUDIT_SCRIPT_VERSION` at scan time. Same intent as
     /// `parser_version` — captures the schema half that the audit script
     /// owns (status enum, check shape, NDJSON contract).
-    pub(crate) audit_script_version: String,
+    pub(crate) audit_script_version: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -112,8 +112,8 @@ pub(crate) struct ChangeEvent {
     pub(crate) from_status: Option<Status>,
     pub(crate) to_status: Status,
     pub(crate) observed_at: DateTime<Utc>,
-    pub(crate) parser_version: String,
-    pub(crate) audit_script_version: String,
+    pub(crate) parser_version: u32,
+    pub(crate) audit_script_version: u32,
 }
 
 /// Lightweight per-scan record for the trend chart and headline
@@ -135,8 +135,8 @@ pub(crate) struct ScanSummary {
     /// trend math can exclude accepted exceptions from the In-scope
     /// rate, matching the level cards.
     pub(crate) exception: u32,
-    pub(crate) parser_version: String,
-    pub(crate) audit_script_version: String,
+    pub(crate) parser_version: u32,
+    pub(crate) audit_script_version: u32,
 }
 
 /// Bundles the scan-related state for a baseline as the dashboard
@@ -200,8 +200,8 @@ impl ScanSummary {
             manual,
             error,
             exception,
-            parser_version: scan.parser_version.clone(),
-            audit_script_version: scan.audit_script_version.clone(),
+            parser_version: scan.parser_version,
+            audit_script_version: scan.audit_script_version,
         }
     }
 }

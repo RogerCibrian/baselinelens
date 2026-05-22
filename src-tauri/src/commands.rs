@@ -315,15 +315,7 @@ pub(crate) fn load_cached_baseline(sha: String) -> Result<Option<CachedBaseline>
         // re-parse picks up fields the newer parser captures. A cache
         // made by a newer parser (the user downgraded the binary) is
         // left alone — re-parsing here would lose those new fields.
-        // Parse failure on the cached value falls back to stale: when
-        // we can't verify the cache is at least as fresh as the
-        // running parser, force a re-parse.
-        let cached = baseline.source.parser_version.parse::<u32>().ok();
-        let running = PARSER_VERSION.parse::<u32>().ok();
-        let is_stale = match (cached, running) {
-            (Some(c), Some(r)) => c < r,
-            _ => true,
-        };
+        let is_stale = baseline.source.parser_version < PARSER_VERSION;
         CachedBaseline { baseline, is_stale }
     }))
 }
@@ -362,8 +354,8 @@ pub(crate) async fn start_scan(
         let script_path = generator::ensure_script().map_err(|err| err.to_string())?;
         let mut collector = ScanCollector::new(
             baseline_sha,
-            PARSER_VERSION.to_string(),
-            AUDIT_SCRIPT_VERSION.to_string(),
+            PARSER_VERSION,
+            AUDIT_SCRIPT_VERSION,
         );
         runner::run(
             &script_path,

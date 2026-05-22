@@ -12,8 +12,8 @@ use crate::audit::model::{DeviceInfo, Management, Scan, ScanRecord, ScanResult};
 
 pub(crate) struct ScanCollector {
     baseline_sha256: String,
-    parser_version: String,
-    audit_script_version: String,
+    parser_version: u32,
+    audit_script_version: u32,
     started_at: DateTime<Utc>,
     device: Option<DeviceInfo>,
     results: HashMap<String, ScanResult>,
@@ -22,8 +22,8 @@ pub(crate) struct ScanCollector {
 impl ScanCollector {
     pub(crate) fn new(
         baseline_sha256: String,
-        parser_version: String,
-        audit_script_version: String,
+        parser_version: u32,
+        audit_script_version: u32,
     ) -> Self {
         Self {
             baseline_sha256,

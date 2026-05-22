@@ -184,7 +184,7 @@ export type BaselineSource = {
 	pdfFilename: string,
 	pdfSha256: string,
 	parsedAt: string,
-	parserVersion: string,
+	parserVersion: number,
 };
 
 /**
@@ -220,8 +220,8 @@ export type ChangeEvent = {
 	fromStatus: Status | null,
 	toStatus: Status,
 	observedAt: string,
-	parserVersion: string,
-	auditScriptVersion: string,
+	parserVersion: number,
+	auditScriptVersion: number,
 };
 
 /**
@@ -371,13 +371,13 @@ export type Scan = {
 	 *  a saved scan was produced under a different parser/script schema
 	 *  before drawing cross-scan comparisons (deltas, trend chart).
 	 */
-	parserVersion: string,
+	parserVersion: number,
 	/**
 	 *  Snapshot of `AUDIT_SCRIPT_VERSION` at scan time. Same intent as
 	 *  `parser_version` — captures the schema half that the audit script
 	 *  owns (status enum, check shape, NDJSON contract).
 	 */
-	auditScriptVersion: string,
+	auditScriptVersion: number,
 };
 
 /**
@@ -472,8 +472,8 @@ export type ScanSummary = {
 	 *  rate, matching the level cards.
 	 */
 	exception: number,
-	parserVersion: string,
-	auditScriptVersion: string,
+	parserVersion: number,
+	auditScriptVersion: number,
 };
 
 export type Status = "Pass" | "Fail" | "Manual" | "Error";

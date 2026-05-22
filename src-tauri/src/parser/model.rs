@@ -24,7 +24,7 @@ pub(crate) struct BaselineSource {
     pub(crate) pdf_filename: String,
     pub(crate) pdf_sha256: String,
     pub(crate) parsed_at: DateTime<Utc>,
-    pub(crate) parser_version: String,
+    pub(crate) parser_version: u32,
 }
 
 // ============================================================================

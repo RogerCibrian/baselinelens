@@ -537,9 +537,9 @@ const emptyLoadErrors: ScanLoadErrors = {
  * practice it has, since the fetch starts on app mount.
  *
  * `parserVersion` mirrors the loaded baseline; `auditScriptVersion` is
- * empty until the backend's final Scan replaces this partial — the
+ * 0 until the backend's final Scan replaces this partial — the
  * partial isn't persisted, and any cross-scan UI (deltas, trend) gates
- * on `finishedAt` so the empty placeholder is never visible to derived
+ * on `finishedAt` so the placeholder is never visible to derived
  * logic.
  */
 function makePartialScan(baseline: Baseline, deviceInfo: DeviceInfo | null): Scan {
@@ -557,7 +557,7 @@ function makePartialScan(baseline: Baseline, deviceInfo: DeviceInfo | null): Sca
     results: {},
     error: null,
     parserVersion: baseline.source.parserVersion,
-    auditScriptVersion: "",
+    auditScriptVersion: 0,
   };
 }
 

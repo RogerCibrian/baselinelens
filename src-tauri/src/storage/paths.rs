@@ -43,7 +43,7 @@ pub(crate) fn baseline_cache_path(sha: &str) -> Result<PathBuf, StorageError> {
 /// baseline JSON at runtime), so the version is the only thing that
 /// could vary the on-disk file — bumping it produces a fresh cache
 /// entry automatically.
-pub(crate) fn audit_script_path(audit_script_version: &str) -> Result<PathBuf, StorageError> {
+pub(crate) fn audit_script_path(audit_script_version: u32) -> Result<PathBuf, StorageError> {
     Ok(data_dir()?.join(format!("audit_v{audit_script_version}.ps1")))
 }
 
