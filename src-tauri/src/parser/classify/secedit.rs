@@ -89,22 +89,18 @@ fn first_nonblank_line(text: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::model::{Assessment, Level};
+    use crate::parser::classify::testutil;
     use crate::parser::structure::BodySections;
 
     fn rec_for(title: &str, remediation: &str, default_value: Option<&str>) -> RawRecommendation {
-        RawRecommendation {
-            id: "test".to_string(),
-            level: Level::L1,
-            bitlocker: false,
-            assessment: Assessment::Automated,
-            title: title.to_string(),
-            sections: BodySections {
+        testutil::rec(
+            title,
+            BodySections {
                 remediation: Some(remediation.to_string()),
                 default_value: default_value.map(String::from),
                 ..Default::default()
             },
-        }
+        )
     }
 
     #[test]

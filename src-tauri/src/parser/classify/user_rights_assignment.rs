@@ -90,21 +90,17 @@ fn parse_principal_list(text: &str) -> Vec<Principal> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parser::classify::testutil;
     use crate::parser::structure::BodySections;
 
     fn rec_with(remediation: &str, title: &str) -> RawRecommendation {
-        use crate::parser::model::{Assessment, Level};
-        RawRecommendation {
-            id: "test".to_string(),
-            level: Level::L1,
-            bitlocker: false,
-            assessment: Assessment::Automated,
-            title: title.to_string(),
-            sections: BodySections {
+        testutil::rec(
+            title,
+            BodySections {
                 remediation: Some(remediation.to_string()),
                 ..Default::default()
             },
-        }
+        )
     }
 
     #[test]

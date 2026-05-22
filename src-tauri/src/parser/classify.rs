@@ -7,6 +7,8 @@ mod path;
 mod policy_manager;
 mod registry;
 mod secedit;
+#[cfg(test)]
+mod testutil;
 mod user_rights_assignment;
 
 use crate::parser::classify::path::JoinedPath;
