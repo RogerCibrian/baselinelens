@@ -24,6 +24,32 @@ export type OnboardingState =
 
 type DragState = "none" | "valid" | "invalid";
 
+/** CIS benchmarks the parser is built and tested against, grouped by
+ * target OS for the onboarding readout. Names are nominative — the
+ * "CIS Microsoft … Benchmark" framing and the OS are carried by the
+ * headings, so each edition is just its short form. */
+const SUPPORTED_BENCHMARKS: {
+  os: string;
+  editions: { name: string; versions: string[] }[];
+}[] = [
+  {
+    os: "Windows 11",
+    editions: [
+      { name: "Intune", versions: ["v4.0.0", "v3.0.1"] },
+      { name: "Enterprise", versions: ["v5.0.1"] },
+      { name: "Stand-alone", versions: ["v5.0.0"] },
+    ],
+  },
+  {
+    os: "Windows 10",
+    editions: [
+      { name: "Intune", versions: ["v4.0.0"] },
+      { name: "Enterprise", versions: ["v4.0.0"] },
+      { name: "Stand-alone", versions: ["v4.0.0", "v3.0.0"] },
+    ],
+  },
+];
+
 export default function Onboarding({
   state,
   deviceInfo,
@@ -193,11 +219,24 @@ function Action({
           <p className="ob-error-hint">Drop another PDF to try again.</p>
         </div>
       ) : (
-        <p className="ob-support">
-          <strong>Currently supported:</strong> CIS Microsoft Intune for
-          Windows 11 benchmark. Support for additional modern CIS Windows
-          benchmarks is coming.
-        </p>
+        <div className="ob-support">
+          <p className="ob-support-head">Currently supported CIS benchmarks</p>
+          <div className="ob-support-cols">
+            {SUPPORTED_BENCHMARKS.map((group) => (
+              <div className="ob-support-group" key={group.os}>
+                <p className="ob-support-os">{group.os}</p>
+                <dl className="ob-support-list">
+                  {group.editions.map((edition) => (
+                    <div className="ob-support-row" key={edition.name}>
+                      <dt>{edition.name}</dt>
+                      <dd className="mono">{edition.versions.join(" · ")}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </section>
   );

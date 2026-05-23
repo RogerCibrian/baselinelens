@@ -314,9 +314,41 @@
   color: var(--v-text-subtle);
 }
 
-.ob-support strong {
+.ob-support-head {
+  margin: 0 0 6px;
   font-weight: 500;
   color: var(--v-text-muted);
+}
+
+.ob-support-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  column-gap: 28px;
+  row-gap: 10px;
+}
+
+.ob-support-os {
+  margin: 0 0 2px;
+  font-weight: 600;
+  color: var(--v-text-muted);
+}
+
+.ob-support-list {
+  margin: 0;
+}
+
+.ob-support-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ob-support-list dt {
+  color: var(--v-text-subtle);
+}
+
+.ob-support-list dd {
+  margin: 0;
 }
 
 .ob-error {
