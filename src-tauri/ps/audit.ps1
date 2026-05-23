@@ -175,6 +175,87 @@ function Format-Expected {
     }
 }
 
+# Returns the leaf Value type an ExpectedValue constrains, so a raw
+# reading can be rendered the same way Format-Expected renders the
+# expected side. Compound predicates report their first or inner
+# member's type; Absent and unknown shapes report $null.
+function Get-ExpectedValueType {
+    param($Expected)
+    switch ($Expected.type) {
+        'Equals'      { $Expected.value.type }
+        'NotEquals'   { $Expected.value.type }
+        'OneOf'       { if (@($Expected.values).Count -gt 0) { $Expected.values[0].type } else { $null } }
+        'AtLeast'     { 'Dword' }
+        'AtMost'      { 'Dword' }
+        'Contains'    { 'Str' }
+        'ContainsAll' { 'Str' }
+        'AbsentOr'    { Get-ExpectedValueType $Expected.inner }
+        'All'         { if (@($Expected.values).Count -gt 0) { Get-ExpectedValueType $Expected.values[0] } else { $null } }
+        'Any'         { if (@($Expected.values).Count -gt 0) { Get-ExpectedValueType $Expected.values[0] } else { $null } }
+        default       { $null }
+    }
+}
+
+# Renders a raw reading for the Found field, matching how Format-Expected
+# renders the same value type so both sides read alike (a REG_SZ shows as
+# "0" on each). A missing value renders as "Not configured", the same
+# wording the expected side and the secedit/audit-policy reads use.
+function Format-Found {
+    param($Current, $Expected)
+    if ($null -eq $Current) { return 'Not configured' }
+    switch (Get-ExpectedValueType $Expected) {
+        'Str'      { Format-Value @{ type = 'Str'; value = [string]$Current } }
+        'MultiStr' { Format-Value @{ type = 'MultiStr'; values = @($Current) } }
+        'Binary'   { Format-Value @{ type = 'Binary'; bytes = @([byte[]]$Current) } }
+        default    { [string]$Current }
+    }
+}
+
+# Service startup-type rendering. Service-state recs are registry checks
+# on the Start value under ...\Services\<name>; the bare "Start" value
+# name and the raw Start DWORD are machinery, so these render in service
+# startup terms (per Microsoft's ServiceStartMode) and a missing key
+# reads as Not Installed rather than Not configured.
+$script:service_start_modes = @{
+    0 = 'Boot'
+    1 = 'System'
+    2 = 'Automatic'
+    3 = 'Manual'
+    4 = 'Disabled'
+}
+
+# True when a registry check targets a service's Start value: the value
+# named Start under a ...\Services\... path.
+function Test-ServiceStartCheck {
+    param($Path, $ValueName)
+    return ($ValueName -eq 'Start') -and ($Path -match '\\Services\\')
+}
+
+# Renders a raw Start reading as its service startup type. An absent key
+# means the service isn't present; an unknown number falls back to the
+# raw value rather than hide it.
+function Format-ServiceStartFound {
+    param($Current)
+    if ($null -eq $Current) { return 'Not Installed' }
+    $mode = $script:service_start_modes[[int]$Current]
+    if ($null -ne $mode) { return $mode }
+    return [string]$Current
+}
+
+# Renders a Start ExpectedValue in service startup terms. Mirrors the
+# Equals / Absent / AbsentOr / OneOf shapes the parser emits for service
+# recs; other shapes fall back to the generic Format-Expected.
+function Format-ServiceStartExpected {
+    param($Expected)
+    switch ($Expected.type) {
+        'Equals'   { Format-ServiceStartFound $Expected.value.value }
+        'Absent'   { 'Not Installed' }
+        'AbsentOr' { (Format-ServiceStartExpected $Expected.inner) + ', or Not Installed' }
+        'OneOf'    { (($Expected.values | ForEach-Object { Format-ServiceStartFound $_.value }) -join ', ') }
+        default    { Format-Expected $Expected }
+    }
+}
+
 # Normalizes an audit mode to one readable phrase, accepting both the
 # benchmark enum spelling (`SuccessAndFailure`) and auditpol's display
 # text (`Success and Failure`) so expected and found render the same
@@ -302,7 +383,12 @@ function Invoke-Rec {
                 $expected_summary = @()
                 $path_error = $null
                 foreach ($check in $audit.checks) {
-                    $exp_str = Format-Expected $check.expected
+                    $is_service = Test-ServiceStartCheck $check.path $check.valueName
+                    $exp_str = if ($is_service) {
+                        Format-ServiceStartExpected $check.expected
+                    } else {
+                        Format-Expected $check.expected
+                    }
                     $resolution = Resolve-CheckPath $check.path
                     if ($resolution.kind -eq 'error') {
                         $path_error = $resolution.reason
@@ -313,8 +399,8 @@ function Invoke-Rec {
                         # per-tenant policy can't be confirmed, which is a
                         # real Fail rather than an automation gap.
                         $passes += $false
-                        $current_summary += "$($check.valueName)=(unresolved)"
-                        $expected_summary += "$($check.valueName) $exp_str"
+                        $current_summary += "$($check.valueName) = (unresolved)"
+                        $expected_summary += "$($check.valueName) = $exp_str"
                         $check_details += [ordered]@{
                             path      = $check.path
                             valueName = $check.valueName
@@ -327,10 +413,22 @@ function Invoke-Rec {
                     $current = Get-RegValue -Path $resolution.path -Name $check.valueName
                     $pass = Test-Expected $current $check.expected
                     $passes += $pass
-                    $actual_str = if ($null -eq $current) { $null } else { [string]$current }
-                    $display = if ($null -eq $current) { '(absent)' } else { [string]$current }
-                    $current_summary += "$($check.valueName)=$display"
-                    $expected_summary += "$($check.valueName) $exp_str"
+                    $found_str = if ($is_service) {
+                        Format-ServiceStartFound $current
+                    } else {
+                        Format-Found $current $check.expected
+                    }
+                    # Service recs always carry a label ('Not Installed' for an
+                    # absent key); other recs keep $null so the drawer shows its
+                    # 'Not configured' fallback.
+                    $actual_str = if ($is_service -or $null -ne $current) { $found_str } else { $null }
+                    if ($is_service) {
+                        $current_summary += $found_str
+                        $expected_summary += $exp_str
+                    } else {
+                        $current_summary += "$($check.valueName) = $found_str"
+                        $expected_summary += "$($check.valueName) = $exp_str"
+                    }
                     $check_details += [ordered]@{
                         path      = $resolution.display
                         valueName = $check.valueName
@@ -390,12 +488,12 @@ function Invoke-Rec {
 
                 $pass = Test-Expected $current $audit.expected
                 $exp_str = Format-Expected $audit.expected
-                $actual_str = if ($null -eq $current) { $null } else { [string]$current }
-                $display = if ($null -eq $current) { '(absent)' } else { [string]$current }
+                $found_str = Format-Found $current $audit.expected
+                $actual_str = if ($null -eq $current) { $null } else { $found_str }
                 Write-SingleCheckResult -Id $id -Pass $pass -Path $read_path `
                     -ValueName $read_value_name -Expected $exp_str -Actual $actual_str `
-                    -ExpectedText "$($audit.setting) $exp_str" `
-                    -CurrentValue "$($audit.setting)=$display"
+                    -ExpectedText "$($audit.setting) = $exp_str" `
+                    -CurrentValue "$($audit.setting) = $found_str"
             }
             'UserRightsAssignment' {
                 $lsp_name = $script:user_rights_map[$audit.rightName]
@@ -406,12 +504,12 @@ function Invoke-Rec {
                     $details = @([ordered]@{
                         path      = 'User Rights Assignment'
                         valueName = $audit.rightName
-                        expected  = '(unmapped display name)'
+                        expected  = '(no policy mapping)'
                         actual    = $null
                         pass      = $null
                     })
                     Write-NdjsonResult -Id $id -Status 'Manual' `
-                        -Expected "User Right '$($audit.rightName)' -- no LSP-constant mapping" `
+                        -Expected "$($audit.rightName) = (no policy mapping for this right)" `
                         -Checks $details
                     break
                 }
@@ -455,8 +553,8 @@ function Invoke-Rec {
                     $unresolved_list = ($unresolved -join ', ')
                     Write-NdjsonResult -Id $id -Status 'Error' `
                         -ErrorMessage "Expected principal(s) could not be resolved to a SID on this device: $unresolved_list" `
-                        -Expected "User Right '$($audit.rightName)' $exp_str" `
-                        -CurrentValue $actual_str `
+                        -Expected "$($audit.rightName) = $exp_str" `
+                        -CurrentValue "$($audit.rightName) = $actual_str" `
                         -Checks @([ordered]@{
                             path      = 'User Rights Assignment'
                             valueName = $audit.rightName
@@ -481,8 +579,8 @@ function Invoke-Rec {
                 Write-SingleCheckResult -Id $id -Pass $pass `
                     -Path 'User Rights Assignment' -ValueName $audit.rightName `
                     -Expected $exp_str -Actual $actual_str `
-                    -ExpectedText "User Right '$($audit.rightName)' $exp_str" `
-                    -CurrentValue $actual_str
+                    -ExpectedText "$($audit.rightName) = $exp_str" `
+                    -CurrentValue "$($audit.rightName) = $actual_str"
             }
             'Secedit' {
                 # Every Secedit rec the parser emits targets the
@@ -516,12 +614,12 @@ function Invoke-Rec {
                 # secedit tool used to read it. An unset entry reads
                 # "Not configured" rather than a null the UI would show
                 # as the misleading "absent".
-                $actual_str = if ($null -eq $raw) { 'Not configured' } else { [string]$raw }
+                $actual_str = if ($null -eq $raw) { 'Not configured' } else { Format-Found $raw $audit.expected }
                 Write-SingleCheckResult -Id $id -Pass $pass `
                     -Path 'Local Security Policy' -ValueName $audit.setting `
                     -Expected $exp_str -Actual $actual_str `
-                    -ExpectedText "Local Security Policy / $($audit.setting) $exp_str" `
-                    -CurrentValue $actual_str
+                    -ExpectedText "$($audit.setting) = $exp_str" `
+                    -CurrentValue "$($audit.setting) = $actual_str"
             }
             'AuditPolicy' {
                 $dump = Get-AuditPolDump
@@ -578,8 +676,8 @@ function Invoke-Rec {
                 }
                 Write-SingleCheckResult -Id $id -Pass $pass -Path 'Audit Policy' `
                     -ValueName $sub_name -Expected $exp_str -Actual $found_str `
-                    -ExpectedText "Audit subcategory '$sub_name' $exp_str" `
-                    -CurrentValue $found_str
+                    -ExpectedText "$sub_name = $exp_str" `
+                    -CurrentValue "$sub_name = $found_str"
             }
             'Manual' {
                 $details = @([ordered]@{
