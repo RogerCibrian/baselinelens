@@ -105,12 +105,18 @@ const RecRow = memo(function RecRow({
         </td>
       )}
       {columns.expected && (
-        <td className="muted mono rec-table-value-col">
+        <td
+          className="muted mono rec-table-value-col"
+          title={result?.expected ?? undefined}
+        >
           {valueCell(result?.expected, result?.checks?.length)}
         </td>
       )}
       {columns.found && (
-        <td className="muted mono rec-table-value-col">
+        <td
+          className="muted mono rec-table-value-col"
+          title={result?.currentValue ?? undefined}
+        >
           {valueCell(result?.currentValue, result?.checks?.length)}
         </td>
       )}
