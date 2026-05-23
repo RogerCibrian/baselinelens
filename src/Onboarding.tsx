@@ -183,7 +183,7 @@ function Hero() {
       </h1>
       <p className="ob-lede">
         BaselineLens parses a CIS Benchmark PDF you provide and checks this
-        machine against it. Everything runs locally —{" "}
+        device against it. Everything runs locally —{" "}
         <em>no data leaves the device</em>.
       </p>
     </section>
@@ -204,7 +204,7 @@ function Action({
       <MachineStrip deviceInfo={deviceInfo} />
       <DropZone state={state} onBrowse={onBrowse} />
       <p className="ob-get-benchmark">
-        Don't have the PDF yet?{" "}
+        Don't have a PDF yet?{" "}
         <button
           type="button"
           className="ob-link"
@@ -414,7 +414,7 @@ function Steps() {
       n: "01",
       title: "Compare",
       body:
-        "Match this device's settings against every control in the benchmark.",
+        "Match this device's settings against every recommendation in the benchmark.",
     },
     {
       n: "02",
@@ -426,7 +426,7 @@ function Steps() {
       n: "03",
       title: "Remediate",
       body:
-        "Fix gaps using the cited registry paths; re-scan to verify.",
+        "Fix gaps using the cited remediation; re-scan to verify.",
     },
   ];
   return (
@@ -498,7 +498,7 @@ function DragOverlay({
   const heading = invalid ? "PDF files only" : "Drop to parse";
   const subtitle = invalid
     ? "Drop a CIS Benchmark PDF to continue."
-    : "We'll extract recommendations and confirm before scanning.";
+    : "Extracts recommendations, then confirms before scanning.";
   return (
     <div className={classes} aria-hidden="true">
       <div className="ob-dragover-inner">
@@ -548,8 +548,7 @@ function ConfirmModal({
           Ready to scan this device?
         </h2>
         <p id="ob-confirm-sub" className="ob-confirm-sub">
-          We parsed the benchmark and matched it to this machine. Review the
-          details below before starting.
+          Confirm the benchmark and target below before starting.
         </p>
         <div className="ob-confirm-card">
           <ConfirmRow k="Benchmark" v={baseline.source.benchmarkName} />
