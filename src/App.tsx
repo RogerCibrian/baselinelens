@@ -94,8 +94,19 @@ function App() {
   // OS preference when set to "system". Runs on every theme change and
   // re-subscribes the matchMedia listener accordingly.
   useEffect(() => {
+    const root = document.documentElement;
     function apply(resolved: "light" | "dark") {
-      document.documentElement.dataset.theme = resolved;
+      // Swap the theme with transitions suppressed so theme-colored
+      // properties recolor instantly. Without this, any element with a
+      // color/background transition (there for hover/focus) animates the
+      // recolor over its duration and visibly lags behind the rest of
+      // the UI. Re-enable after the new colors paint so hover/focus
+      // transitions still work — two frames to be sure the swap committed.
+      root.classList.add("theme-instant");
+      root.dataset.theme = resolved;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => root.classList.remove("theme-instant"));
+      });
     }
     if (theme === "system") {
       const query = window.matchMedia("(prefers-color-scheme: dark)");

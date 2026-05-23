@@ -163,6 +163,16 @@
   --v-accent-on: #0a0a0c;
 }
 
+/* Applied to <html> only for the instant a theme swap is committed (see
+   App's theme effect). Kills every transition so theme-colored
+   properties recolor at once instead of animating — without it,
+   elements with a color/background transition lag behind the swap. */
+.theme-instant *,
+.theme-instant *::before,
+.theme-instant *::after {
+  transition: none !important;
+}
+
 * {
   box-sizing: border-box;
 }
