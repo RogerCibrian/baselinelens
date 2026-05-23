@@ -526,14 +526,15 @@ function ConfirmModal({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  // Esc closes; backdrop click closes too. Focus the primary action so
-  // Enter confirms when the modal opens.
+  // Closing is limited to Esc and the Cancel button, so a stray click on
+  // the backdrop can't discard a parsed baseline. Focus the primary action
+  // so Enter confirms when the modal opens.
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(true, dialogRef);
   useEscapeDismiss(onCancel);
 
   return (
-    <div className="ob-confirm-scrim" onClick={onCancel} aria-hidden="true">
+    <div className="ob-confirm-scrim" aria-hidden="true">
       <div
         className="ob-confirm"
         role="dialog"
@@ -541,7 +542,6 @@ function ConfirmModal({
         aria-labelledby="ob-confirm-title"
         aria-describedby="ob-confirm-sub"
         ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="ob-confirm-eyebrow">Confirm scan</div>
         <h2 id="ob-confirm-title" className="ob-confirm-h">
