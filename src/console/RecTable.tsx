@@ -154,46 +154,48 @@ export function RecTable({
   onOpen: (recId: string) => void;
 }) {
   return (
-    <table className="rec-table">
-      <thead>
-        <tr>
-          <th><SortHeader sort={sort} onChange={onSortChange} keyName="id">ID</SortHeader></th>
-          <th><SortHeader sort={sort} onChange={onSortChange} keyName="status">Status</SortHeader></th>
-          {columns.level && (
-            <th><SortHeader sort={sort} onChange={onSortChange} keyName="level">Level</SortHeader></th>
-          )}
-          {columns.title && (
-            <th><SortHeader sort={sort} onChange={onSortChange} keyName="title">Title</SortHeader></th>
-          )}
-          {columns.category && (
-            <th><SortHeader sort={sort} onChange={onSortChange} keyName="category">Category</SortHeader></th>
-          )}
-          {columns.expected && <th>Expected</th>}
-          {columns.found && <th>Found</th>}
-          <th
-            className="rec-table-delta-col"
-            title="Recent status change"
-          >
-            <span aria-hidden="true">Δ</span>
-            <span className="sr-only">Recent status change</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {recs.map((rec) => (
-          <RecRow
-            key={rec.id}
-            rec={rec}
-            scan={scan}
-            changesIndex={changesIndex}
-            userState={userState}
-            columns={columns}
-            categoryNames={categoryNames}
-            selected={rec.id === selectedRecId}
-            onOpen={onOpen}
-          />
-        ))}
-      </tbody>
-    </table>
+    <div className="rec-table-scroll">
+      <table className="rec-table">
+        <thead>
+          <tr>
+            <th><SortHeader sort={sort} onChange={onSortChange} keyName="id">ID</SortHeader></th>
+            <th><SortHeader sort={sort} onChange={onSortChange} keyName="status">Status</SortHeader></th>
+            {columns.level && (
+              <th><SortHeader sort={sort} onChange={onSortChange} keyName="level">Level</SortHeader></th>
+            )}
+            {columns.title && (
+              <th><SortHeader sort={sort} onChange={onSortChange} keyName="title">Title</SortHeader></th>
+            )}
+            {columns.category && (
+              <th><SortHeader sort={sort} onChange={onSortChange} keyName="category">Category</SortHeader></th>
+            )}
+            {columns.expected && <th>Expected</th>}
+            {columns.found && <th>Found</th>}
+            <th
+              className="rec-table-delta-col"
+              title="Recent status change"
+            >
+              <span aria-hidden="true">Δ</span>
+              <span className="sr-only">Recent status change</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {recs.map((rec) => (
+            <RecRow
+              key={rec.id}
+              rec={rec}
+              scan={scan}
+              changesIndex={changesIndex}
+              userState={userState}
+              columns={columns}
+              categoryNames={categoryNames}
+              selected={rec.id === selectedRecId}
+              onOpen={onOpen}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

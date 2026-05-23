@@ -1259,6 +1259,13 @@
   /* Allow the table to shrink within the grid cell — without min-width: 0
      a long Title column would force the whole grid wider than the page. */
   min-width: 0;
+  /* Bound the column to the viewport (minus the top bar and tab-content's
+     2rem top/bottom padding) so the table region scrolls inside its own
+     box. Keeps a wide table from scrolling the whole page sideways, which
+     would drag the sticky top bar with it. min-height: 0 lets the flex
+     child shrink below its content height so its overflow can scroll. */
+  max-height: calc(100vh - var(--v-topbar-h) - 4rem);
+  min-height: 0;
 }
 
 .saved-view-rail {
@@ -1267,7 +1274,10 @@
      breathing margin and doesn't slide behind the bar on scroll. */
   top: calc(var(--v-topbar-h) + 1rem);
   align-self: start;
-  max-height: calc(100vh - var(--v-topbar-h) - 2rem);
+  /* Cap to the same available height as .console-main so a long rail
+     scrolls internally instead of making the page taller than the
+     viewport (which was leaving a small second scrollbar). */
+  max-height: calc(100vh - var(--v-topbar-h) - 4rem);
   overflow-y: auto;
 }
 
@@ -1522,6 +1532,15 @@
   min-width: 0;
 }
 
+/* The table's scroll box: flexes to fill the height-capped .console-main
+   and owns both-axis overflow, so a wide or tall table scrolls here
+   rather than scrolling the page (and dragging the sticky top bar). */
+.rec-table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 .rec-table {
   width: 100%;
   border-collapse: collapse;
@@ -1567,15 +1586,14 @@
 
 .rec-table thead th {
   position: sticky;
-  /* Sits under the sticky top bar so scrolled rows pass behind both. */
-  top: var(--v-topbar-h);
+  /* Sticks to the top of the table's own scroll box (.rec-table-scroll),
+     so the header holds while rows scroll under it. */
+  top: 0;
   z-index: 1;
   background: var(--v-paper-2);
   border-bottom: 1px solid var(--v-line-strong);
-  font-size: 10.5px;
+  font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--v-text-subtle);
 }
 
