@@ -29,8 +29,17 @@ function Get-SeceditExport {
                 "secedit /export exited with code $($proc.ExitCode); typically means administrator is required"
             )
         }
-        # secedit writes the INI as little-endian UTF-16.
-        $lines = Get-Content -LiteralPath $tmp -Encoding Unicode -ErrorAction Stop
+        # secedit writes the INI without a byte-order mark as UTF-8 on
+        # current Windows; some builds emit UTF-16 with a BOM. This
+        # StreamReader honors a BOM when present and reads a BOM-less file
+        # as UTF-8, so the section parse below sees real text either way.
+        $reader = New-Object System.IO.StreamReader($tmp, [System.Text.Encoding]::UTF8, $true)
+        try {
+            $content = $reader.ReadToEnd()
+        } finally {
+            $reader.Dispose()
+        }
+        $lines = $content -split "`r`n|`r|`n"
         $cache = @{}
         $current_section = $null
         foreach ($raw_line in $lines) {
