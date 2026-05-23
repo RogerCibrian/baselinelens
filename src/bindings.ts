@@ -29,6 +29,12 @@ export const commands = {
 	preferences?: Preferences,
 } | null, string>(__TAURI_INVOKE("load_app_state")),
 	saveAppState: (state: AppState) => typedError<null, string>(__TAURI_INVOKE("save_app_state", { state })),
+	/**
+	 *  Records `sha` as the baseline the dashboard reopens on next launch,
+	 *  leaving unrelated app state (theme and other preferences) untouched.
+	 *  Called when the user confirms a freshly-parsed baseline.
+	 */
+	setActiveBaseline: (sha: string) => typedError<null, string>(__TAURI_INVOKE("set_active_baseline", { sha })),
 	loadUserState: (baselineSha: string) => typedError<{
 	baselineSha256: string,
 	exceptions: { [key in string]: Exception },

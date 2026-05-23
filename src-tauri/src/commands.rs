@@ -152,27 +152,29 @@ pub(crate) async fn parse_baseline(
     .map_err(|err| format!("Parse task panicked: {err}"))??;
 
     // Best-effort cache: a failure here just means the next launch has to
-    // re-parse the PDF. Don't fail the user-visible parse.
+    // re-parse the PDF. Don't fail the user-visible parse. The baseline
+    // becomes the one restored on next launch only once the user confirms
+    // it (see `set_active_baseline`), not at parse time — otherwise closing
+    // the app at the confirm prompt would reopen into a baseline the user
+    // never committed to.
     if let Err(err) = persist::save_cached_baseline(&baseline) {
         eprintln!("failed to cache baseline: {err}");
     }
-    // Read existing app state so unrelated user preferences (theme, etc.)
-    // survive a baseline switch. A missing or unreadable file degrades to
-    // a default — at worst the user re-picks their theme once.
-    let mut app_state = match persist::load_app_state() {
-        Ok(Some(state)) => state,
-        Ok(None) => AppState::default(),
-        Err(err) => {
-            eprintln!("failed to read app_state before update: {err}");
-            AppState::default()
-        }
-    };
-    app_state.active_baseline_sha = Some(baseline.source.pdf_sha256.clone());
-    if let Err(err) = persist::save_app_state(&app_state) {
-        eprintln!("failed to update app_state: {err}");
-    }
 
     Ok(baseline)
+}
+
+/// Records `sha` as the baseline the dashboard reopens on next launch,
+/// leaving unrelated app state (theme and other preferences) untouched.
+/// Called when the user confirms a freshly-parsed baseline.
+#[tauri::command]
+#[specta::specta]
+pub(crate) fn set_active_baseline(sha: String) -> Result<(), String> {
+    let mut app_state = persist::load_app_state()
+        .map_err(|err| err.to_string())?
+        .unwrap_or_default();
+    app_state.active_baseline_sha = Some(sha);
+    persist::save_app_state(&app_state).map_err(|err| err.to_string())
 }
 
 #[tauri::command]

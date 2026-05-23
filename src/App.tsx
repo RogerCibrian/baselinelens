@@ -288,6 +288,9 @@ function App() {
       }
       onConfirm={() => {
         if (appState.kind !== "pendingConfirm") return;
+        // Commit this baseline as the one to reopen on next launch only
+        // now that the user has confirmed it — parsing alone doesn't.
+        void commands.setActiveBaseline(appState.baseline.source.pdfSha256);
         setAppState({
           kind: "loaded",
           baseline: appState.baseline,

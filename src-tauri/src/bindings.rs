@@ -15,6 +15,7 @@ pub(crate) fn make_builder() -> Builder<tauri::Wry> {
             crate::commands::parse_baseline,
             crate::commands::load_app_state,
             crate::commands::save_app_state,
+            crate::commands::set_active_baseline,
             crate::commands::load_user_state,
             crate::commands::save_user_state,
             crate::commands::load_cached_baseline,
