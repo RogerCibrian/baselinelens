@@ -115,6 +115,12 @@ function Dashboard({
   // anything.
   const [scanProgress, setScanProgress] = useState(0);
 
+  // Session-only Console table column widths, keyed by column id. Held
+  // here rather than in Console so a width survives switching to Overview
+  // and back (Console unmounts on tab switch). Not persisted: a relaunch
+  // or a new baseline returns columns to their defaults.
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+
   const latest = context.latest;
 
   // One-shot guard so `autoScan` only fires the kick-off rescan once
@@ -481,6 +487,8 @@ function Dashboard({
             onFilterChange={onConsoleFilterChange}
             columns={consoleColumns}
             onColumnsChange={onConsoleColumnsChange}
+            columnWidths={columnWidths}
+            onColumnWidthsChange={setColumnWidths}
             railCollapsed={consoleRailCollapsed}
             onRailCollapsedChange={onConsoleRailCollapsedChange}
             onUpdateUserState={onUpdateUserState}

@@ -48,6 +48,8 @@ export default function Console({
   onFilterChange,
   columns,
   onColumnsChange,
+  columnWidths,
+  onColumnWidthsChange,
   railCollapsed,
   onRailCollapsedChange,
   onUpdateUserState,
@@ -65,6 +67,11 @@ export default function Console({
   /** Visibility flags for the table's optional columns. */
   columns: ConsoleColumns;
   onColumnsChange: (next: ConsoleColumns) => void;
+  /** Session-only per-column pixel widths, keyed by column id. Owned by
+   * Dashboard so widths persist across tab switches; forwarded to the
+   * table. */
+  columnWidths: Record<string, number>;
+  onColumnWidthsChange: (next: Record<string, number>) => void;
   /** Whether the Views/Categories rail is collapsed (hidden). When
    * true, the rail unmounts and the filter bar gains a "Views" button
    * that reopens it. */
@@ -330,6 +337,8 @@ export default function Console({
             sort={sort}
             onSortChange={setSort}
             columns={columns}
+            columnWidths={columnWidths}
+            onColumnWidthsChange={onColumnWidthsChange}
             categoryNames={categoryNamesByNumber}
             selectedRecId={selectedRecId}
             onOpen={selectAndOpen}

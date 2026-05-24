@@ -1542,9 +1542,52 @@
 }
 
 .rec-table {
+  /* Fixed layout so each column honors its colgroup width (set by the
+     resize handles). With width: 100% and no auto/filler column, the
+     columns scale up to fill the panel when their widths sum to less than
+     it; once they sum to more, the table grows past 100% and scrolls
+     inside .rec-table-scroll. */
+  table-layout: fixed;
   width: 100%;
   border-collapse: collapse;
   font-size: 12.5px;
+}
+
+/* Drag handle on a resizable header's right edge. Sits above the label
+   with a slightly wider hit area; the grip line shows on hover. The th is
+   position: sticky, which anchors this absolutely. */
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 9px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.col-resizer::after {
+  content: "";
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  right: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+}
+
+.col-resizer:hover::after {
+  background: var(--v-line-strong);
+}
+
+/* While a drag is in progress, hold the resize cursor and stop the
+   pointer from selecting header/cell text as it moves. */
+.rec-table-resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .rec-table th,
@@ -1666,7 +1709,6 @@
 }
 
 .rec-table-value-col {
-  max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
