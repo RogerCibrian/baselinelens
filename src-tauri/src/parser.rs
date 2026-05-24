@@ -203,6 +203,7 @@ fn build_recommendation(raw: structure::RawRecommendation) -> Recommendation {
         impact: raw.sections.impact,
         assessment: raw.assessment,
         audit,
+        audit_text: raw.sections.audit,
         remediation,
         references,
     }
