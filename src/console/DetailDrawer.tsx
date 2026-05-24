@@ -20,6 +20,7 @@ import ConfirmDialog from "../ConfirmDialog";
 import { useSavable } from "./savable";
 import { NavChevron, StatusPill } from "./widgets";
 import { AttestationSection } from "./drawer/AttestationSection";
+import { AuditTextSection } from "./drawer/AuditTextSection";
 import { DrawerCategoryMeta } from "./drawer/DrawerCategoryMeta";
 import { DrawerText } from "./drawer/DrawerText";
 import { ExceptionSection } from "./drawer/ExceptionSection";
@@ -387,6 +388,8 @@ export function DetailDrawer({
                 result={scan.results[rec.id]}
                 stateAge={stateAge}
               />
+
+              {rec.auditText && <AuditTextSection text={rec.auditText} />}
 
               {isManual && (
                 <AttestationSection

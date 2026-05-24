@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  auditLines,
   compareDottedNumbers,
   matchesCategory,
   nextSort,
@@ -69,6 +70,31 @@ describe("paragraphs", () => {
 
   it("drops empty paragraphs", () => {
     expect(paragraphs("\n\n   \n\n")).toEqual([]);
+  });
+});
+
+describe("auditLines", () => {
+  it("breaks at numbered steps and registry paths, dewrapping each", () => {
+    // A mid-token wrap (no trailing space) rejoins with none; a
+    // space-wrapped sentence rejoins with a space.
+    const text =
+      "1. Open the gadget panel and read the \nfirst dial.\n" +
+      "HKLM\\SOFTWARE\\Acme\\Gadgets:FirstDialEnab\n" +
+      "ledFlag\n" +
+      "2. Spin the second dial to zero.\n" +
+      "HKLM\\SOFTWARE\\Acme\\Gadgets:SecondDial";
+    expect(auditLines(text)).toEqual([
+      "1. Open the gadget panel and read the first dial.",
+      "HKLM\\SOFTWARE\\Acme\\Gadgets:FirstDialEnabledFlag",
+      "2. Spin the second dial to zero.",
+      "HKLM\\SOFTWARE\\Acme\\Gadgets:SecondDial",
+    ]);
+  });
+
+  it("treats unwrapped prose as a single line", () => {
+    expect(auditLines("Open the panel and tick the box.")).toEqual([
+      "Open the panel and tick the box.",
+    ]);
   });
 });
 

@@ -28,6 +28,7 @@ export function rec(
     impact: null,
     assessment: "Automated",
     audit: { type: "Manual", description: "" },
+    auditText: null,
     remediation: null,
     references: [],
     ...overrides,

@@ -151,6 +151,34 @@ export function paragraphs(text: string): string[] {
     .filter((p) => p.length > 0);
 }
 
+/**
+ * Reflows a benchmark audit body for display. The PDF hard-wraps lines at a
+ * fixed width; this rejoins them into logical lines, starting a new line at
+ * each numbered step and each registry path so steps don't run together. A
+ * wrap that fell on a space (the previous line kept its trailing whitespace)
+ * rejoins with a space; a mid-token wrap rejoins with none — the same
+ * trailing-space signal the parser uses to dewrap paths.
+ */
+export function auditLines(text: string): string[] {
+  const lines: string[] = [];
+  let prevHadTrailingSpace = false;
+  for (const raw of text.split("\n")) {
+    const content = raw.trim();
+    if (content === "") continue;
+    const startsLine =
+      lines.length === 0 ||
+      /^\d+\.\s/.test(content) ||
+      /^(HKLM|HKU|HKCU|HKEY_)/i.test(content);
+    if (startsLine) {
+      lines.push(content);
+    } else {
+      lines[lines.length - 1] += (prevHadTrailingSpace ? " " : "") + content;
+    }
+    prevHadTrailingSpace = /\s$/.test(raw);
+  }
+  return lines;
+}
+
 export function verdictKey(
   pass: boolean | null,
 ): "pass" | "fail" | "manual" {
