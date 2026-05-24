@@ -413,3 +413,45 @@ fn parse_event(line: &str) -> Result<AuditEvent, AuditError> {
         source,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+    use crate::audit::model::Status;
+
+    #[test]
+    fn parses_a_result_line_into_a_scan_record() {
+        let line = r#"{"type":"result","id":"1.2","status":"Fail","measuredAt":"2025-05-15T12:00:00Z","currentValue":"1","expected":"0","error":null}"#;
+        match parse_event(line).expect("parse") {
+            AuditEvent::Result(record) => {
+                assert_eq!(record.id, "1.2");
+                assert_eq!(record.status, Status::Fail);
+                // `checks` is absent on this line; it defaults to empty.
+                assert!(record.checks.is_empty());
+            }
+            AuditEvent::Device(_) => panic!("expected a Result event"),
+        }
+    }
+
+    #[test]
+    fn rejects_a_line_that_is_not_json() {
+        assert!(parse_event("not json at all").is_err());
+    }
+
+    #[test]
+    fn runas_command_doubles_embedded_single_quotes() {
+        let cmd = build_runas_command(
+            Path::new(r"C:\it's\audit.ps1"),
+            Path::new(r"C:\base.json"),
+            Path::new(r"C:\out.ndjson"),
+            Path::new(r"C:\cancel"),
+        );
+        // The single quote in the path is doubled so it can't break out of
+        // the single-quoted PowerShell argument it sits in.
+        assert!(cmd.contains(r"'C:\it''s\audit.ps1'"));
+        assert!(cmd.contains(r"'C:\base.json'"));
+        assert!(cmd.contains("-Verb RunAs"));
+    }
+}
