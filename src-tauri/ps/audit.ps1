@@ -256,10 +256,9 @@ function Format-ServiceStartExpected {
     }
 }
 
-# Normalizes an audit mode to one readable phrase, accepting both the
-# benchmark enum spelling (`SuccessAndFailure`) and auditpol's display
-# text (`Success and Failure`) so expected and found render the same
-# way.
+# Normalizes an audit mode to one readable phrase. Accepts the benchmark
+# enum spelling (`SuccessAndFailure`) and the spaced spelling so expected
+# and found render the same way.
 function Format-AuditMode {
     param($Mode)
     switch -Exact ("$Mode") {
@@ -455,13 +454,19 @@ function Invoke-Rec {
                 # under \PolicyManager\Providers\{GUID}\Default\<scope>\<area>.
                 # Both steps are plain registry reads, so the result is
                 # reported as a registry check against the concrete path read.
-                # User scope under both subtrees is keyed by the logged-in
-                # user's SID; the CIS PDF's `(USER SID)` token is a
+                # User scope under both subtrees is keyed by the interactive
+                # desktop user's SID; the parsed `(USER SID)` token is a
                 # placeholder, not a real subkey name.
                 $user_sid = if ($audit.scope -eq 'Device') {
                     $null
                 } else {
-                    [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+                    Resolve-InteractiveUserSid
+                }
+                if ($audit.scope -ne 'Device' -and [string]::IsNullOrWhiteSpace($user_sid)) {
+                    Write-NdjsonResult -Id $id -Status 'Error' `
+                        -ErrorMessage 'Interactive user SID could not be determined; user-scope policy cannot be read' `
+                        -Expected "$($audit.setting) = $(Format-Expected $audit.expected)"
+                    break
                 }
                 $scope_current = if ($audit.scope -eq 'Device') { 'device' } else { $user_sid }
                 $scope_provider = if ($audit.scope -eq 'Device') { 'Device' } else { $user_sid }
@@ -471,7 +476,7 @@ function Invoke-Rec {
                 $provider = Get-RegValue -Path $wp_path -Name $wp_name
 
                 # When a provider claims the setting, the actual value lives
-                # under \Providers\{GUID}\Default\... — that's what was read.
+                # under \Providers\{GUID}\Default\... -- that's what was read.
                 # When none claims it, the only thing actually read is the
                 # WinningProvider name itself, so the displayed path/value
                 # name reflect *that* lookup rather than a Providers path
@@ -622,34 +627,13 @@ function Invoke-Rec {
                     -CurrentValue "$($audit.setting) = $actual_str"
             }
             'AuditPolicy' {
-                $dump = Get-AuditPolDump
-                $entry = $dump[$audit.subcategoryGuid]
-                # A subcategory missing from the auditpol dump means the
-                # OS has never configured it: Windows treats that state
-                # as "No Auditing" (the system default for any subcategory
-                # without an explicit policy), so a rec expecting
-                # NoAuditing should pass for an absent entry rather than
-                # fail on the null comparison.
-                $current_text = if ($null -ne $entry) { $entry.Setting } else { 'No Auditing' }
-                $sub_name = if ($null -ne $entry `
-                    -and -not [string]::IsNullOrWhiteSpace($entry.Name)) {
-                    $entry.Name
-                } else {
-                    # No display name (subcategory absent on this OS, or an
-                    # invalid GUID): fall back to the GUID so there's still
-                    # an identifier rather than a blank.
-                    $audit.subcategoryGuid
-                }
-
-                # auditpol's "Inclusion Setting" column uses display strings
-                # with spaces; map to our enum spelling for comparison.
-                $current_mode = switch ($current_text) {
-                    'No Auditing'         { 'NoAuditing' }
-                    'Success'             { 'Success' }
-                    'Failure'             { 'Failure' }
-                    'Success and Failure' { 'SuccessAndFailure' }
-                    default               { $current_text }
-                }
+                # AuditQuerySystemPolicy returns the effective mode as a
+                # numeric bitmask keyed by GUID, so the read doesn't depend
+                # on the display language. An unconfigured subcategory reads
+                # as NoAuditing -- the system default Windows reports for any
+                # subcategory without an explicit policy.
+                $current_mode = Get-AuditSubcategoryMode -Guid $audit.subcategoryGuid
+                $sub_name = Get-AuditSubcategoryName -Guid $audit.subcategoryGuid
 
                 if ($audit.matching -eq 'Exact') {
                     $pass = ($current_mode -eq $audit.expected)
@@ -669,11 +653,7 @@ function Invoke-Rec {
                 } else {
                     "Includes $exp_value"
                 }
-                $found_str = if ($null -eq $current_text) {
-                    'Not configured'
-                } else {
-                    Format-AuditMode $current_text
-                }
+                $found_str = Format-AuditMode $current_mode
                 Write-SingleCheckResult -Id $id -Pass $pass -Path 'Audit Policy' `
                     -ValueName $sub_name -Expected $exp_str -Actual $found_str `
                     -ExpectedText "$sub_name = $exp_str" `

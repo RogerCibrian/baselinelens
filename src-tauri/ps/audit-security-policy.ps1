@@ -1,7 +1,7 @@
 # BaselineLens audit helpers: local security policy inspections.
 #
 # Dot-sourced by audit.ps1 -- not a standalone script. Covers the secedit
-# /export and auditpol dumps, principal/SID resolution, and the
+# /export, the security-audit policy API, principal/SID resolution, and the
 # display-name -> policy-key maps used by the Secedit, UserRightsAssignment,
 # and AuditPolicy dispatch arms. Dot-sourcing runs in the caller's scope,
 # so the $script: state and functions defined here are shared with the
@@ -79,50 +79,174 @@ function Get-SeceditExport {
     }
 }
 
-# auditpol /get /category:* /r dumps every subcategory's audit setting
-# as CSV, including the subcategory's display name. Keyed by GUID (the
-# stable, locale-independent identifier the benchmark references) to a
-# { Name; Setting } pair so checks can show the readable name instead
-# of the GUID. Same caching pattern as secedit.
-$script:auditpol_cache = $null
-$script:auditpol_error = $null
+# Reads the effective audit policy through the Windows security-audit API
+# (AuditQuerySystemPolicy), keyed by subcategory GUID. The API returns a
+# numeric success/failure bitmask, so the read is independent of the
+# display language; auditpol's CSV "Inclusion Setting" column is localized
+# and breaks string matching on non-English Windows. The query needs
+# SeSecurityPrivilege, which the helper enables in the already-elevated
+# scan token; AuditLookupSubCategoryName supplies the readable name.
+function Initialize-AuditPolicyApi {
+    if (([System.Management.Automation.PSTypeName]'BlAuditPolicy').Type) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
 
-function Get-AuditPolDump {
-    if ($null -ne $script:auditpol_error) { throw $script:auditpol_error }
-    if ($null -ne $script:auditpol_cache) { return $script:auditpol_cache }
-
-    try {
-        $csv_text = & auditpol.exe /get /category:* /r 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            throw [System.UnauthorizedAccessException]::new(
-                "auditpol /get exited with code ${LASTEXITCODE}; typically means administrator is required"
-            )
-        }
-        $cache = @{}
-        foreach ($row in ($csv_text | ConvertFrom-Csv)) {
-            $guid = $row.'Subcategory GUID'
-            if ($null -ne $guid -and $guid -ne '') {
-                $cache[$guid] = [ordered]@{
-                    Name    = $row.'Subcategory'
-                    Setting = $row.'Inclusion Setting'
-                }
-            }
-        }
-        $script:auditpol_cache = $cache
-        return $cache
-    } catch {
-        $script:auditpol_error = $_.Exception
-        throw
+public static class BlAuditPolicy {
+    [StructLayout(LayoutKind.Sequential)]
+    private struct AUDIT_POLICY_INFORMATION {
+        public Guid AuditSubCategoryGuid;
+        public uint AuditingInformation;
+        public Guid AuditCategoryGuid;
     }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LUID { public uint LowPart; public int HighPart; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LUID_AND_ATTRIBUTES { public LUID Luid; public uint Attributes; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TOKEN_PRIVILEGES { public uint PrivilegeCount; public LUID_AND_ATTRIBUTES Privilege; }
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.U1)]
+    private static extern bool AuditQuerySystemPolicy(
+        Guid[] pSubCategoryGuids, uint dwPolicyCount, out IntPtr ppAuditPolicy);
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.U1)]
+    private static extern bool AuditLookupSubCategoryName(
+        ref Guid pAuditSubCategoryGuid, out IntPtr ppszSubCategoryName);
+    [DllImport("advapi32.dll")]
+    private static extern void AuditFree(IntPtr buffer);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool LookupPrivilegeValue(string lpSystemName, string lpName, out LUID lpLuid);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool AdjustTokenPrivileges(IntPtr TokenHandle, bool DisableAllPrivileges,
+        ref TOKEN_PRIVILEGES NewState, uint BufferLength, IntPtr PreviousState, IntPtr ReturnLength);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    private const uint TOKEN_ADJUST_PRIVILEGES = 0x0020;
+    private const uint TOKEN_QUERY = 0x0008;
+    private const uint SE_PRIVILEGE_ENABLED = 0x00000002;
+
+    private static void EnableSecurityPrivilege() {
+        IntPtr token;
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out token)) { return; }
+        try {
+            LUID luid;
+            if (!LookupPrivilegeValue(null, "SeSecurityPrivilege", out luid)) { return; }
+            TOKEN_PRIVILEGES tp = new TOKEN_PRIVILEGES();
+            tp.PrivilegeCount = 1;
+            tp.Privilege.Luid = luid;
+            tp.Privilege.Attributes = SE_PRIVILEGE_ENABLED;
+            AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
+        } finally {
+            CloseHandle(token);
+        }
+    }
+
+    public static int QueryMode(Guid subcategory, out int lastError) {
+        lastError = 0;
+        EnableSecurityPrivilege();
+        Guid[] guids = new Guid[] { subcategory };
+        IntPtr buffer;
+        if (!AuditQuerySystemPolicy(guids, 1, out buffer) || buffer == IntPtr.Zero) {
+            lastError = Marshal.GetLastWin32Error();
+            return -1;
+        }
+        try {
+            AUDIT_POLICY_INFORMATION info = (AUDIT_POLICY_INFORMATION)
+                Marshal.PtrToStructure(buffer, typeof(AUDIT_POLICY_INFORMATION));
+            return (int)info.AuditingInformation;
+        } finally {
+            AuditFree(buffer);
+        }
+    }
+
+    public static string LookupName(Guid subcategory) {
+        IntPtr namePtr;
+        if (!AuditLookupSubCategoryName(ref subcategory, out namePtr) || namePtr == IntPtr.Zero) {
+            return null;
+        }
+        try {
+            return Marshal.PtrToStringUni(namePtr);
+        } finally {
+            AuditFree(namePtr);
+        }
+    }
+}
+'@
+}
+
+# Canonical audit mode (NoAuditing/Success/Failure/SuccessAndFailure) for a
+# subcategory GUID. An unconfigured subcategory reads as 0 -> NoAuditing,
+# the same effective state auditpol reports for an absent entry. Throws on
+# an API failure so the per-rec catch reports it; a privilege/access error
+# surfaces as "Requires elevation".
+function Get-AuditSubcategoryMode {
+    param([Parameter(Mandatory)][string]$Guid)
+    Initialize-AuditPolicyApi
+    $err = 0
+    $bits = [BlAuditPolicy]::QueryMode([Guid]$Guid, [ref]$err)
+    if ($bits -lt 0) {
+        if ($err -eq 1314 -or $err -eq 5) {
+            throw [System.UnauthorizedAccessException]::new(
+                "Audit policy query requires elevation (Win32 error $err)")
+        }
+        throw "AuditQuerySystemPolicy failed for ${Guid} (Win32 error $err)"
+    }
+    $success = ($bits -band 1) -ne 0
+    $failure = ($bits -band 2) -ne 0
+    if ($success -and $failure) { return 'SuccessAndFailure' }
+    if ($success) { return 'Success' }
+    if ($failure) { return 'Failure' }
+    return 'NoAuditing'
+}
+
+# Readable subcategory name for a GUID, falling back to the GUID itself
+# when the lookup returns nothing (e.g. an invalid GUID).
+function Get-AuditSubcategoryName {
+    param([Parameter(Mandatory)][string]$Guid)
+    Initialize-AuditPolicyApi
+    $name = [BlAuditPolicy]::LookupName([Guid]$Guid)
+    if ([string]::IsNullOrWhiteSpace($name)) { return $Guid }
+    return $name
+}
+
+# Built-in groups and well-known accounts named by URA recs, mapped to
+# their SID. The actual side reads SIDs from secedit, so resolving the
+# benchmark's English names to SIDs here keeps the comparison working on
+# non-English Windows, where the built-in group names are localized
+# (Administratoren, Administradores) and translating the English name
+# returns nothing. SID values are from the Microsoft well-known SID
+# reference. Names with a domain prefix (NT SERVICE\..., Window Manager\...)
+# are not localized and resolve through NTAccount below.
+$script:well_known_sids = @{
+    'Administrators'       = 'S-1-5-32-544'
+    'Users'                = 'S-1-5-32-545'
+    'Guests'               = 'S-1-5-32-546'
+    'Remote Desktop Users' = 'S-1-5-32-555'
+    'Local account'        = 'S-1-5-113'
+    'SERVICE'              = 'S-1-5-6'
+    'LOCAL SERVICE'        = 'S-1-5-19'
+    'NETWORK SERVICE'      = 'S-1-5-20'
 }
 
 # Resolves a principal identifier (raw SID, well-known name, or
-# DOMAIN\Account form) to its SID string. Returns $null when the
-# identifier can't be resolved on this device -- the URA comparison
-# treats that as "missing from the actual set."
+# DOMAIN\Account form) to its SID string. Well-known names resolve from
+# the locale-independent map; everything else goes through NTAccount.
+# Returns $null when the identifier can't be resolved on this device --
+# the URA comparison treats that as "missing from the actual set."
 function Resolve-PrincipalToSid {
     param([Parameter(Mandatory)][string]$Identifier)
     if ($Identifier -match '^S-\d-\d+(-\d+)*$') { return $Identifier }
+    if ($script:well_known_sids.ContainsKey($Identifier)) {
+        return $script:well_known_sids[$Identifier]
+    }
     try {
         $account = New-Object System.Security.Principal.NTAccount($Identifier)
         return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
