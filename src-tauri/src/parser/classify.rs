@@ -41,14 +41,18 @@ enum Detection {
 /// shape and, if so, parses it. The dispatcher tries them in priority
 /// order and takes the first non-`NotApplicable` answer.
 ///
-/// Order is from most-specific cue to least: PolicyManager owns the
-/// `_WinningProvider` subset, AuditPolicy owns recs that run `auditpol`,
-/// URA and Secedit own recs whose remediation references a Settings
-/// Catalog / Local Security Policy path. Registry runs last as the
-/// catch-all for anything with an HKLM/HKU path -- otherwise a rec whose
-/// audit body happens to cite a registry path alongside an LSP cue would
-/// be silently claimed as Registry and never reach the specific detector
-/// that actually matches its shape.
+/// PolicyManager runs first as the `_WinningProvider` subset of recs that
+/// also carry a registry path. Registry runs second: a Security Option
+/// whose audit body carries an HKLM/HKU path is read from that path
+/// directly. This matters because the Secedit arm reads only secedit's
+/// `[System Access]` section -- a Security Option outside that section
+/// (Interactive logon, Network security/access, SMB signing, User Account
+/// Control, ...) reports "Not configured" if routed to Secedit, and every
+/// such rec in the benchmarks we parse carries a readable registry path.
+/// AuditPolicy and URA carry no registry path, so their position relative
+/// to Registry doesn't change what they claim. Secedit runs last and owns
+/// the account-policy recs (password, lockout, account rename/status) that
+/// `[System Access]` resolves and that have no registry path.
 pub(crate) fn audit_procedure(rec: &RawRecommendation) -> AuditProcedure {
     let Some(body) = rec.sections.audit.as_deref() else {
         return manual("missing audit section");
@@ -61,10 +65,10 @@ pub(crate) fn audit_procedure(rec: &RawRecommendation) -> AuditProcedure {
 
     let detectors: [fn(&DetectCtx) -> Detection; 5] = [
         policy_manager::detect,
+        registry::detect,
         audit_policy::detect,
         user_rights_assignment::detect,
         secedit::detect,
-        registry::detect,
     ];
     for detect in detectors {
         match detect(&ctx) {
