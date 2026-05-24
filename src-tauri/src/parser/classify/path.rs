@@ -70,7 +70,7 @@ pub(super) fn extract_all(body: &str) -> Vec<JoinedPath> {
         if let Some(colon_idx) = joined.find(':') {
             let (path_part, rest) = joined.split_at(colon_idx);
             let value_name = rest[1..].trim().to_string();
-            let path = path_part.trim().to_string();
+            let path = normalize_hive(path_part.trim());
             if !path.is_empty() && !value_name.is_empty() {
                 paths.push(JoinedPath { path, value_name });
             }
@@ -81,7 +81,24 @@ pub(super) fn extract_all(body: &str) -> Vec<JoinedPath> {
 
 fn starts_with_hive(line: &str) -> bool {
     let trimmed = line.trim_start();
-    trimmed.starts_with("HKLM\\") || trimmed.starts_with("HKU\\")
+    trimmed.starts_with("HKLM\\")
+        || trimmed.starts_with("HKU\\")
+        || trimmed.starts_with("HKEY_LOCAL_MACHINE\\")
+        || trimmed.starts_with("HKEY_USERS\\")
+}
+
+/// Rewrites a spelled-out hive prefix to the abbreviation the rest of the
+/// pipeline keys on, so `scope_prefix` and the PowerShell path resolver
+/// only ever see `HKLM\` / `HKU\`. Most recs abbreviate the hive; some
+/// spell it out (`HKEY_LOCAL_MACHINE\...`).
+fn normalize_hive(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix("HKEY_LOCAL_MACHINE\\") {
+        format!("HKLM\\{rest}")
+    } else if let Some(rest) = path.strip_prefix("HKEY_USERS\\") {
+        format!("HKU\\{rest}")
+    } else {
+        path.to_string()
+    }
 }
 
 fn had_trailing_whitespace(raw: &str) -> bool {
@@ -95,6 +112,15 @@ mod tests {
     #[test]
     fn extracts_single_path() {
         let body = "HKLM\\SOFTWARE\\Foo\\Bar:Baz\n";
+        let paths = extract_all(body);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "HKLM\\SOFTWARE\\Foo\\Bar");
+        assert_eq!(paths[0].value_name, "Baz");
+    }
+
+    #[test]
+    fn normalizes_long_form_hive_prefix() {
+        let body = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Foo\\Bar:Baz\n";
         let paths = extract_all(body);
         assert_eq!(paths.len(), 1);
         assert_eq!(paths[0].path, "HKLM\\SOFTWARE\\Foo\\Bar");
