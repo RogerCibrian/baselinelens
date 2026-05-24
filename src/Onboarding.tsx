@@ -204,13 +204,13 @@ function Action({
       <MachineStrip deviceInfo={deviceInfo} />
       <DropZone state={state} onBrowse={onBrowse} />
       <p className="ob-get-benchmark">
-        Don't have a PDF yet?{" "}
+        Don't have a benchmark PDF yet?{" "}
         <button
           type="button"
           className="ob-link"
           onClick={() => void openUrl("https://downloads.cisecurity.org/")}
         >
-          Download it from cisecurity.org
+          Download one from cisecurity.org
         </button>
       </p>
       {state.kind === "error" ? (
