@@ -239,81 +239,149 @@ mod tests {
         }
     }
 
+    /// Exact per-variant classification counts for each benchmark PDF under
+    /// `dev/`. Pinned so any parser change that shifts how recs classify
+    /// fails loudly with the offending benchmark named -- a loose bound is
+    /// what once let a 334->302 Registry drift pass unnoticed. Update a row
+    /// only when the shift is intended.
+    struct Counts {
+        file: &'static str,
+        recs: usize,
+        registry: usize,
+        policy_manager: usize,
+        audit_policy: usize,
+        user_rights: usize,
+        secedit: usize,
+        manual: usize,
+    }
+
     #[test]
-    #[ignore = "requires dev/CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf on disk"]
-    fn classifies_real_pdf_recs() {
-        let pdf_path = fixture_pdf_path();
-        let text = pdf::extract(&pdf_path).expect("PDF extraction");
-        let recs = structure::slice(&text).expect("slicing");
-        assert_eq!(recs.len(), 457);
+    #[ignore = "requires the dev/ benchmark PDFs on disk; pins exact classification counts"]
+    fn classifies_all_benchmarks() {
+        let cases = [
+            Counts {
+                file: "CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf",
+                recs: 457,
+                registry: 334,
+                policy_manager: 58,
+                audit_policy: 27,
+                user_rights: 35,
+                secedit: 3,
+                manual: 0,
+            },
+            Counts {
+                file: "CIS_Microsoft_Intune_for_Windows_11_Benchmark_v3.0.1.pdf",
+                recs: 420,
+                registry: 324,
+                policy_manager: 34,
+                audit_policy: 27,
+                user_rights: 28,
+                secedit: 3,
+                manual: 4,
+            },
+            Counts {
+                file: "CIS_Microsoft_Windows_11_Enterprise_Benchmark_v5.0.1.pdf",
+                recs: 560,
+                registry: 480,
+                policy_manager: 0,
+                audit_policy: 27,
+                user_rights: 38,
+                secedit: 15,
+                manual: 0,
+            },
+            Counts {
+                file: "CIS_Microsoft_Windows_11_Stand-alone_Benchmark_v5.0.0.pdf",
+                recs: 488,
+                registry: 408,
+                policy_manager: 0,
+                audit_policy: 27,
+                user_rights: 38,
+                secedit: 15,
+                manual: 0,
+            },
+            Counts {
+                file: "CIS_Microsoft_Intune_for_Windows_10_Benchmark_v4.0.0.pdf",
+                recs: 412,
+                registry: 300,
+                policy_manager: 53,
+                audit_policy: 27,
+                user_rights: 29,
+                secedit: 3,
+                manual: 0,
+            },
+            Counts {
+                file: "CIS_Microsoft_Windows_10_Enterprise_Benchmark_v4.0.0.pdf",
+                recs: 543,
+                registry: 461,
+                policy_manager: 0,
+                audit_policy: 27,
+                user_rights: 38,
+                secedit: 15,
+                manual: 2,
+            },
+            Counts {
+                file: "CIS_Microsoft_Windows_10_Stand-alone_Benchmark_v4.0.0.pdf",
+                recs: 494,
+                registry: 412,
+                policy_manager: 0,
+                audit_policy: 27,
+                user_rights: 38,
+                secedit: 15,
+                manual: 2,
+            },
+            Counts {
+                file: "CIS_Microsoft_Windows_10_Stand-alone_Benchmark_v3.0.0.pdf",
+                recs: 489,
+                registry: 407,
+                policy_manager: 0,
+                audit_policy: 27,
+                user_rights: 37,
+                secedit: 15,
+                manual: 3,
+            },
+        ];
 
-        let mut registry = 0usize;
-        let mut policy_manager = 0usize;
-        let mut audit_policy = 0usize;
-        let mut user_rights = 0usize;
-        let mut secedit_count = 0usize;
-        let mut manual_unparsed_pm = 0usize;
-        let mut manual_unparsed_registry = 0usize;
-        let mut manual_unparsed_ap = 0usize;
-        let mut manual_unparsed_ura = 0usize;
-        let mut manual_unparsed_secedit = 0usize;
-        let mut manual_other = 0usize;
+        let dev_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../dev");
+        for case in &cases {
+            let path = dev_dir.join(case.file);
+            let text =
+                pdf::extract(&path).unwrap_or_else(|err| panic!("extract {}: {err}", case.file));
+            let recs =
+                structure::slice(&text).unwrap_or_else(|err| panic!("slice {}: {err}", case.file));
 
-        for rec in &recs {
-            match audit_procedure(rec) {
-                AuditProcedure::Registry { .. } => registry += 1,
-                AuditProcedure::PolicyManager { .. } => policy_manager += 1,
-                AuditProcedure::AuditPolicy { .. } => audit_policy += 1,
-                AuditProcedure::UserRightsAssignment { .. } => user_rights += 1,
-                AuditProcedure::Secedit { .. } => secedit_count += 1,
-                AuditProcedure::Manual { description } => {
-                    if description.contains("PolicyManager body") {
-                        manual_unparsed_pm += 1;
-                    } else if description.contains("registry body could not be parsed") {
-                        manual_unparsed_registry += 1;
-                    } else if description.contains("AuditPolicy body") {
-                        manual_unparsed_ap += 1;
-                    } else if description.contains("URA body") {
-                        manual_unparsed_ura += 1;
-                    } else if description.contains("Secedit body") {
-                        manual_unparsed_secedit += 1;
-                    } else {
-                        manual_other += 1;
-                    }
+            let mut registry = 0usize;
+            let mut policy_manager = 0usize;
+            let mut audit_policy = 0usize;
+            let mut user_rights = 0usize;
+            let mut secedit = 0usize;
+            let mut manual = 0usize;
+            for rec in &recs {
+                match audit_procedure(rec) {
+                    AuditProcedure::Registry { .. } => registry += 1,
+                    AuditProcedure::PolicyManager { .. } => policy_manager += 1,
+                    AuditProcedure::AuditPolicy { .. } => audit_policy += 1,
+                    AuditProcedure::UserRightsAssignment { .. } => user_rights += 1,
+                    AuditProcedure::Secedit { .. } => secedit += 1,
+                    AuditProcedure::Manual { .. } => manual += 1,
                 }
             }
+
+            assert_eq!(recs.len(), case.recs, "{}: rec count", case.file);
+            assert_eq!(registry, case.registry, "{}: registry", case.file);
+            assert_eq!(
+                policy_manager, case.policy_manager,
+                "{}: policy_manager",
+                case.file
+            );
+            assert_eq!(
+                audit_policy, case.audit_policy,
+                "{}: audit_policy",
+                case.file
+            );
+            assert_eq!(user_rights, case.user_rights, "{}: user_rights", case.file);
+            assert_eq!(secedit, case.secedit, "{}: secedit", case.file);
+            assert_eq!(manual, case.manual, "{}: manual", case.file);
         }
-
-        eprintln!(
-            "classification: registry={registry} \
-             policy_manager={policy_manager} \
-             audit_policy={audit_policy} \
-             user_rights={user_rights} \
-             secedit={secedit_count} \
-             manual_unparsed_pm={manual_unparsed_pm} \
-             manual_unparsed_registry={manual_unparsed_registry} \
-             manual_unparsed_ap={manual_unparsed_ap} \
-             manual_unparsed_ura={manual_unparsed_ura} \
-             manual_unparsed_secedit={manual_unparsed_secedit} \
-             manual_other={manual_other}"
-        );
-
-        assert_eq!(
-            registry + policy_manager + audit_policy + user_rights + secedit_count,
-            recs.len(),
-            "every recommendation should be cleanly classified"
-        );
-        assert!(
-            registry >= 330,
-            "expected at least 330 Registry classifications, got {registry}"
-        );
-        assert!(
-            policy_manager >= 55,
-            "expected at least 55 PolicyManager classifications, got {policy_manager}"
-        );
-        assert_eq!(audit_policy, 27);
-        assert_eq!(user_rights, 35);
-        assert_eq!(secedit_count, 3);
     }
 
     #[test]
