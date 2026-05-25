@@ -105,10 +105,10 @@ mod tests {
     fn try_parse_with_simple_dword_equals() {
         // Mimics rec 1.1 (Cortana): WinningProvider lookup + "is set to 0".
         let body = "\
-1.  Navigate to the following registry location and note the WinningProvider GUID.
+1.  The location below holds the provider GUID.
 HKLM\\SOFTWARE\\Microsoft\\PolicyManager\\current\\device\\AboveLock:AllowCortanaAboveLock_WinningProvider
 
-2.  Navigate to the following registry location and confirm the value is set to 0.
+2.  At the location below the value is set to 0.
 HKLM\\SOFTWARE\\Microsoft\\PolicyManager\\Providers\\{GUID}\\Default\\Device\\AboveLock:AllowCortanaAboveLock
 ";
         let paths = path::extract_all(body);

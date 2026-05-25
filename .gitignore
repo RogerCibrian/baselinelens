@@ -4,7 +4,6 @@ compliance-data.json
 *.pdf
 screenshots/
 dev/
-!src-tauri/tests/fixtures/synthetic-baseline.pdf
 
 # Logs
 logs

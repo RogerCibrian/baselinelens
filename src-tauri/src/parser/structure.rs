@@ -824,8 +824,8 @@ Set the thing.
         // title wraps across two lines.
         let text = "\
 Recommendations
-1.1.1 Ensure 'Enforce password history' is set to '24 or more
-password(s)' (Automated)
+1.1.1 Ensure 'Sample wrapped setting' is set to 'some value or
+more option(s)' (Automated)
 
 Profile Applicability:
 
@@ -848,7 +848,7 @@ HKLM\\SOFTWARE\\Foo:Bar
         assert_eq!(rec.assessment, Assessment::Automated);
         assert_eq!(
             rec.title,
-            "Ensure 'Enforce password history' is set to '24 or more password(s)'"
+            "Ensure 'Sample wrapped setting' is set to 'some value or more option(s)'"
         );
     }
 
@@ -857,7 +857,7 @@ HKLM\\SOFTWARE\\Foo:Bar
         // BitLocker add-on shape: base level L1, tagged BitLocker.
         let text = "\
 Recommendations
-18.9.7.1.1 Ensure 'Prevent installation of devices' is set to 'Enabled'
+18.9.7.1.1 Ensure 'Sample device policy' is set to 'Enabled'
 (Automated)
 
 Profile Applicability:
@@ -880,7 +880,7 @@ A short description.
     fn intune_standalone_bitlocker_resolves_to_bl_level() {
         let text = "\
 Recommendations
-4.10.9.1.1 (BL) Ensure 'Prevent installation of devices' is set to 'Enabled'
+4.10.9.1.1 (BL) Ensure 'Sample device policy' is set to 'Enabled'
 (Automated)
 
 Profile Applicability:
@@ -897,7 +897,7 @@ A short description.
         assert!(recs[0].bitlocker);
         assert_eq!(
             recs[0].title,
-            "Ensure 'Prevent installation of devices' is set to 'Enabled'"
+            "Ensure 'Sample device policy' is set to 'Enabled'"
         );
     }
 
@@ -916,8 +916,8 @@ This section contains recommendations for account policies.
 
 This section contains recommendations for password policy.
 
-1.1.1 Ensure 'Enforce password history' is set to '24 or more
-password(s)' (Automated)
+1.1.1 Ensure 'Sample wrapped setting' is set to 'some value or
+more option(s)' (Automated)
 
 Profile Applicability:
 

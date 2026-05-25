@@ -236,8 +236,8 @@ fn derive_category_number(id: &str) -> String {
 }
 
 /// Pulls the Settings Catalog path out of the remediation text. The path
-/// follows a "set the following Settings Catalog path …:" line and is the
-/// next non-empty line that contains a `\` separator.
+/// is the next non-empty line containing a `\` separator after a line that
+/// mentions "Settings Catalog path".
 fn extract_settings_catalog_path(remediation: &str) -> Option<String> {
     let mut found_intro = false;
     for line in remediation.lines() {
@@ -405,8 +405,8 @@ mod tests {
     fn parses_references_into_url_and_note_kinds() {
         let text = "\
 1.  https://learn.microsoft.com/en-us/foo
-2.  Minimum OS CSP: Windows 10, Version 1607 and later
-3.  GRID: MS-00000510
+2.  Internal reference note for testing
+3.  Another internal reference note
 ";
         let refs = parse_references(Some(text));
         assert_eq!(refs.len(), 3);
@@ -416,7 +416,7 @@ mod tests {
         }
         match &refs[1] {
             Reference::Note { text } => {
-                assert_eq!(text, "Minimum OS CSP: Windows 10, Version 1607 and later")
+                assert_eq!(text, "Internal reference note for testing")
             }
             _ => panic!("expected Note"),
         }
@@ -425,8 +425,8 @@ mod tests {
     #[test]
     fn extracts_settings_catalog_path_from_remediation() {
         let remediation = "\
-To establish the recommended configuration via configuration profiles, set the following
-Settings Catalog path to Disabled:
+Configure the value at the path below.
+Settings Catalog path:
 Above Lock\\Allow Cortana Above Lock
 ";
         assert_eq!(

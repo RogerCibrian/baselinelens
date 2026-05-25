@@ -187,7 +187,7 @@ SVOL
         let body = "\
 HKLM\\SOFTWARE\\Microsoft\\PolicyManager\\current\\device\\AboveLock:AllowCortanaAb
 oveLock_WinningProvider
-2.  Navigate to the following registry location and confirm the value is set to 0.
+2.  The value at the location below is 0.
 HKLM\\SOFTWARE\\Microsoft\\PolicyManager\\Providers\\{GUID}\\Default\\Device\\AboveLock:AllowCortanaAboveLock
 ";
         let paths = extract_all(body);

@@ -111,12 +111,10 @@ mod tests {
     #[test]
     fn try_parse_full_rec() {
         let body = "\
-Navigate to the UI Path articulated in the Remediation section and confirm it is set as
-prescribed.
-OR
+Confirm the current setting with the command below.
 auditpol /get /subcategory:\"{0cce9215-69ae-11d9-bed3-505054503030}\"
 ";
-        let title = "Ensure 'Account Logon Logoff Audit Logon' is set to 'Success and Failure'";
+        let title = "Ensure 'Sample audit subcategory' is set to 'Success and Failure'";
         let procedure = try_parse(body, title).expect("should parse");
         match procedure {
             AuditProcedure::AuditPolicy {

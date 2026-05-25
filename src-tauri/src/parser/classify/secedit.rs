@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn parses_explicit_value_from_title() {
         let rec = rec_for(
-            "Ensure 'Accounts: Enable Guest account status' is set to 'Disabled'",
+            "Ensure 'Sample guest account setting' is set to 'Disabled'",
             "Local Policies Security Options\\Accounts: Guest account status\n",
             None,
         );
@@ -136,9 +136,8 @@ mod tests {
     #[test]
     fn parses_gpo_account_policy_path_and_numeric_constraint() {
         let rec = rec_for(
-            "Ensure 'Enforce password history' is set to '24 or more password(s)'",
-            "To establish the recommended configuration via GP, set the following \
-             UI path to 24 or more password(s):\n\
+            "Ensure 'Sample password setting' is set to '24 or more password(s)'",
+            "Apply the expected value at the path below:\n\
              Computer Configuration\\Policies\\Windows Settings\\Security \
              Settings\\Account Policies\\Password Policy\\Enforce password history\n",
             None,
@@ -158,7 +157,7 @@ mod tests {
     #[test]
     fn parses_configure_as_not_equals_default() {
         let rec = rec_for(
-            "Configure 'Accounts: Rename administrator account'",
+            "Configure 'Sample rename setting'",
             "Local Policies Security Options\\Accounts: Rename administrator account\n",
             Some("Administrator.\n"),
         );

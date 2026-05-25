@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn extracts_right_name_from_remediation() {
-        let remediation = "Set the following Settings Catalog path:\nUser Rights\\Debug Programs\n";
+        let remediation = "Path below names the right:\nUser Rights\\Debug Programs\n";
         assert_eq!(
             extract_right_name(remediation).as_deref(),
             Some("Debug Programs")
@@ -108,8 +108,7 @@ mod tests {
 
     #[test]
     fn extracts_right_name_from_gpo_local_security_policy_path() {
-        let remediation = "To establish the recommended configuration via GP, set the \
-            following UI path to Administrators, Remote Desktop Users:\n\
+        let remediation = "Apply the expected value at the path below:\n\
             Computer Configuration\\Policies\\Windows Settings\\Security Settings\\Local \
             Policies\\User Rights Assignment\\Access this computer from the network\n";
         assert_eq!(
@@ -126,7 +125,7 @@ mod tests {
 
     #[test]
     fn parses_exact_with_single_principal() {
-        let title = "Ensure 'Debug Programs' is set to 'Administrators'";
+        let title = "Ensure 'Sample privilege right' is set to 'Administrators'";
         let (principals, matching) = parse_principals_from_title(title).expect("parse");
         assert_eq!(matching, MatchMode::Exact);
         assert_eq!(principals.len(), 1);
@@ -136,7 +135,7 @@ mod tests {
 
     #[test]
     fn parses_includes_with_multiple_principals() {
-        let title = "Ensure 'Deny Access From Network' to include 'Guests, Local account'";
+        let title = "Ensure 'Sample deny right' to include 'Guests, Local account'";
         let (principals, matching) = parse_principals_from_title(title).expect("parse");
         assert_eq!(matching, MatchMode::Includes);
         assert_eq!(principals.len(), 2);
@@ -146,7 +145,7 @@ mod tests {
 
     #[test]
     fn parses_no_one_as_empty_list() {
-        let title = "Ensure 'Lock Memory' is set to 'No One'";
+        let title = "Ensure 'Sample memory right' is set to 'No One'";
         let (principals, matching) = parse_principals_from_title(title).expect("parse");
         assert_eq!(matching, MatchMode::Exact);
         assert!(principals.is_empty());
@@ -154,7 +153,7 @@ mod tests {
 
     #[test]
     fn detects_account_name_kind_for_path_style() {
-        let title = "Ensure 'Increase Scheduling Priority' is set to 'Administrators, Window Manager\\Window Manager Group'";
+        let title = "Ensure 'Sample priority right' is set to 'Administrators, Window Manager\\Window Manager Group'";
         let (principals, _) = parse_principals_from_title(title).expect("parse");
         assert_eq!(principals.len(), 2);
         assert_eq!(principals[0].kind, PrincipalKind::WellKnownName);
@@ -168,9 +167,9 @@ mod tests {
     #[test]
     fn try_parse_full_rec() {
         let rec = rec_with(
-            "Set the following Settings Catalog path to *S-1-5-32-544 (Administrators).\n\
+            "Path below names the right:\n\
              User Rights\\Debug Programs\n",
-            "Ensure 'Debug Programs' is set to 'Administrators'",
+            "Ensure 'Sample privilege right' is set to 'Administrators'",
         );
         let procedure = try_parse(&rec).expect("should parse");
         match procedure {
@@ -192,9 +191,9 @@ mod tests {
     fn try_parse_implicit_rec_via_remediation() {
         // Mimics 89.14: audit body has no LSP path, but remediation does.
         let rec = rec_with(
-            "Set the following Settings Catalog path to *S-1-5-32-546 (Guests).\n\
+            "Path below names the right:\n\
              User Rights\\Deny Local Log On\n",
-            "Ensure 'Deny Local Log On' to include 'Guests'",
+            "Ensure 'Sample deny right' to include 'Guests'",
         );
         let procedure = try_parse(&rec).expect("should parse");
         match procedure {
