@@ -27,6 +27,20 @@ pub(crate) enum ParseError {
         source: pdf_extract::OutputError,
     },
 
+    #[error(
+        "The PDF is too large to parse ({} MB; the limit is {} MB). Check that this \
+         is the benchmark PDF.",
+        .bytes / 1_048_576,
+        .max / 1_048_576
+    )]
+    TooLarge { bytes: u64, max: u64 },
+
+    #[error(
+        "The PDF has {pages} pages, more than the {max}-page limit. Check that this \
+         is the benchmark PDF."
+    )]
+    TooManyPages { pages: u32, max: u32 },
+
     #[error("Could not locate the Recommendations chapter in the PDF body.")]
     BodyNotFound,
 }

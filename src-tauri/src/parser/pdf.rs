@@ -10,6 +10,23 @@ use pdf_extract::PlainTextOutput;
 
 use crate::error::ParseError;
 
+/// Upper bound on the page count we'll walk. A small file can still
+/// declare a huge page tree; this caps the per-page loop so a malformed
+/// or non-benchmark document fails fast instead of grinding. Real CIS
+/// benchmark PDFs run to a few hundred pages, so the ceiling is generous.
+const MAX_PDF_PAGES: u32 = 5000;
+
+/// Returns an error when `total` exceeds [`MAX_PDF_PAGES`].
+fn ensure_within_page_limit(total: u32) -> Result<(), ParseError> {
+    if total > MAX_PDF_PAGES {
+        return Err(ParseError::TooManyPages {
+            pages: total,
+            max: MAX_PDF_PAGES,
+        });
+    }
+    Ok(())
+}
+
 /// Extracts the textual content of `bytes` as a single UTF-8 string,
 /// invoking `on_page` after each page is processed so a caller can
 /// render a determinate progress bar. Arguments are `(page_done,
@@ -30,6 +47,7 @@ pub(crate) fn extract_with_progress(
 ) -> Result<String, ParseError> {
     let doc = Document::load_mem(bytes).map_err(pdf_extract::OutputError::PdfError)?;
     let total = doc.get_pages().len() as u32;
+    ensure_within_page_limit(total)?;
     let mut out = String::new();
     for page_num in 1..=total {
         let mut page_text = String::new();
@@ -62,4 +80,21 @@ pub(crate) fn extract(path: &Path) -> Result<String, ParseError> {
         source,
     })?;
     extract_with_progress(&bytes, |_, _| {})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn page_limit_accepts_up_to_the_cap_and_rejects_past_it() {
+        assert!(ensure_within_page_limit(MAX_PDF_PAGES).is_ok());
+        match ensure_within_page_limit(MAX_PDF_PAGES + 1) {
+            Err(ParseError::TooManyPages { pages, max }) => {
+                assert_eq!(pages, MAX_PDF_PAGES + 1);
+                assert_eq!(max, MAX_PDF_PAGES);
+            }
+            other => panic!("expected TooManyPages, got {other:?}"),
+        }
+    }
 }

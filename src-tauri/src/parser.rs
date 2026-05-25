@@ -55,6 +55,23 @@ pub(crate) enum ParserProgress {
     Complete,
 }
 
+/// Upper bound on a PDF we'll read into memory and parse. Real CIS
+/// benchmark PDFs are a few megabytes; this rejects a wrong, corrupt, or
+/// oversized file with a clear error rather than reading it all in and
+/// risking an out-of-memory or a long hang.
+const MAX_PDF_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Returns an error when `len` exceeds [`MAX_PDF_BYTES`].
+fn ensure_within_size_limit(len: u64) -> Result<(), ParseError> {
+    if len > MAX_PDF_BYTES {
+        return Err(ParseError::TooLarge {
+            bytes: len,
+            max: MAX_PDF_BYTES,
+        });
+    }
+    Ok(())
+}
+
 /// Parses the PDF at `path` into a fully-populated `Baseline`, invoking
 /// `on_progress` at each pipeline stage so a caller (typically the Tauri
 /// command) can stream progress updates to the UI.
@@ -67,6 +84,7 @@ pub(crate) fn parse_with_progress(
         path: path.to_path_buf(),
         source,
     })?;
+    ensure_within_size_limit(bytes.len() as u64)?;
 
     on_progress(ParserProgress::ComputingChecksum);
     let pdf_sha256 = Sha256::digest(&bytes)
@@ -331,6 +349,18 @@ fn derive_categories(recs: &[Recommendation], text: &str) -> Vec<Category> {
 mod tests {
     use super::*;
     use crate::parser::model::AuditProcedure;
+
+    #[test]
+    fn size_limit_accepts_up_to_the_cap_and_rejects_past_it() {
+        assert!(ensure_within_size_limit(MAX_PDF_BYTES).is_ok());
+        match ensure_within_size_limit(MAX_PDF_BYTES + 1) {
+            Err(ParseError::TooLarge { bytes, max }) => {
+                assert_eq!(bytes, MAX_PDF_BYTES + 1);
+                assert_eq!(max, MAX_PDF_BYTES);
+            }
+            other => panic!("expected TooLarge, got {other:?}"),
+        }
+    }
 
     #[test]
     fn extracts_benchmark_metadata_from_header() {
