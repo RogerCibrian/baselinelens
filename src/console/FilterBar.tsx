@@ -234,13 +234,17 @@ function FilterPill({
   options: { value: string; label: string }[];
 }) {
   const active = value !== "all";
+  const current = options.find((o) => o.value === value)?.label ?? "";
   return (
     <label className={`filter-pill${active ? " filter-pill-active" : ""}`}>
       <span className="filter-pill-label">{label}</span>
+      <span className="filter-pill-select">{current}</span>
+      <SelectCaret />
       <select
-        className="filter-pill-select"
+        className="filter-pill-input"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -248,7 +252,6 @@ function FilterPill({
           </option>
         ))}
       </select>
-      <SelectCaret />
     </label>
   );
 }
