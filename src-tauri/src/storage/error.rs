@@ -9,6 +9,9 @@ pub(crate) enum StorageError {
     #[error("Could not resolve the appdata directory for this platform.")]
     NoDataDir,
 
+    #[error("Invalid baseline identifier.")]
+    InvalidBaselineSha,
+
     #[error("Failed to read or write {path}.")]
     Io {
         path: PathBuf,

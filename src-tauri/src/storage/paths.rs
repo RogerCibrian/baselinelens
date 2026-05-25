@@ -14,6 +14,19 @@ fn project_dirs() -> Result<ProjectDirs, StorageError> {
     ProjectDirs::from("com", "baselinelens", "app").ok_or(StorageError::NoDataDir)
 }
 
+/// Confirms `sha` is a bare SHA-256 hex digest before it's interpolated
+/// into a filename or path segment. The value reaches us as an IPC
+/// argument, so this rejects path separators, `..`, drive letters, and
+/// anything else that could escape the data directory — a baseline id is
+/// always 64 hex characters (`Sha256::digest` output), never a path.
+fn validate_sha(sha: &str) -> Result<(), StorageError> {
+    if sha.len() == 64 && sha.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Ok(())
+    } else {
+        Err(StorageError::InvalidBaselineSha)
+    }
+}
+
 /// Root data directory. On macOS:
 /// `~/Library/Application Support/com.baselinelens.app/`. On Windows:
 /// `%APPDATA%\baselinelens\app\data\`.
@@ -28,6 +41,7 @@ pub(crate) fn app_state_path() -> Result<PathBuf, StorageError> {
 
 /// Path to the per-baseline annotations (exceptions + notes) file.
 pub(crate) fn user_state_path(baseline_sha: &str) -> Result<PathBuf, StorageError> {
+    validate_sha(baseline_sha)?;
     Ok(data_dir()?
         .join("user_states")
         .join(format!("{baseline_sha}.json")))
@@ -35,6 +49,7 @@ pub(crate) fn user_state_path(baseline_sha: &str) -> Result<PathBuf, StorageErro
 
 /// Path to the cached parsed `Baseline` for a given PDF SHA.
 pub(crate) fn baseline_cache_path(sha: &str) -> Result<PathBuf, StorageError> {
+    validate_sha(sha)?;
     Ok(data_dir()?.join("baselines").join(format!("{sha}.json")))
 }
 
@@ -66,8 +81,11 @@ pub(crate) fn audit_security_policy_script_path() -> Result<PathBuf, StorageErro
     Ok(data_dir()?.join("audit-security-policy.ps1"))
 }
 
-/// Directory holding the scan-related files for one baseline.
+/// Directory holding the scan-related files for one baseline. The
+/// `latest`/`changes`/`summaries` paths all build on this, so validating
+/// here covers them too.
 pub(crate) fn scans_dir_for_baseline(baseline_sha: &str) -> Result<PathBuf, StorageError> {
+    validate_sha(baseline_sha)?;
     Ok(data_dir()?.join("scans").join(baseline_sha))
 }
 
@@ -88,4 +106,35 @@ pub(crate) fn changes_path(baseline_sha: &str) -> Result<PathBuf, StorageError> 
 /// `ScanSummary` records, rewritten on each scan.
 pub(crate) fn summaries_path(baseline_sha: &str) -> Result<PathBuf, StorageError> {
     Ok(scans_dir_for_baseline(baseline_sha)?.join("summaries.json"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_a_real_digest() {
+        let sha = "a".repeat(64);
+        assert!(validate_sha(&sha).is_ok());
+    }
+
+    #[test]
+    fn rejects_traversal_and_malformed_ids() {
+        for bad in [
+            "",
+            "short",
+            &"a".repeat(63),
+            &"a".repeat(65),
+            r"..\..\..\windows\system32\config",
+            "../../etc/passwd",
+            "abc/def",
+            &format!("{}{}", "a".repeat(62), ".."),
+            &format!("{}{}", "g".repeat(64), ""), // 'g' isn't hex
+        ] {
+            assert!(
+                validate_sha(bad).is_err(),
+                "expected {bad:?} to be rejected"
+            );
+        }
+    }
 }
