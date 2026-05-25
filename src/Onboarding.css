@@ -603,6 +603,19 @@
   border-radius: 6px;
 }
 
+/* Soft warning when the dropped benchmark isn't one the parser was
+   tested against. Non-blocking -- the scan still runs. */
+.ob-confirm-warning {
+  margin: 0 0 22px;
+  padding: 10px 12px;
+  background: var(--v-warn-bg);
+  border: 1px solid var(--v-warn);
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--v-text);
+}
+
 .ob-confirm-row {
   display: flex;
   justify-content: space-between;

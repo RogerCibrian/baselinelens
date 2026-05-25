@@ -11,6 +11,10 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type { Baseline, DeviceInfo, ParserProgress, Theme } from "./bindings";
+import {
+  isSupportedBenchmark,
+  SUPPORTED_BENCHMARKS,
+} from "./data/supportedBenchmarks";
 import { useEscapeDismiss, useFocusTrap } from "./hooks";
 import ThemeSegment from "./ThemeSegment";
 
@@ -23,32 +27,6 @@ export type OnboardingState =
   | { kind: "error"; message: string; fileName: string | null };
 
 type DragState = "none" | "valid" | "invalid";
-
-/** CIS benchmarks the parser is built and tested against, grouped by
- * target OS for the onboarding readout. Names are nominative — the
- * "CIS Microsoft … Benchmark" framing and the OS are carried by the
- * headings, so each edition is just its short form. */
-const SUPPORTED_BENCHMARKS: {
-  os: string;
-  editions: { name: string; versions: string[] }[];
-}[] = [
-  {
-    os: "Windows 11",
-    editions: [
-      { name: "Intune", versions: ["v4.0.0", "v3.0.1"] },
-      { name: "Enterprise", versions: ["v5.0.1"] },
-      { name: "Stand-alone", versions: ["v5.0.0"] },
-    ],
-  },
-  {
-    os: "Windows 10",
-    editions: [
-      { name: "Intune", versions: ["v4.0.0"] },
-      { name: "Enterprise", versions: ["v4.0.0"] },
-      { name: "Stand-alone", versions: ["v4.0.0", "v3.0.0"] },
-    ],
-  },
-];
 
 export default function Onboarding({
   state,
@@ -569,6 +547,16 @@ function ConfirmModal({
             mono
           />
         </div>
+        {!isSupportedBenchmark(
+          baseline.source.benchmarkName,
+          baseline.source.benchmarkVersion,
+        ) && (
+          <p className="ob-confirm-warning" role="alert">
+            This benchmark isn't in the set BaselineLens has been tested
+            against. The scan will run, but some results may be incomplete or
+            inaccurate.
+          </p>
+        )}
         <div className="ob-confirm-actions">
           <button type="button" className="ob-btn" onClick={onCancel}>
             Cancel
