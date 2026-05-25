@@ -15,6 +15,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use sha2::{Digest, Sha256};
+
 use crate::audit::AUDIT_SCRIPT_VERSION;
 use crate::audit::error::AuditError;
 use crate::storage::paths;
@@ -33,21 +35,63 @@ const AUDIT_SECURITY_POLICY_SCRIPT: &str = include_str!("../../ps/audit-security
 /// audit script.
 const DEVICE_INFO_SCRIPT: &str = include_str!("../../ps/device-info.ps1");
 
-/// Writes `audit.ps1`, its dot-sourced helper modules, and
-/// `device-info.ps1` to disk and returns the audit-script path.
+/// One staged script: its on-disk path plus the lowercase-hex SHA-256 of
+/// the body that was written. The audit launcher passes the digest to
+/// PowerShell so the elevated run can confirm the on-disk file still
+/// matches the body this trusted binary wrote — see `audit::runner`.
+pub(crate) struct StagedScript {
+    pub(crate) path: PathBuf,
+    pub(crate) sha256: String,
+}
+
+/// The four scripts the audit run needs on disk, each paired with its
+/// digest. The launcher dot-sources the three helpers (in this order)
+/// before the dispatcher.
+pub(crate) struct AuditStaging {
+    pub(crate) device_info: StagedScript,
+    pub(crate) registry: StagedScript,
+    pub(crate) security_policy: StagedScript,
+    pub(crate) audit: StagedScript,
+}
+
+/// Writes the audit dispatcher, its helper modules, and `device-info.ps1`
+/// to disk and returns each path with the digest of the body written.
 /// Overwrites unconditionally on every call — the embedded scripts are a
 /// few kilobytes, the writes are microseconds, and "always current" is
 /// worth more than the saved I/O.
-pub(crate) fn ensure_script() -> Result<PathBuf, AuditError> {
-    ensure_device_info_script()?;
-    write_script(&paths::audit_registry_script_path()?, AUDIT_REGISTRY_SCRIPT)?;
-    write_script(
-        &paths::audit_security_policy_script_path()?,
-        AUDIT_SECURITY_POLICY_SCRIPT,
-    )?;
-    let path = paths::audit_script_path(AUDIT_SCRIPT_VERSION)?;
-    write_script(&path, AUDIT_SCRIPT)?;
-    Ok(path)
+pub(crate) fn ensure_script() -> Result<AuditStaging, AuditError> {
+    Ok(AuditStaging {
+        device_info: stage(paths::device_info_script_path()?, DEVICE_INFO_SCRIPT)?,
+        registry: stage(paths::audit_registry_script_path()?, AUDIT_REGISTRY_SCRIPT)?,
+        security_policy: stage(
+            paths::audit_security_policy_script_path()?,
+            AUDIT_SECURITY_POLICY_SCRIPT,
+        )?,
+        audit: stage(
+            paths::audit_script_path(AUDIT_SCRIPT_VERSION)?,
+            AUDIT_SCRIPT,
+        )?,
+    })
+}
+
+/// Writes `body` to `path` and returns it paired with `body`'s digest.
+/// The digest is taken from the same bytes `write_script` writes, so it
+/// matches what PowerShell reads back from the file.
+fn stage(path: PathBuf, body: &str) -> Result<StagedScript, AuditError> {
+    write_script(&path, body)?;
+    Ok(StagedScript {
+        sha256: sha256_hex(body),
+        path,
+    })
+}
+
+/// Lowercase-hex SHA-256 of `body`. Matches the digest PowerShell derives
+/// from the file's bytes (`$_.ToString('x2')`).
+fn sha256_hex(body: &str) -> String {
+    Sha256::digest(body.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// Writes `device-info.ps1` to disk and returns its path. Used by the

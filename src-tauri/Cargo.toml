@@ -17,6 +17,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
 anyhow = "1"
+base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 directories = "6"
 lopdf = "0.36"

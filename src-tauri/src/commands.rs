@@ -353,10 +353,10 @@ pub(crate) async fn start_scan(
 
     let run_cancel_path = cancel_path.clone();
     let scan_result = async_runtime::spawn_blocking(move || -> Result<Scan, String> {
-        let script_path = generator::ensure_script().map_err(|err| err.to_string())?;
+        let staging = generator::ensure_script().map_err(|err| err.to_string())?;
         let mut collector = ScanCollector::new(baseline_sha, PARSER_VERSION, AUDIT_SCRIPT_VERSION);
         runner::run(
-            &script_path,
+            &staging,
             &baseline_path,
             &run_cancel_path,
             |event| match event {
@@ -368,6 +368,9 @@ pub(crate) async fn start_scan(
                     let _ = on_record.send(record.clone());
                     collector.record(record);
                 }
+                // The runner converts a fatal line to an error before it
+                // reaches this callback, so a scan never collects one.
+                AuditEvent::Fatal(_) => {}
             },
         )
         .map_err(|err| err.to_string())?;

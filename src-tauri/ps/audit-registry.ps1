@@ -50,7 +50,10 @@ function Resolve-TenantId {
     # Fallback: dsregcmd /status. The 'TenantId' field name is not
     # localized, so the match is stable across UI languages.
     try {
-        $status = & dsregcmd.exe /status 2>$null
+        # Fully-qualified so a planted dsregcmd.exe on the search path can't
+        # run in our place under elevation.
+        $dsregcmd = Join-Path $env:SystemRoot 'System32\dsregcmd.exe'
+        $status = & $dsregcmd /status 2>$null
         $match = $status | Select-String -Pattern 'TenantId\s*:\s*([0-9A-Fa-f-]{36})'
         if ($match) {
             $script:tenant_id = $match.Matches[0].Groups[1].Value

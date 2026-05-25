@@ -8,6 +8,17 @@
 //!   audit script, with `-OutputPath` pointing at a temp file. The
 //!   parent tails that file line-by-line — UAC blocks stdout from
 //!   crossing back, so a file is the only practical channel.
+//!
+//! Both paths run a base64 `-EncodedCommand` bootstrap rather than
+//! `-File`-ing the on-disk dispatcher directly. The staged scripts live
+//! in a user-writable appdata directory, so an attacker who can write
+//! there could otherwise plant code that runs at the elevated integrity
+//! level. The bootstrap carries the SHA-256 of each script — derived by
+//! this binary from its baked-in copies and delivered over the command
+//! line, which a same-box attacker can't forge — and refuses to run a
+//! file whose bytes don't match. Encoding the bootstrap sidesteps the
+//! nested-quoting hazard of passing a multi-statement `-Command` through
+//! `Start-Process -ArgumentList`.
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
@@ -16,10 +27,12 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use base64::Engine as _;
 use serde::Deserialize;
 
 use crate::audit::elevation;
 use crate::audit::error::AuditError;
+use crate::audit::generator::AuditStaging;
 use crate::audit::model::{DeviceInfo, ScanRecord};
 
 /// Hard ceiling on a single audit run. Real scans finish in seconds;
@@ -38,12 +51,22 @@ const SCRIPT_TIMEOUT: Duration = Duration::from_secs(SCAN_TIMEOUT.as_secs() + 12
 
 /// One line of the NDJSON stream from the audit script. `Device` is
 /// emitted once at the top of the run; `Result` is emitted once per
-/// recommendation thereafter.
+/// recommendation thereafter. `Fatal` is emitted at most once, by the
+/// launcher's `catch`, when the run aborts before producing results
+/// (e.g. an integrity-check failure); the read loops turn it into
+/// [`AuditError::ScriptFatal`] rather than forwarding it as data.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub(crate) enum AuditEvent {
     Device(DeviceInfo),
     Result(ScanRecord),
+    Fatal(FatalEvent),
+}
+
+/// Payload of a `{"type":"fatal","message":"..."}` line.
+#[derive(Debug, Deserialize)]
+pub(crate) struct FatalEvent {
+    message: String,
 }
 
 /// Runs `script_path` against the baseline JSON at `baseline_path` and
@@ -59,7 +82,7 @@ pub(crate) enum AuditEvent {
 /// creating the file; the run then resolves to [`AuditError::Cancelled`]
 /// and the caller skips persistence.
 pub(crate) fn run<F>(
-    script_path: &Path,
+    staging: &AuditStaging,
     baseline_path: &Path,
     cancel_path: &Path,
     on_event: F,
@@ -68,9 +91,9 @@ where
     F: FnMut(AuditEvent),
 {
     let result = if elevation::is_elevated() {
-        run_in_process(script_path, baseline_path, cancel_path, on_event)
+        run_in_process(staging, baseline_path, cancel_path, on_event)
     } else {
-        run_elevated_child(script_path, baseline_path, cancel_path, on_event)
+        run_elevated_child(staging, baseline_path, cancel_path, on_event)
     };
     // A cancelled run exits 0 (clean loop break), so its status looks
     // like success — the sentinel's existence is the only signal that
@@ -98,7 +121,7 @@ where
 /// process and pipe its stdout. Same shape as before the elevation
 /// branch was introduced.
 fn run_in_process<F>(
-    script_path: &Path,
+    staging: &AuditStaging,
     baseline_path: &Path,
     cancel_path: &Path,
     mut on_event: F,
@@ -106,21 +129,16 @@ fn run_in_process<F>(
 where
     F: FnMut(AuditEvent),
 {
+    let bootstrap = build_bootstrap(staging, baseline_path, None, cancel_path);
     let mut child = Command::new("powershell.exe")
         .args([
             "-NoProfile",
             "-NonInteractive",
             "-ExecutionPolicy",
             "Bypass",
-            "-File",
+            "-EncodedCommand",
         ])
-        .arg(script_path)
-        .arg("-BaselinePath")
-        .arg(baseline_path)
-        .arg("-CancelPath")
-        .arg(cancel_path)
-        .arg("-TimeoutSeconds")
-        .arg(SCRIPT_TIMEOUT.as_secs().to_string())
+        .arg(encode_command(&bootstrap))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -170,13 +188,13 @@ where
             Ok(Ok(line)) => {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
-                    on_event(parse_event(trimmed)?);
+                    dispatch_event(parse_event(trimmed)?, &mut on_event)?;
                     event_count += 1;
                 }
             }
             Ok(Err(source)) => {
                 return Err(AuditError::Io {
-                    path: script_path.to_path_buf(),
+                    path: staging.audit.path.clone(),
                     source,
                 });
             }
@@ -217,7 +235,7 @@ where
 /// `AuditError::NonZeroExit` (the outer PS returns non-zero when its
 /// `Start-Process -Wait` throws).
 fn run_elevated_child<F>(
-    script_path: &Path,
+    staging: &AuditStaging,
     baseline_path: &Path,
     cancel_path: &Path,
     mut on_event: F,
@@ -233,7 +251,8 @@ where
         source,
     })?;
 
-    let ps_command = build_runas_command(script_path, baseline_path, &output_path, cancel_path);
+    let bootstrap = build_bootstrap(staging, baseline_path, Some(&output_path), cancel_path);
+    let ps_command = build_runas_command(&encode_command(&bootstrap));
 
     let mut outer_child = Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps_command])
@@ -291,27 +310,103 @@ fn temp_ndjson_path() -> PathBuf {
     std::env::temp_dir().join(format!("baselinelens_audit_{pid}_{stamp}.ndjson"))
 }
 
-/// Builds the PowerShell command we hand to the outer (unelevated)
-/// PowerShell to launch the audit script elevated. The arguments are
-/// passed as a list to `Start-Process` so PowerShell handles the
-/// quoting through `ShellExecuteEx` without our format string having
-/// to escape per-platform shell metacharacters.
-fn build_runas_command(script: &Path, baseline: &Path, output: &Path, cancel: &Path) -> String {
-    fn ps_squote(p: &Path) -> String {
-        // Single-quoted PS strings only need `'` doubled; everything else
-        // is literal, including backslashes.
-        p.to_string_lossy().replace('\'', "''")
-    }
-    let script_q = ps_squote(script);
-    let baseline_q = ps_squote(baseline);
-    let output_q = ps_squote(output);
-    let cancel_q = ps_squote(cancel);
-    let timeout_secs = SCRIPT_TIMEOUT.as_secs();
+/// Single-quotes `p` for embedding in a PowerShell string literal.
+/// Single-quoted PS strings only need `'` doubled; everything else
+/// (backslashes included) is literal.
+fn ps_squote(p: &Path) -> String {
+    p.to_string_lossy().replace('\'', "''")
+}
+
+/// Builds the bootstrap script the elevated (or in-process) PowerShell
+/// runs. It verifies each staged script against the digest this binary
+/// computed, dot-sources the three helpers in dependency order, then
+/// dot-sources the dispatcher with the run's parameters. `output` is
+/// `Some` only on the elevated-child path, where the dispatcher writes
+/// NDJSON to a file instead of stdout.
+///
+/// A mismatch makes `Use-BlScript` throw, so a planted script can't run
+/// at the elevated integrity level — it aborts the run instead.
+fn build_bootstrap(
+    staging: &AuditStaging,
+    baseline: &Path,
+    output: Option<&Path>,
+    cancel: &Path,
+) -> String {
+    let mut audit_args = format!(
+        "-BaselinePath '{}' -CancelPath '{}' -TimeoutSeconds {}",
+        ps_squote(baseline),
+        ps_squote(cancel),
+        SCRIPT_TIMEOUT.as_secs(),
+    );
+    let output_literal = match output {
+        Some(output) => {
+            audit_args.push_str(&format!(" -OutputPath '{}'", ps_squote(output)));
+            ps_squote(output)
+        }
+        None => String::new(),
+    };
+
+    // A failure inside the `try` (a digest mismatch, a baseline that won't
+    // load) is written to the output file as a `fatal` line before being
+    // re-thrown. That file is the only channel back across the UAC
+    // boundary on the elevated path, where the child's stderr is dropped;
+    // the in-process path leaves `$BlOutputPath` empty and relies on the
+    // re-throw reaching the captured stderr instead.
+    //
+    // `{{`/`}}` are escaped literal braces; PowerShell sees single braces.
+    format!(
+        "$ErrorActionPreference='Stop'\n\
+         $BlOutputPath='{output_literal}'\n\
+         function Use-BlScript {{ param([string]$Path,[string]$Hash)\n\
+         $bytes=[System.IO.File]::ReadAllBytes($Path)\n\
+         $sha=[System.Security.Cryptography.SHA256]::Create()\n\
+         try {{ $computed=($sha.ComputeHash($bytes)|ForEach-Object {{ $_.ToString('x2') }}) -join '' }}\n\
+         finally {{ $sha.Dispose() }}\n\
+         if ($computed -ne $Hash) {{ throw \"A BaselineLens script file was modified and failed its integrity check: $Path\" }}\n\
+         return [scriptblock]::Create([System.Text.Encoding]::UTF8.GetString($bytes)) }}\n\
+         try {{\n\
+         . (Use-BlScript -Path '{di_path}' -Hash '{di_hash}')\n\
+         . (Use-BlScript -Path '{reg_path}' -Hash '{reg_hash}')\n\
+         . (Use-BlScript -Path '{sec_path}' -Hash '{sec_hash}')\n\
+         . (Use-BlScript -Path '{audit_path}' -Hash '{audit_hash}') {audit_args}\n\
+         }} catch {{\n\
+         if (-not [string]::IsNullOrEmpty($BlOutputPath)) {{\n\
+         $err=[ordered]@{{ type='fatal'; message=$_.Exception.Message }} | ConvertTo-Json -Compress\n\
+         [System.IO.File]::AppendAllText($BlOutputPath, [Environment]::NewLine + $err + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))\n\
+         }}\n\
+         throw\n\
+         }}\n",
+        di_path = ps_squote(&staging.device_info.path),
+        di_hash = staging.device_info.sha256,
+        reg_path = ps_squote(&staging.registry.path),
+        reg_hash = staging.registry.sha256,
+        sec_path = ps_squote(&staging.security_policy.path),
+        sec_hash = staging.security_policy.sha256,
+        audit_path = ps_squote(&staging.audit.path),
+        audit_hash = staging.audit.sha256,
+    )
+}
+
+/// Encodes `bootstrap` for `powershell.exe -EncodedCommand`: UTF-16LE
+/// bytes, base64. The encoded form is alphanumeric plus `+/=`, so it
+/// carries no quotes or spaces and embeds in a command line or a
+/// `Start-Process -ArgumentList` element without any further escaping.
+fn encode_command(bootstrap: &str) -> String {
+    let utf16: Vec<u8> = bootstrap
+        .encode_utf16()
+        .flat_map(|unit| unit.to_le_bytes())
+        .collect();
+    base64::engine::general_purpose::STANDARD.encode(utf16)
+}
+
+/// Builds the PowerShell command handed to the outer (unelevated)
+/// PowerShell to launch the bootstrap elevated. `encoded` is base64, so
+/// the single-quoted `ArgumentList` element needs no escaping.
+fn build_runas_command(encoded: &str) -> String {
     format!(
         "Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -WindowStyle Hidden \
          -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',\
-         '-File','{script_q}','-BaselinePath','{baseline_q}','-OutputPath','{output_q}',\
-         '-CancelPath','{cancel_q}','-TimeoutSeconds','{timeout_secs}')"
+         '-EncodedCommand','{encoded}')"
     )
 }
 
@@ -401,7 +496,7 @@ where
         let line = String::from_utf8_lossy(&line_bytes[..line_bytes.len() - 1]);
         let trimmed = line.trim();
         if !trimmed.is_empty() {
-            on_event(parse_event(trimmed)?);
+            dispatch_event(parse_event(trimmed)?, on_event)?;
         }
     }
     Ok(())
@@ -414,12 +509,60 @@ fn parse_event(line: &str) -> Result<AuditEvent, AuditError> {
     })
 }
 
+/// Forwards a parsed line to `on_event`, except a `Fatal` line, which
+/// becomes [`AuditError::ScriptFatal`]. Without this the elevated path
+/// would see a run that produced no `Result`s and report the generic
+/// "no output" error, dropping the reason the script actually gave.
+fn dispatch_event<F>(event: AuditEvent, on_event: &mut F) -> Result<(), AuditError>
+where
+    F: FnMut(AuditEvent),
+{
+    match event {
+        AuditEvent::Fatal(fatal) => Err(AuditError::ScriptFatal {
+            message: fatal.message,
+        }),
+        event => {
+            on_event(event);
+            Ok(())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use super::*;
+    use crate::audit::generator::StagedScript;
     use crate::audit::model::Status;
+
+    /// Staging with recognizable paths and digests for the bootstrap
+    /// tests. The audit path carries a single quote to exercise escaping.
+    fn sample_staging() -> AuditStaging {
+        let staged = |path: &str, sha: &str| StagedScript {
+            path: PathBuf::from(path),
+            sha256: sha.to_string(),
+        };
+        AuditStaging {
+            device_info: staged(r"C:\data\device-info.ps1", "d0"),
+            registry: staged(r"C:\data\audit-registry.ps1", "re"),
+            security_policy: staged(r"C:\data\audit-security-policy.ps1", "5e"),
+            audit: staged(r"C:\it's\audit_v1.ps1", "a0"),
+        }
+    }
+
+    /// Decodes an `-EncodedCommand` payload back to its source text:
+    /// base64 to bytes, then UTF-16LE to a string.
+    fn decode_command(encoded: &str) -> String {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .expect("valid base64");
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+        String::from_utf16(&units).expect("valid UTF-16")
+    }
 
     #[test]
     fn parses_a_result_line_into_a_scan_record() {
@@ -431,7 +574,7 @@ mod tests {
                 // `checks` is absent on this line; it defaults to empty.
                 assert!(record.checks.is_empty());
             }
-            AuditEvent::Device(_) => panic!("expected a Result event"),
+            other => panic!("expected a Result event, got {other:?}"),
         }
     }
 
@@ -441,17 +584,93 @@ mod tests {
     }
 
     #[test]
-    fn runas_command_doubles_embedded_single_quotes() {
-        let cmd = build_runas_command(
-            Path::new(r"C:\it's\audit.ps1"),
+    fn bootstrap_verifies_each_script_against_its_digest() {
+        let bootstrap = build_bootstrap(
+            &sample_staging(),
             Path::new(r"C:\base.json"),
-            Path::new(r"C:\out.ndjson"),
+            Some(Path::new(r"C:\out.ndjson")),
             Path::new(r"C:\cancel"),
         );
-        // The single quote in the path is doubled so it can't break out of
-        // the single-quoted PowerShell argument it sits in.
-        assert!(cmd.contains(r"'C:\it''s\audit.ps1'"));
-        assert!(cmd.contains(r"'C:\base.json'"));
+        // Every staged script is dot-sourced through the verifying helper,
+        // pairing its path with the expected digest.
+        assert!(bootstrap.contains(r"-Path 'C:\data\device-info.ps1' -Hash 'd0'"));
+        assert!(bootstrap.contains(r"-Path 'C:\data\audit-registry.ps1' -Hash 're'"));
+        assert!(bootstrap.contains(r"-Path 'C:\data\audit-security-policy.ps1' -Hash '5e'"));
+        assert!(bootstrap.contains(r"-Hash 'a0'"));
+        // A mismatch must abort rather than run the planted file.
+        assert!(bootstrap.contains("failed its integrity check"));
+        // The dispatcher receives the run parameters; -OutputPath is
+        // present only on the elevated-child path.
+        assert!(bootstrap.contains(r"-BaselinePath 'C:\base.json'"));
+        assert!(bootstrap.contains(r"-OutputPath 'C:\out.ndjson'"));
+    }
+
+    #[test]
+    fn bootstrap_writes_a_fatal_line_to_the_output_file_when_set() {
+        let elevated = build_bootstrap(
+            &sample_staging(),
+            Path::new(r"C:\base.json"),
+            Some(Path::new(r"C:\out.ndjson")),
+            Path::new(r"C:\cancel"),
+        );
+        // The elevated path knows its output file and writes a fatal line
+        // there on abort, then re-throws.
+        assert!(elevated.contains(r"$BlOutputPath='C:\out.ndjson'"));
+        assert!(elevated.contains("type='fatal'"));
+
+        // The in-process path has no output file, so the catch writes
+        // nothing and leaves the re-throw to reach captured stderr.
+        let in_process = build_bootstrap(
+            &sample_staging(),
+            Path::new(r"C:\base.json"),
+            None,
+            Path::new(r"C:\cancel"),
+        );
+        assert!(in_process.contains("$BlOutputPath=''"));
+    }
+
+    #[test]
+    fn dispatch_turns_a_fatal_line_into_an_error() {
+        let fatal = parse_event(r#"{"type":"fatal","message":"boom"}"#).expect("parse");
+        let mut seen = 0;
+        let result = dispatch_event(fatal, &mut |_| seen += 1);
+        assert!(seen == 0, "a fatal line must not be forwarded as data");
+        match result {
+            Err(AuditError::ScriptFatal { message }) => assert_eq!(message, "boom"),
+            other => panic!("expected ScriptFatal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bootstrap_doubles_embedded_single_quotes() {
+        let bootstrap = build_bootstrap(
+            &sample_staging(),
+            Path::new(r"C:\base.json"),
+            None,
+            Path::new(r"C:\cancel"),
+        );
+        // The quote in the audit path is doubled so it can't break out of
+        // its single-quoted PowerShell literal.
+        assert!(bootstrap.contains(r"'C:\it''s\audit_v1.ps1'"));
+        // No -OutputPath when the in-process path passes None.
+        assert!(!bootstrap.contains("-OutputPath"));
+    }
+
+    #[test]
+    fn encoded_command_round_trips_through_utf16_base64() {
+        let bootstrap = build_bootstrap(
+            &sample_staging(),
+            Path::new(r"C:\base.json"),
+            None,
+            Path::new(r"C:\cancel"),
+        );
+        assert_eq!(decode_command(&encode_command(&bootstrap)), bootstrap);
+    }
+
+    #[test]
+    fn runas_command_wraps_the_encoded_bootstrap() {
+        let cmd = build_runas_command("QUJD");
         assert!(cmd.contains("-Verb RunAs"));
+        assert!(cmd.contains("'-EncodedCommand','QUJD'"));
     }
 }

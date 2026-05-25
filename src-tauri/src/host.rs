@@ -50,6 +50,7 @@ fn spawn_and_parse(script: &Path) -> Result<DeviceInfo, HostError> {
             "-File",
         ])
         .arg(script)
+        .arg("-Emit")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

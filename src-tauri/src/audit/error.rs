@@ -48,6 +48,16 @@ pub(crate) enum AuditError {
         source: serde_json::Error,
     },
 
+    /// The audit script reported a fatal condition and stopped before
+    /// finishing — emitted as a `{"type":"fatal",...}` NDJSON line. The
+    /// integrity-check failure (a staged script whose bytes no longer
+    /// match what the binary wrote) lands here, as does a baseline that
+    /// fails to load inside the elevated child. Carries the script's own
+    /// message so the cause survives the boundary that otherwise drops
+    /// the elevated child's stderr.
+    #[error("The audit could not complete: {message}")]
+    ScriptFatal { message: String },
+
     #[error(
         "The scan ran with admin rights but produced no results. The elevated \
          process may have been blocked by security software or system policy, \

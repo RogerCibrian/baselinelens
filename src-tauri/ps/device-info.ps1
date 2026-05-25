@@ -10,7 +10,13 @@
 # string / false rather than throwing.
 
 [CmdletBinding()]
-param()
+param(
+    # Emit the device-info JSON on stdout. The standalone onboarding
+    # invocation passes this; the audit launcher dot-sources this file
+    # only for Get-BlDeviceInfo and leaves it off, so no stray line
+    # reaches the NDJSON stream.
+    [switch]$Emit
+)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -40,7 +46,8 @@ function Get-BlDeviceInfo {
     # applies.
     $gp = $false
     try {
-        $line = (dsregcmd.exe /status | Select-String 'DomainJoined').ToString()
+        $dsregcmd = Join-Path $env:SystemRoot 'System32\dsregcmd.exe'
+        $line = (& $dsregcmd /status | Select-String 'DomainJoined').ToString()
         $gp = ($line.Split(':')[1].Trim()) -eq 'YES'
     } catch {}
 
@@ -67,9 +74,6 @@ function Get-BlDeviceInfo {
     }
 }
 
-# When invoked as a script (not dot-sourced), emit the info as JSON. The
-# $MyInvocation.InvocationName check tells the two apart: a dot-source
-# uses '.', and a direct invocation gives the script path or name.
-if ($MyInvocation.InvocationName -ne '.') {
+if ($Emit) {
     Get-BlDeviceInfo | ConvertTo-Json -Compress -Depth 4
 }

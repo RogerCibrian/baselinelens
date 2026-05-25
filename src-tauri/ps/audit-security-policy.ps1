@@ -21,7 +21,10 @@ function Get-SeceditExport {
 
     $tmp = [System.IO.Path]::GetTempFileName()
     try {
-        $proc = Start-Process -FilePath 'secedit.exe' `
+        # Fully-qualified so an attacker-planted secedit.exe earlier in the
+        # search path can't run in our place under elevation.
+        $secedit = Join-Path $env:SystemRoot 'System32\secedit.exe'
+        $proc = Start-Process -FilePath $secedit `
             -ArgumentList @('/export', '/cfg', $tmp, '/quiet') `
             -Wait -PassThru -NoNewWindow -ErrorAction Stop
         if ($proc.ExitCode -ne 0) {

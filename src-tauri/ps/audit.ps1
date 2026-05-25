@@ -34,13 +34,11 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-# Dot-source the shared device-info reader plus the audit helper modules.
-# Rust writes all four .ps1 files to the same directory before invoking
-# us. Dot-sourcing runs each in this scope, so their functions and
-# $script: state are shared with the dispatcher below.
-. (Join-Path $PSScriptRoot 'device-info.ps1')
-. (Join-Path $PSScriptRoot 'audit-registry.ps1')
-. (Join-Path $PSScriptRoot 'audit-security-policy.ps1')
+# The launcher (see audit::runner) dot-sources device-info.ps1,
+# audit-registry.ps1, and audit-security-policy.ps1 into the shared scope
+# before dot-sourcing this dispatcher, after verifying each file against
+# the digest the trusted binary computed. Their functions and $script:
+# state are therefore already present here.
 
 # Lazy-opened sink used when -OutputPath is set. AutoFlush=true so the
 # Rust parent can tail the file line-by-line as recs complete instead of
