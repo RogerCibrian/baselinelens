@@ -6,10 +6,11 @@
 
 use std::io;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use thiserror::Error;
 
+use crate::audit;
 use crate::audit::error::AuditError;
 use crate::audit::generator;
 use crate::audit::model::DeviceInfo;
@@ -41,7 +42,7 @@ pub(crate) fn read_device_info() -> Result<DeviceInfo, HostError> {
 }
 
 fn spawn_and_parse(script: &Path) -> Result<DeviceInfo, HostError> {
-    let output = Command::new("powershell.exe")
+    let output = audit::powershell_command()
         .args([
             "-NoProfile",
             "-NonInteractive",

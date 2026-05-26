@@ -31,6 +31,9 @@ const AUDIT_REGISTRY_SCRIPT: &str = include_str!("../../ps/audit-registry.ps1");
 /// Local-security-policy helpers dot-sourced by `audit.ps1`.
 const AUDIT_SECURITY_POLICY_SCRIPT: &str = include_str!("../../ps/audit-security-policy.ps1");
 
+/// SYSTEM-escalation registry-read helper dot-sourced by `audit.ps1`.
+const AUDIT_SYSTEM_READ_SCRIPT: &str = include_str!("../../ps/audit-system-read.ps1");
+
 /// Static device-info script content. Same baking rationale as the
 /// audit script.
 const DEVICE_INFO_SCRIPT: &str = include_str!("../../ps/device-info.ps1");
@@ -51,6 +54,7 @@ pub(crate) struct AuditStaging {
     pub(crate) device_info: StagedScript,
     pub(crate) registry: StagedScript,
     pub(crate) security_policy: StagedScript,
+    pub(crate) system_read: StagedScript,
     pub(crate) audit: StagedScript,
 }
 
@@ -66,6 +70,10 @@ pub(crate) fn ensure_script() -> Result<AuditStaging, AuditError> {
         security_policy: stage(
             paths::audit_security_policy_script_path()?,
             AUDIT_SECURITY_POLICY_SCRIPT,
+        )?,
+        system_read: stage(
+            paths::audit_system_read_script_path()?,
+            AUDIT_SYSTEM_READ_SCRIPT,
         )?,
         audit: stage(
             paths::audit_script_path(AUDIT_SCRIPT_VERSION)?,

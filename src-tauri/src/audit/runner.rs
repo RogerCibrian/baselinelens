@@ -23,7 +23,7 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -130,7 +130,7 @@ where
     F: FnMut(AuditEvent),
 {
     let bootstrap = build_bootstrap(staging, baseline_path, None, cancel_path);
-    let mut child = Command::new("powershell.exe")
+    let mut child = super::powershell_command()
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -254,7 +254,7 @@ where
     let bootstrap = build_bootstrap(staging, baseline_path, Some(&output_path), cancel_path);
     let ps_command = build_runas_command(&encode_command(&bootstrap));
 
-    let mut outer_child = Command::new("powershell.exe")
+    let mut outer_child = super::powershell_command()
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps_command])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -366,6 +366,7 @@ fn build_bootstrap(
          return [scriptblock]::Create([System.Text.Encoding]::UTF8.GetString($bytes)) }}\n\
          try {{\n\
          . (Use-BlScript -Path '{di_path}' -Hash '{di_hash}')\n\
+         . (Use-BlScript -Path '{sys_path}' -Hash '{sys_hash}')\n\
          . (Use-BlScript -Path '{reg_path}' -Hash '{reg_hash}')\n\
          . (Use-BlScript -Path '{sec_path}' -Hash '{sec_hash}')\n\
          . (Use-BlScript -Path '{audit_path}' -Hash '{audit_hash}') {audit_args}\n\
@@ -378,6 +379,8 @@ fn build_bootstrap(
          }}\n",
         di_path = ps_squote(&staging.device_info.path),
         di_hash = staging.device_info.sha256,
+        sys_path = ps_squote(&staging.system_read.path),
+        sys_hash = staging.system_read.sha256,
         reg_path = ps_squote(&staging.registry.path),
         reg_hash = staging.registry.sha256,
         sec_path = ps_squote(&staging.security_policy.path),
@@ -547,6 +550,7 @@ mod tests {
             device_info: staged(r"C:\data\device-info.ps1", "d0"),
             registry: staged(r"C:\data\audit-registry.ps1", "re"),
             security_policy: staged(r"C:\data\audit-security-policy.ps1", "5e"),
+            system_read: staged(r"C:\data\audit-system-read.ps1", "55"),
             audit: staged(r"C:\it's\audit_v1.ps1", "a0"),
         }
     }

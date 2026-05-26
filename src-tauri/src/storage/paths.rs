@@ -81,6 +81,12 @@ pub(crate) fn audit_security_policy_script_path() -> Result<PathBuf, StorageErro
     Ok(data_dir()?.join("audit-security-policy.ps1"))
 }
 
+/// Path to the cached `audit-system-read.ps1` helper, staged alongside
+/// `audit.ps1` so the bootstrap can verify and dot-source it.
+pub(crate) fn audit_system_read_script_path() -> Result<PathBuf, StorageError> {
+    Ok(data_dir()?.join("audit-system-read.ps1"))
+}
+
 /// Directory holding the scan-related files for one baseline. The
 /// `latest`/`changes`/`summaries` paths all build on this, so validating
 /// here covers them too.

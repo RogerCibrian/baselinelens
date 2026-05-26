@@ -35,10 +35,10 @@ $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 # The launcher (see audit::runner) dot-sources device-info.ps1,
-# audit-registry.ps1, and audit-security-policy.ps1 into the shared scope
-# before dot-sourcing this dispatcher, after verifying each file against
-# the digest the trusted binary computed. Their functions and $script:
-# state are therefore already present here.
+# audit-system-read.ps1, audit-registry.ps1, and audit-security-policy.ps1
+# into the shared scope before dot-sourcing this dispatcher, after verifying
+# each file against the digest the trusted binary computed. Their functions
+# and $script: state are therefore already present here.
 
 # Lazy-opened sink used when -OutputPath is set. AutoFlush=true so the
 # Rust parent can tail the file line-by-line as recs complete instead of

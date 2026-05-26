@@ -16,6 +16,16 @@ function Get-RegValue {
         return (Get-ItemProperty -LiteralPath $Path -Name $Name -ErrorAction Stop).$Name
     } catch [System.Management.Automation.ItemNotFoundException], [System.Management.Automation.PSArgumentException] {
         return $null
+    } catch [System.Security.SecurityException], [System.UnauthorizedAccessException] {
+        # The Defender 'Policy Manager' CSP keys are readable only by SYSTEM;
+        # an elevated administrator is denied. Escalate the read to SYSTEM for
+        # Defender keys, and only those -- a denied read anywhere else (e.g.
+        # HKLM\SAM, HKLM\SECURITY) stays an Error, so a stray or hostile path
+        # can never make us SYSTEM-read an unrelated protected key.
+        if ($Path -match 'Defender') {
+            return Get-SystemRegValue -Path $Path -Name $Name
+        }
+        throw
     }
 }
 
