@@ -600,6 +600,21 @@
   transition: width 220ms var(--v-ease);
 }
 
+/* All recs are in but the scan is still finishing (collect/persist/IPC):
+   an indeterminate sweep rather than a bar pinned at 100%. */
+.scan-progress--finalizing .scan-progress-fill {
+  width: 35%;
+  transition: none;
+  animation: progress-slide 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-progress--finalizing .scan-progress-fill {
+    width: 100%;
+    animation: none;
+  }
+}
+
 /* In-app confirmation modal — shared by the settings destructive
    actions and any future destructive prompt. */
 

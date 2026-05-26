@@ -311,6 +311,10 @@ function Dashboard({
 
   const completed = scanProgress;
   const total = baseline.recommendations.length;
+  // All records are in, but the scan promise is still finishing (collecting,
+  // persisting, IPC return). Show an indeterminate bar for that tail rather
+  // than a determinate bar pinned at 100%.
+  const finalizing = total > 0 && completed >= total;
   const tabOrder: Tab[] = ["overview", "console"];
   const activePanelId = tab === "overview" ? "panel-overview" : "panel-console";
   const activeTabId = tab === "overview" ? "tab-overview" : "tab-console";
@@ -426,16 +430,16 @@ function Dashboard({
 
       {scanning && (
         <div
-          className="scan-progress"
+          className={finalizing ? "scan-progress scan-progress--finalizing" : "scan-progress"}
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={total}
-          aria-valuenow={completed}
-          aria-label="Scan progress"
+          aria-valuenow={finalizing ? undefined : completed}
+          aria-label={finalizing ? "Finalizing scan" : "Scan progress"}
         >
           <div
             className="scan-progress-fill"
-            style={{ width: `${total ? (completed / total) * 100 : 0}%` }}
+            style={finalizing ? undefined : { width: `${total ? (completed / total) * 100 : 0}%` }}
           />
         </div>
       )}
