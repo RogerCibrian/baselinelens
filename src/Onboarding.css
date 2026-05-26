@@ -264,44 +264,29 @@
   text-decoration-color: var(--v-text);
 }
 
-/* Machine-strip skeleton — shown for the brief window before device
-   info resolves, so the strip doesn't read as broken empty text. */
+/* Machine-strip loading line — a calm placeholder shown for the brief
+   window before device info resolves; the resolved details fade in. */
 
-.ob-machine-skeleton {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 3px;
+.ob-machine-loading {
+  color: var(--v-text-muted);
 }
 
-.ob-skeleton-bar {
-  display: block;
-  height: 9px;
-  border-radius: 3px;
-  background: linear-gradient(
-    90deg,
-    var(--v-paper-3) 25%,
-    var(--v-line) 37%,
-    var(--v-paper-3) 63%
-  );
-  background-size: 400% 100%;
-  animation: ob-skeleton-shimmer 1.4s ease-in-out infinite;
+.ob-machine-details {
+  animation: ob-machine-fade-in 240ms ease-out;
 }
 
-.ob-skeleton-host {
-  width: 96px;
-}
-
-.ob-skeleton-meta {
-  width: 188px;
-}
-
-@keyframes ob-skeleton-shimmer {
-  0% {
-    background-position: 100% 0;
+@keyframes ob-machine-fade-in {
+  from {
+    opacity: 0;
   }
-  100% {
-    background-position: 0 0;
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-machine-details {
+    animation: none;
   }
 }
 

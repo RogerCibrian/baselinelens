@@ -230,7 +230,7 @@ function MachineStrip({ deviceInfo }: { deviceInfo: DeviceInfo | null }) {
       <div>
         <div className="ob-machine-label">Will scan</div>
         {deviceInfo ? (
-          <div>
+          <div className="ob-machine-details">
             <span className="ob-machine-host">{deviceInfo.hostname}</span>
             <span className="ob-machine-meta">
               {" · "}
@@ -246,10 +246,7 @@ function MachineStrip({ deviceInfo }: { deviceInfo: DeviceInfo | null }) {
             </span>
           </div>
         ) : (
-          <div className="ob-machine-skeleton" aria-hidden="true">
-            <span className="ob-skeleton-bar ob-skeleton-host" />
-            <span className="ob-skeleton-bar ob-skeleton-meta" />
-          </div>
+          <div className="ob-machine-loading">Reading this device&hellip;</div>
         )}
       </div>
     </div>
