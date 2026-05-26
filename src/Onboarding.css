@@ -240,6 +240,30 @@
   transition: width 200ms ease-out;
 }
 
+/* Indeterminate sweep for the post-parse tail (cache write + IPC marshal),
+   so the bar reads as "still working" instead of frozen at 100%. */
+.ob-progress-fill--indeterminate {
+  width: 40%;
+  transition: none;
+  animation: ob-progress-indeterminate 1.1s ease-in-out infinite;
+}
+
+@keyframes ob-progress-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-progress-fill--indeterminate {
+    width: 100%;
+    animation: none;
+  }
+}
+
 /* Get-the-benchmark line — a real, keyboard-reachable link button
    sitting outside the drop-zone button (nesting interactive controls
    inside a <button> is invalid and unreachable by keyboard). */

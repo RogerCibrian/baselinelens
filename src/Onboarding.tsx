@@ -327,15 +327,26 @@ function DropZone({
  * fill the last sliver.
  */
 function ParseProgress({ progress }: { progress: ParserProgress | null }) {
+  // Parsing emits `complete` once the recommendations are built, but the
+  // baseline still has to be cached and marshaled back over IPC before the
+  // confirm screen appears. Show an indeterminate "Finalizing" bar for that
+  // tail rather than a determinate bar frozen at 100%.
+  const finalizing = progress?.stage === "complete";
   const percent = progressPercent(progress);
   return (
     <span className="ob-progress">
       <span className="ob-progress-row">
         <span className="ob-progress-label">{stageLabel(progress)}</span>
-        <span className="ob-progress-percent mono">{Math.round(percent)}%</span>
+        {!finalizing && (
+          <span className="ob-progress-percent mono">{Math.round(percent)}%</span>
+        )}
       </span>
       <span className="ob-progress-track" aria-hidden="true">
-        <span className="ob-progress-fill" style={{ width: `${percent}%` }} />
+        {finalizing ? (
+          <span className="ob-progress-fill ob-progress-fill--indeterminate" />
+        ) : (
+          <span className="ob-progress-fill" style={{ width: `${percent}%` }} />
+        )}
       </span>
     </span>
   );
@@ -354,7 +365,7 @@ function stageLabel(p: ParserProgress | null): string {
     case "classifying":
       return "Building catalog…";
     case "complete":
-      return "Done";
+      return "Finalizing…";
   }
 }
 
