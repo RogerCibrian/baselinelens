@@ -24,6 +24,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Roger Cibrian",
+    "copyright": "Copyright © 2026 Roger Cibrian",
+    "license": "MIT OR Apache-2.0",
+    "homepage": "https://github.com/RogerCibrian/baselinelens",
+    "category": "Utility",
+    "shortDescription": "Audits a Windows endpoint against a CIS Benchmark you provide.",
+    "longDescription": "Parses CIS Microsoft Benchmark PDFs you provide — covering Windows 10 and 11 across the Intune, Enterprise, and Stand-alone profiles — and evaluates the local endpoint against them. Everything runs on the device being audited; no data leaves it.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -44,3 +44,6 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# Signing
+src-tauri/artifact-signing-metadata.json
