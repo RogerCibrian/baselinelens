@@ -63,8 +63,8 @@ export function DeltaCell({ delta }: { delta: Delta }) {
     return (
       <span
         className="delta-marker delta-improved"
-        aria-label="Recently improved"
-        title="Recently improved"
+        aria-label="Remediated"
+        title="Remediated"
       >
         ▲
       </span>
@@ -74,8 +74,8 @@ export function DeltaCell({ delta }: { delta: Delta }) {
     return (
       <span
         className="delta-marker delta-regressed"
-        aria-label="Recently regressed"
-        title="Recently regressed"
+        aria-label="Regressed"
+        title="Regressed"
       >
         ▼
       </span>

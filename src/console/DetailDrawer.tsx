@@ -387,6 +387,7 @@ export function DetailDrawer({
               <ScanResultSection
                 result={scan.results[rec.id]}
                 stateAge={stateAge}
+                exceptionAccepted={status === "exception"}
               />
 
               {rec.auditText && <AuditTextSection text={rec.auditText} />}

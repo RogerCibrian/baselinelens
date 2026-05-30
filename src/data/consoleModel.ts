@@ -108,7 +108,7 @@ export const SAVED_VIEWS: SavedView[] = [
   },
   {
     id: "recently-fixed",
-    name: "Recently fixed",
+    name: "Remediated",
     description: "Flipped from fail to pass",
     filter: { delta: "improved" },
   },

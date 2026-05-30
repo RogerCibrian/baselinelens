@@ -83,8 +83,8 @@ export function FilterBar({
       <input
         type="search"
         className="filter-search"
-        placeholder="Search recs…"
-        title="Searches id, title, category, expected/found values, notes, and exception reasons"
+        placeholder="Search recommendations…"
+        title="Searches ID, title, category, expected/found values, notes, and exception reasons"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
       />

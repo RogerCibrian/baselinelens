@@ -265,7 +265,7 @@ export default function Overview({
         ) : (
           <div className="recently-changed">
             <RecentlyChangedColumn
-              title="Improved"
+              title="Remediated"
               tone="pass"
               symbol="▲"
               items={improved}

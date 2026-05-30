@@ -3,6 +3,12 @@ import { verdictKey, verdictLabel } from "../../data/consoleModel";
 import { formatAge, formatTimestamp } from "../../format";
 import { breakableRegistryPath } from "../widgets";
 
+// Registry and PolicyManager checks report a real registry path; the
+// other audit types report a human label ("Local Security Policy",
+// "Audit Policy", "User Rights Assignment", "Manual review"). Only a
+// real path earns the monospace + path-wrap treatment.
+const isRegistryPath = (path: string) => /^HK/i.test(path);
+
 /**
  * Shows the scan verdict for the open rec. When `result.checks` is
  * populated, renders one card per check: a pass/fail/manual marker,
@@ -14,9 +20,14 @@ import { breakableRegistryPath } from "../widgets";
 export function ScanResultSection({
   result,
   stateAge,
+  exceptionAccepted = false,
 }: {
   result: ScanResult | undefined;
   stateAge: { label: string; since: string } | null;
+  /** True when the rec's Fail is covered by an accepted exception. The
+   * raw scan Status here is still "Fail"; the note keeps it from
+   * reading as a contradiction of the Console's "Exception" pill. */
+  exceptionAccepted?: boolean;
 }) {
   if (!result) return null;
   // Coalesce once up-front so the rest of the body can use `checks`
@@ -30,6 +41,9 @@ export function ScanResultSection({
         <dt>Status</dt>
         <dd className={`scan-status scan-status-${result.status.toLowerCase()}`}>
           {result.status}
+          {exceptionAccepted && (
+            <span className="muted"> · exception accepted</span>
+          )}
         </dd>
         <dt>Last scanned</dt>
         <dd className="mono">{formatTimestamp(result.measuredAt)}</dd>
@@ -67,7 +81,11 @@ export function ScanResultSection({
               >
                 {verdictLabel(c.pass)}
               </span>
-              <p className="check-loc mono">{breakableRegistryPath(c.path)}</p>
+              <p className={`check-loc${isRegistryPath(c.path) ? " mono" : ""}`}>
+                {isRegistryPath(c.path)
+                  ? breakableRegistryPath(c.path)
+                  : c.path}
+              </p>
               {c.valueName && <p className="check-name mono">{c.valueName}</p>}
               <dl className="check-kv">
                 <dt>Expected</dt>

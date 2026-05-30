@@ -575,7 +575,7 @@ function ConfirmModal({
             onClick={onConfirm}
             autoFocus
           >
-            Scan this device
+            Run scan
           </button>
         </div>
       </div>
