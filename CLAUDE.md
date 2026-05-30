@@ -87,7 +87,7 @@ Follow the [Rust API Guidelines naming chapter](https://rust-lang.github.io/api-
 ## PowerShell conventions
 
 - **Target version: PowerShell 5.1** (the default on Windows 11). PS 7 will run 5.1 syntax, but we don't require users to have PS 7. Avoid 7-only features: `??` (null-coalescing), `?.` (null-conditional), ternary `condition ? a : b`, `ForEach-Object -Parallel`, `Get-Error`, `pwsh`-only modules. Dev environment on Mac is PS 7 (`pwsh`); real audit-cmdlet testing must happen on Windows since most cmdlets we use (`Get-ItemProperty HKLM:\...`, `Get-BitLockerVolume`, `secedit`, etc.) are Windows-only.
-- **Layout**: `ps/audit.ps1` is one static dispatcher that reads the parsed baseline JSON at runtime and branches via `switch ($audit.type)`. There are no per-rule template files — a new rule type is a new dispatch arm here plus a new `AuditProcedure` variant in `parser/model.rs` and a classifier under `parser/classify/`. The dispatcher dot-sources three siblings via `$PSScriptRoot` (all written to the same dir by the Rust runner): `audit-registry.ps1` (registry reads + path resolution), `audit-security-policy.ps1` (secedit/auditpol dumps, SID/principal resolution, display-name maps), and `device-info.ps1` (also runs standalone for the onboarding device-info command). Helpers are grouped by concern, not by rule type. Dot-sourcing runs them in the dispatcher's scope, so their functions and `$script:` state are shared.
+- **Layout**: `ps/audit.ps1` is one static dispatcher that reads the parsed baseline JSON at runtime and branches via `switch ($audit.type)`. There are no per-rule template files — a new rule type is a new dispatch arm here plus a new `AuditProcedure` variant in `parser/model.rs` and a classifier under `parser/classify/`. The Rust runner stages four helper scripts plus the dispatcher to one directory, then runs a bootstrap that verifies each staged file against the SHA-256 digest the trusted binary computed before dot-sourcing it into a single shared scope (this digest-checked launcher replaced the dispatcher's earlier `$PSScriptRoot` self-sourcing to close a script-tampering hole). The helpers: `audit-registry.ps1` (registry reads + path resolution), `audit-security-policy.ps1` (secedit/auditpol dumps, SID/principal resolution, display-name maps), `audit-system-read.ps1` (escalates ACL-locked registry reads — e.g. the Defender Policy Manager key — to SYSTEM via a one-shot scheduled task), and `device-info.ps1` (also runs standalone for the onboarding device-info command). Helpers are grouped by concern, not by rule type. Dot-sourcing shares their functions and `$script:` state across the run.
 - **Output contract**: scripts emit NDJSON to stdout — one JSON object per line, discriminated by `type` (e.g. `{"type":"device",...}`, `{"type":"result",...}`). Errors go to stderr, never to stdout.
 - **Naming**: PowerShell-approved verbs (`Get-`, `Set-`, `Test-`, `Invoke-` — see `Get-Verb`).
 - **Style**: PSScriptAnalyzer defaults; no aliases (`gci` → `Get-ChildItem`); `param()` blocks at the top with explicit types.
@@ -161,11 +161,13 @@ baselinelens/
     ├── src/
     │   ├── lib.rs       # builds the Specta command list + Tauri app; exports bindings.ts in debug
     │   ├── commands.rs  # #[tauri::command] surface
+    │   ├── host.rs      # standalone device-info reader for the onboarding strip
     │   ├── parser/      # CIS PDF → Baseline (pdf, structure, classify/*, model)
-    │   ├── audit/       # script generation, runner, NDJSON merge, model
+    │   ├── audit/       # script generation, runner, elevation, NDJSON merge, model
     │   └── storage/     # appdata paths + JSON persistence
     ├── ps/              # PowerShell baked in via include_str!: audit.ps1 dispatcher,
-    │                    #   audit-registry.ps1 + audit-security-policy.ps1 helpers, device-info.ps1
+    │                    #   audit-registry.ps1 + audit-security-policy.ps1 +
+    │                    #   audit-system-read.ps1 helpers, device-info.ps1
     ├── capabilities/
     ├── icons/
     └── tests/fixtures/  # synthetic prose required; real OS setting paths/values OK

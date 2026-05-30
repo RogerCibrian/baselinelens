@@ -6,10 +6,12 @@
 //! filename means a script edit naturally invalidates the cache without
 //! each call having to compare contents.
 //!
-//! `audit.ps1` dot-sources `audit-registry.ps1`,
-//! `audit-security-policy.ps1`, and `device-info.ps1` via `$PSScriptRoot`,
-//! so all four are written to the same directory. `device-info.ps1` is
-//! also the standalone entry point for the onboarding `get_device_info`
+//! The audit run uses three helper modules — `audit-registry.ps1`,
+//! `audit-security-policy.ps1`, and `audit-system-read.ps1` — plus the
+//! sibling `device-info.ps1`, all written to one directory here. The
+//! runner's bootstrap verifies each against its SHA-256 digest before
+//! dot-sourcing it into a scope shared with `audit.ps1`. `device-info.ps1`
+//! is also the standalone entry point for the onboarding `get_device_info`
 //! command.
 
 use std::fs;
@@ -25,13 +27,13 @@ use crate::storage::paths;
 /// doesn't have to discover a `ps/` directory on disk.
 const AUDIT_SCRIPT: &str = include_str!("../../ps/audit.ps1");
 
-/// Registry-read helpers dot-sourced by `audit.ps1`.
+/// Registry-read helpers dot-sourced alongside `audit.ps1`.
 const AUDIT_REGISTRY_SCRIPT: &str = include_str!("../../ps/audit-registry.ps1");
 
-/// Local-security-policy helpers dot-sourced by `audit.ps1`.
+/// Local-security-policy helpers dot-sourced alongside `audit.ps1`.
 const AUDIT_SECURITY_POLICY_SCRIPT: &str = include_str!("../../ps/audit-security-policy.ps1");
 
-/// SYSTEM-escalation registry-read helper dot-sourced by `audit.ps1`.
+/// SYSTEM-escalation registry-read helper dot-sourced alongside `audit.ps1`.
 const AUDIT_SYSTEM_READ_SCRIPT: &str = include_str!("../../ps/audit-system-read.ps1");
 
 /// Static device-info script content. Same baking rationale as the
