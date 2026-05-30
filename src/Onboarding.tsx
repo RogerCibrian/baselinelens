@@ -90,7 +90,7 @@ export default function Onboarding({
             onPickPath(path);
           } else if (path) {
             onError(
-              "Only PDF files are supported — try dropping a benchmark PDF.",
+              "Only PDF files are supported — try dropping a CIS Benchmark PDF.",
               path.split(/[\\/]/).pop() ?? path,
             );
           }
@@ -182,7 +182,7 @@ function Action({
       <MachineStrip deviceInfo={deviceInfo} />
       <DropZone state={state} onBrowse={onBrowse} />
       <p className="ob-get-benchmark">
-        Don't have a benchmark PDF yet?{" "}
+        Don't have a CIS Benchmark PDF yet?{" "}
         <button
           type="button"
           className="ob-link"
@@ -198,7 +198,7 @@ function Action({
         </div>
       ) : (
         <div className="ob-support">
-          <p className="ob-support-head">Currently supported CIS benchmarks</p>
+          <p className="ob-support-head">Currently supported CIS Benchmarks</p>
           <div className="ob-support-cols">
             {SUPPORTED_BENCHMARKS.map((group) => (
               <div className="ob-support-group" key={group.os}>
@@ -309,7 +309,7 @@ function DropZone({
           </>
         ) : (
           <>
-            <span className="ob-drop-label">Drop benchmark PDF here</span>
+            <span className="ob-drop-label">Drop a CIS Benchmark PDF here</span>
             <span className="ob-drop-sub">or click to browse files</span>
           </>
         )}
@@ -591,7 +591,7 @@ function ConfirmModal({
  */
 function friendlyError(raw: string): string {
   if (raw.includes("Recommendations chapter")) {
-    return "This doesn't look like a CIS benchmark — we couldn't find a Recommendations chapter inside.";
+    return "This doesn't look like a CIS Benchmark — we couldn't find a Recommendations chapter inside.";
   }
   if (raw.includes("extract text from PDF")) {
     return "Couldn't read this PDF. It may be corrupted, password-protected, or image-only (scanned).";
