@@ -213,7 +213,7 @@ function Format-Found {
 # on the Start value under ...\Services\<name>; the bare "Start" value
 # name and the raw Start DWORD are machinery, so these render in service
 # startup terms (per Microsoft's ServiceStartMode) and a missing key
-# reads as Not Installed rather than Not configured.
+# reads as Not installed rather than Not configured.
 $script:service_start_modes = @{
     0 = 'Boot'
     1 = 'System'
@@ -234,7 +234,7 @@ function Test-ServiceStartCheck {
 # raw value rather than hide it.
 function Format-ServiceStartFound {
     param($Current)
-    if ($null -eq $Current) { return 'Not Installed' }
+    if ($null -eq $Current) { return 'Not installed' }
     $mode = $script:service_start_modes[[int]$Current]
     if ($null -ne $mode) { return $mode }
     return [string]$Current
@@ -247,8 +247,8 @@ function Format-ServiceStartExpected {
     param($Expected)
     switch ($Expected.type) {
         'Equals'   { Format-ServiceStartFound $Expected.value.value }
-        'Absent'   { 'Not Installed' }
-        'AbsentOr' { (Format-ServiceStartExpected $Expected.inner) + ', or Not Installed' }
+        'Absent'   { 'Not installed' }
+        'AbsentOr' { (Format-ServiceStartExpected $Expected.inner) + ', or Not installed' }
         'OneOf'    { (($Expected.values | ForEach-Object { Format-ServiceStartFound $_.value }) -join ', ') }
         default    { Format-Expected $Expected }
     }
@@ -415,7 +415,7 @@ function Invoke-Rec {
                     } else {
                         Format-Found $current $check.expected
                     }
-                    # Service recs always carry a label ('Not Installed' for an
+                    # Service recs always carry a label ('Not installed' for an
                     # absent key); other recs keep $null so the drawer shows its
                     # 'Not configured' fallback.
                     $actual_str = if ($is_service -or $null -ne $current) { $found_str } else { $null }
@@ -507,12 +507,12 @@ function Invoke-Rec {
                     $details = @([ordered]@{
                         path      = 'User Rights Assignment'
                         valueName = $audit.rightName
-                        expected  = '(no policy mapping)'
+                        expected  = 'Manual review needed'
                         actual    = $null
                         pass      = $null
                     })
                     Write-NdjsonResult -Id $id -Status 'Manual' `
-                        -Expected "$($audit.rightName) = (no policy mapping for this right)" `
+                        -Expected "$($audit.rightName) = Manual review needed" `
                         -Checks $details
                     break
                 }
@@ -613,16 +613,17 @@ function Invoke-Rec {
                 $pass = Test-Expected $raw $audit.expected
                 $exp_str = Format-Expected $audit.expected
                 # These settings live in "Local Security Policy"
-                # (secpol.msc) -- name the user-facing location, not the
-                # secedit tool used to read it. An unset entry reads
-                # "Not configured" rather than a null the UI would show
-                # as the misleading "absent".
-                $actual_str = if ($null -eq $raw) { 'Not configured' } else { Format-Found $raw $audit.expected }
+                # (secpol.msc) -- name that user-facing location. An unset
+                # entry passes null for the per-check Found cell so the UI
+                # renders its shared "Not configured" fallback; the summary
+                # line carries the readable wording.
+                $found_display = if ($null -eq $raw) { 'Not configured' } else { Format-Found $raw $audit.expected }
+                $actual_cell = if ($null -eq $raw) { $null } else { $found_display }
                 Write-SingleCheckResult -Id $id -Pass $pass `
                     -Path 'Local Security Policy' -ValueName $audit.setting `
-                    -Expected $exp_str -Actual $actual_str `
+                    -Expected $exp_str -Actual $actual_cell `
                     -ExpectedText "$($audit.setting) = $exp_str" `
-                    -CurrentValue "$($audit.setting) = $actual_str"
+                    -CurrentValue "$($audit.setting) = $found_display"
             }
             'AuditPolicy' {
                 # AuditQuerySystemPolicy returns the effective mode as a
@@ -659,7 +660,7 @@ function Invoke-Rec {
             }
             'Manual' {
                 $details = @([ordered]@{
-                    path      = '(manual review)'
+                    path      = 'Manual review'
                     valueName = ''
                     expected  = $audit.description
                     actual    = $null
