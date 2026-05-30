@@ -153,6 +153,21 @@ function Format-Value {
     }
 }
 
+# Capitalizes the leading letter of an assembled Expected string so every
+# Expected reads in sentence case regardless of the predicate or audit type
+# that produced it. Only the first character is touched, so nested
+# sub-clauses keep their case; a leading non-letter (a bare number, a quoted
+# string) is left as-is.
+function ConvertTo-LeadingUpper {
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    $first = $Text.Substring(0, 1)
+    if ($first -cmatch '[a-z]') {
+        return $first.ToUpperInvariant() + $Text.Substring(1)
+    }
+    return $Text
+}
+
 # Turns an ExpectedValue object into a short string. Recurses for
 # Absent-Or / All / Any so nested predicates render in full.
 function Format-Expected {
@@ -268,6 +283,75 @@ function Format-AuditMode {
         'Success and Failure' { 'Success and Failure' }
         default               { "$Mode" }
     }
+}
+
+# Defender Attack Surface Reduction rule actions: the numeric codes stored
+# in the AttackSurfaceReductionRules value, paired with their policy names.
+$script:asr_action_names = @{
+    0 = 'Disabled'
+    1 = 'Block'
+    2 = 'Audit'
+    6 = 'Warn'
+}
+
+# Renders one ASR action code as "Name (code)", falling back to the bare
+# code for an unrecognized action.
+function Format-AsrAction {
+    param([int]$Action)
+    $name = $script:asr_action_names[$Action]
+    if ($null -ne $name) { "$name ($Action)" } else { "$Action" }
+}
+
+# Pulls the rule GUID and the allowed action codes out of an ASR
+# Contains / Any-of-Contains predicate. Each leaf substring is
+# "<guid>=<code>"; every alternative names the same rule, so the GUID comes
+# from the first and the codes are gathered across all. The GUID is
+# lowercased for consistent display.
+function Get-AsrTarget {
+    param($Expected)
+    $subs = @()
+    if ($Expected.type -eq 'Contains') {
+        $subs += $Expected.substring
+    }
+    elseif ($Expected.type -eq 'Any') {
+        foreach ($v in $Expected.values) {
+            if ($v.type -eq 'Contains') { $subs += $v.substring }
+        }
+    }
+    $guid = $null
+    $actions = @()
+    foreach ($s in $subs) {
+        $eq = $s.LastIndexOf('=')
+        if ($eq -lt 0) { continue }
+        if ($null -eq $guid) { $guid = $s.Substring(0, $eq).Trim().ToLowerInvariant() }
+        $actions += [int]($s.Substring($eq + 1).Trim())
+    }
+    return @{ guid = $guid; actions = @($actions | Select-Object -Unique) }
+}
+
+# Renders the expected side of an ASR check: each allowed action as
+# "Name (code)", joined with " or ".
+function Format-AsrExpected {
+    param($Actions)
+    ($Actions | ForEach-Object { Format-AsrAction $_ }) -join ' or '
+}
+
+# Finds a rule's action code in a raw AttackSurfaceReductionRules value.
+# The value packs entries as "<guid>=<code>" separated by "|"; the GUID
+# match is case-insensitive. Returns $null when the rule isn't present.
+function Get-AsrFoundAction {
+    param($Raw, $Guid)
+    if ($null -eq $Raw) { return $null }
+    foreach ($entry in ([string]$Raw -split '\|')) {
+        $eq = $entry.LastIndexOf('=')
+        if ($eq -lt 0) { continue }
+        if ($entry.Substring(0, $eq).Trim() -ieq $Guid) {
+            $parsed = 0
+            if ([int]::TryParse($entry.Substring($eq + 1).Trim(), [ref]$parsed)) { return $parsed }
+            return $null
+        }
+    }
+    return $null
 }
 
 # ============================================================================
@@ -386,6 +470,7 @@ function Invoke-Rec {
                     } else {
                         Format-Expected $check.expected
                     }
+                    $exp_str = ConvertTo-LeadingUpper $exp_str
                     $resolution = Resolve-CheckPath $check.path
                     if ($resolution.kind -eq 'error') {
                         $path_error = $resolution.reason
@@ -490,13 +575,29 @@ function Invoke-Rec {
                 }
 
                 $pass = Test-Expected $current $audit.expected
-                $exp_str = Format-Expected $audit.expected
-                $found_str = Format-Found $current $audit.expected
-                $actual_str = if ($null -eq $current) { $null } else { $found_str }
+                if ($audit.setting -eq 'AttackSurfaceReductionRules') {
+                    # One registry value packs every ASR rule as
+                    # "<guid>=<action>|...". Render just this rule's action
+                    # by name + code, and name the specific rule GUID.
+                    $asr = Get-AsrTarget $audit.expected
+                    $exp_str = Format-AsrExpected $asr.actions
+                    $found_action = Get-AsrFoundAction $current $asr.guid
+                    $found_str = if ($null -eq $found_action) { 'Not configured' } else { Format-AsrAction $found_action }
+                    $actual_str = if ($null -eq $found_action) { $null } else { $found_str }
+                    $read_value_name = "$($audit.setting) / $($asr.guid)"
+                    $summary_label = $read_value_name
+                }
+                else {
+                    $exp_str = Format-Expected $audit.expected
+                    $found_str = Format-Found $current $audit.expected
+                    $actual_str = if ($null -eq $current) { $null } else { $found_str }
+                    $summary_label = $audit.setting
+                }
+                $exp_str = ConvertTo-LeadingUpper $exp_str
                 Write-SingleCheckResult -Id $id -Pass $pass -Path $read_path `
                     -ValueName $read_value_name -Expected $exp_str -Actual $actual_str `
-                    -ExpectedText "$($audit.setting) = $exp_str" `
-                    -CurrentValue "$($audit.setting) = $found_str"
+                    -ExpectedText "$summary_label = $exp_str" `
+                    -CurrentValue "$summary_label = $found_str"
             }
             'UserRightsAssignment' {
                 $lsp_name = $script:user_rights_map[$audit.rightName]
@@ -611,7 +712,7 @@ function Invoke-Rec {
                 }
 
                 $pass = Test-Expected $raw $audit.expected
-                $exp_str = Format-Expected $audit.expected
+                $exp_str = ConvertTo-LeadingUpper (Format-Expected $audit.expected)
                 # These settings live in "Local Security Policy"
                 # (secpol.msc) -- name that user-facing location. An unset
                 # entry passes null for the per-check Found cell so the UI
