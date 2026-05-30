@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // Bumps the app version across package.json, src-tauri/tauri.conf.json,
-// and src-tauri/Cargo.toml so they stay in sync.
+// src-tauri/Cargo.toml, and the footer string in src/Onboarding.tsx so
+// they stay in sync.
 //
 // Usage:
 //   node scripts/bump-version.js <semver>
 //   npm run bump-version -- <semver>      (the `--` is required so npm
 //                                          passes the version through)
 //
-// All three files are read first; if the new version isn't strictly
+// All four files are read first; if the new version isn't strictly
 // greater than every current value, nothing is written — partial bumps
 // would leave the repo in a mixed state that's a pain to recover from.
 //
@@ -52,10 +53,23 @@ async function readCargoVersion(file) {
   return { kind: "cargo", file, path, text, match, prev: match[1] };
 }
 
+// Reads a version embedded in free text. `pattern` captures the current
+// version in group 1; `render(next)` produces the replacement for the
+// whole match, so the surrounding text (tag, prefix) stays intact.
+async function readTextVersion(file, pattern, render) {
+  const path = resolve(repo, file);
+  const text = await readFile(path, "utf8");
+  const match = text.match(pattern);
+  if (!match) throw new Error(`No version match found in ${file}`);
+  return { kind: "text", file, path, text, match, render, prev: match[1] };
+}
+
 async function writeBump(target) {
   if (target.kind === "json") {
     target.data[target.key] = next;
     await writeFile(target.path, JSON.stringify(target.data, null, 2) + "\n");
+  } else if (target.kind === "text") {
+    await writeFile(target.path, target.text.replace(target.match[0], target.render(next)));
   } else {
     await writeFile(target.path, target.text.replace(target.match[0], `version = "${next}"`));
   }
@@ -65,6 +79,11 @@ const targets = [
   await readJsonVersion("package.json", "version"),
   await readJsonVersion("src-tauri/tauri.conf.json", "version"),
   await readCargoVersion("src-tauri/Cargo.toml"),
+  await readTextVersion(
+    "src/Onboarding.tsx",
+    /baselinelens v(\d+\.\d+\.\d+)/,
+    (version) => `baselinelens v${version}`,
+  ),
 ];
 
 const stale = targets.filter((t) => !semver.gt(next, t.prev));
