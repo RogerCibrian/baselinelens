@@ -15,9 +15,9 @@ jobs:
     environment: release
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 20
           cache: npm
@@ -28,16 +28,7 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run build
-      - run: npm test
-      - run: cargo fmt --check
-        working-directory: src-tauri
-      - run: cargo clippy --all-targets
-        working-directory: src-tauri
-      - run: cargo test
-        working-directory: src-tauri
-
-      - uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+      - uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -76,6 +67,25 @@ jobs:
           } | ConvertTo-Json -Depth 5 | Out-File -FilePath $metadata -Encoding utf8
           "AZURE_SIGN_DLIB=$dlib"         | Out-File $env:GITHUB_ENV -Append
           "AZURE_SIGN_METADATA=$metadata" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Probe signing
+        shell: pwsh
+        working-directory: src-tauri
+        run: |
+          $probe = "$env:RUNNER_TEMP\probe.exe"
+          Copy-Item "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" $probe -Force
+          powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/sign.ps1 $probe
+          "signtool exit code: $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - run: npm run build
+      - run: npm test
+      - run: cargo fmt --check
+        working-directory: src-tauri
+      - run: cargo clippy --all-targets
+        working-directory: src-tauri
+      - run: cargo test
+        working-directory: src-tauri
 
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
