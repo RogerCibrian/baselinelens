@@ -68,16 +68,6 @@ jobs:
           "AZURE_SIGN_DLIB=$dlib"         | Out-File $env:GITHUB_ENV -Append
           "AZURE_SIGN_METADATA=$metadata" | Out-File $env:GITHUB_ENV -Append
 
-      - name: Probe signing
-        shell: pwsh
-        working-directory: src-tauri
-        run: |
-          $probe = "$env:RUNNER_TEMP\probe.exe"
-          Copy-Item "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" $probe -Force
-          powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/sign.ps1 $probe
-          "signtool exit code: $LASTEXITCODE"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
       - run: npm run build
       - run: npm test
       - run: cargo fmt --check
