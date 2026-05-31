@@ -15,13 +15,6 @@ param([Parameter(Mandatory = $true)][string]$File)
 
 $ErrorActionPreference = 'Stop'
 
-# Temporary diagnostic: Tauri swallows this command's output on failure, so
-# record the resolved file argument to a log the CI workflow dumps afterward.
-if ($env:GITHUB_WORKSPACE) {
-    Add-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'sign-debug.log') `
-        -Value "invoked with file=[$File] cwd=$((Get-Location).Path)"
-}
-
 $signtool = $null
 $onPath = Get-Command signtool.exe -ErrorAction SilentlyContinue
 if ($onPath) {

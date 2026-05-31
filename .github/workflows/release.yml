@@ -91,22 +91,6 @@ jobs:
           "AZURE_SIGN_DLIB=$dlib"         | Out-File $env:GITHUB_ENV -Append
           "AZURE_SIGN_METADATA=$metadata" | Out-File $env:GITHUB_ENV -Append
 
-      - name: Probe signing (diagnostic)
-        shell: pwsh
-        run: |
-          Write-Output "AZURE_SIGN_DLIB=$env:AZURE_SIGN_DLIB (exists: $(Test-Path $env:AZURE_SIGN_DLIB))"
-          Write-Output "AZURE_SIGN_METADATA=$env:AZURE_SIGN_METADATA (exists: $(Test-Path $env:AZURE_SIGN_METADATA))"
-          $onPath = Get-Command signtool.exe -ErrorAction SilentlyContinue
-          Write-Output "signtool on PATH: $($onPath.Source)"
-          Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' -ErrorAction SilentlyContinue |
-            ForEach-Object { Write-Output "SDK signtool: $($_.FullName)" }
-          $probe = Join-Path $env:RUNNER_TEMP 'probe.exe'
-          Copy-Item "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" $probe -Force
-          Write-Output "--- running scripts/sign.ps1 on the probe ---"
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign.ps1 $probe
-          Write-Output "--- sign.ps1 exit code: $LASTEXITCODE ---"
-          if ($LASTEXITCODE -ne 0) { throw "sign.ps1 failed with exit code $LASTEXITCODE" }
-
       - run: npm run build
       - run: npm test
       - run: cargo fmt --check
@@ -124,11 +108,3 @@ jobs:
           releaseName: "BaselineLens ${{ github.ref_name }}"
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
-
-      - name: Dump sign debug log
-        if: always()
-        shell: pwsh
-        run: |
-          $p = Join-Path $env:GITHUB_WORKSPACE 'sign-debug.log'
-          if (Test-Path $p) { Write-Output "=== sign-debug.log ==="; Get-Content $p }
-          else { Write-Output "sign-debug.log NOT FOUND - sign.ps1 never ran" }
