@@ -3,17 +3,7 @@
   "bundle": {
     "targets": ["msi"],
     "windows": {
-      "signCommand": {
-        "cmd": "powershell",
-        "args": [
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-File",
-          "../scripts/sign.ps1",
-          "%1"
-        ]
-      }
+      "signCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/sign.ps1 %1"
     }
   }
 }

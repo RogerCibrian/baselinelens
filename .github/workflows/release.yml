@@ -124,3 +124,11 @@ jobs:
           releaseName: "BaselineLens ${{ github.ref_name }}"
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
+
+      - name: Dump sign debug log
+        if: always()
+        shell: pwsh
+        run: |
+          $p = Join-Path $env:GITHUB_WORKSPACE 'sign-debug.log'
+          if (Test-Path $p) { Write-Output "=== sign-debug.log ==="; Get-Content $p }
+          else { Write-Output "sign-debug.log NOT FOUND - sign.ps1 never ran" }
