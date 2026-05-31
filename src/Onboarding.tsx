@@ -454,7 +454,7 @@ function Footer() {
         </a>
       </div>
       <div>
-        <code>baselinelens v0.1.0</code>
+        <code>baselinelens v1.0.0</code>
       </div>
     </footer>
   );
