@@ -51,6 +51,15 @@ jobs:
 
       - run: npm ci
 
+      - run: npm run build
+      - run: npm test
+      - run: cargo fmt --check
+        working-directory: src-tauri
+      - run: cargo clippy --all-targets
+        working-directory: src-tauri
+      - run: cargo test
+        working-directory: src-tauri
+
       - uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -90,15 +99,6 @@ jobs:
           } | ConvertTo-Json -Depth 5 | Out-File -FilePath $metadata -Encoding utf8
           "AZURE_SIGN_DLIB=$dlib"         | Out-File $env:GITHUB_ENV -Append
           "AZURE_SIGN_METADATA=$metadata" | Out-File $env:GITHUB_ENV -Append
-
-      - run: npm run build
-      - run: npm test
-      - run: cargo fmt --check
-        working-directory: src-tauri
-      - run: cargo clippy --all-targets
-        working-directory: src-tauri
-      - run: cargo test
-        working-directory: src-tauri
 
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
