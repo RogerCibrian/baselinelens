@@ -471,6 +471,7 @@ function Dashboard({
           <Overview
             baseline={baseline}
             scan={latest}
+            scanning={scanning}
             changes={context.changes}
             summaries={context.summaries}
             loadErrors={loadErrors}

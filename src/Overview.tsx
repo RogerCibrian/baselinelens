@@ -21,6 +21,7 @@ import { RecentlyChangedColumn } from "./overview/RecentlyChangedColumn";
 import { TrendChart } from "./overview/TrendChart";
 import {
   buildHeadline,
+  type Headline,
   levelName,
   passPctOf,
   recentChanges,
@@ -34,6 +35,7 @@ const ISSUES_URL = "https://github.com/RogerCibrian/baselinelens/issues";
 export default function Overview({
   baseline,
   scan,
+  scanning,
   changes,
   summaries,
   loadErrors,
@@ -45,6 +47,9 @@ export default function Overview({
 }: {
   baseline: Baseline;
   scan: Scan;
+  /** True while a scan is in flight. Lets the headline treat an empty
+   * `summaries` mid-scan as the first-scan state while the run finishes. */
+  scanning: boolean;
   /** App version for the report footer's product line. */
   appVersion: string;
   /** Per-rec scan-time status flips, oldest first. */
@@ -91,10 +96,20 @@ export default function Overview({
     [baseline, scan, userState],
   );
 
-  const headline = useMemo(
-    () => buildHeadline(summaries, improved.length, regressed.length, weakCategoryCount),
-    [summaries, improved.length, regressed.length, weakCategoryCount],
-  );
+  const headline = useMemo<Headline>(() => {
+    const built = buildHeadline(
+      summaries,
+      improved.length,
+      regressed.length,
+      weakCategoryCount,
+    );
+    // During a scan, `summaries` reloads only after the run persists, so
+    // an in-flight first scan has a live `latest` but still-empty
+    // `summaries`. Treat that window as the first-scan state so the
+    // headline holds steady while the scan finishes and the first summary
+    // lands.
+    return scanning && built.kind === "empty" ? { kind: "first" } : built;
+  }, [summaries, improved.length, regressed.length, weakCategoryCount, scanning]);
 
   const trendPoints = useMemo<TrendPoint[]>(() => {
     // Collapse consecutive scans with the exact same result into one
