@@ -8,10 +8,10 @@ use directories::ProjectDirs;
 use crate::storage::error::StorageError;
 
 /// Returns the platform-appropriate appdata root for BaselineLens. The
-/// qualifier/organization/application triplet matches `com.baselinelens.app`
-/// (the bundle identifier in `tauri.conf.json`).
+/// qualifier/organization/application triplet matches the bundle identifier
+/// in `tauri.conf.json` (`io.github.rogercibrian.baselinelens`).
 fn project_dirs() -> Result<ProjectDirs, StorageError> {
-    ProjectDirs::from("com", "baselinelens", "app").ok_or(StorageError::NoDataDir)
+    ProjectDirs::from("io.github", "rogercibrian", "baselinelens").ok_or(StorageError::NoDataDir)
 }
 
 /// Confirms `sha` is a bare SHA-256 hex digest before it's interpolated
@@ -28,8 +28,8 @@ fn validate_sha(sha: &str) -> Result<(), StorageError> {
 }
 
 /// Root data directory. On macOS:
-/// `~/Library/Application Support/com.baselinelens.app/`. On Windows:
-/// `%APPDATA%\baselinelens\app\data\`.
+/// `~/Library/Application Support/io.github.rogercibrian.baselinelens/`. On
+/// Windows: `%APPDATA%\rogercibrian\baselinelens\data\`.
 pub(crate) fn data_dir() -> Result<PathBuf, StorageError> {
     Ok(project_dirs()?.data_dir().to_path_buf())
 }
