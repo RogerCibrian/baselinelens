@@ -7,7 +7,9 @@
 Audit a Windows endpoint against a CIS Benchmark you provide — a local-only desktop dashboard with a one-page report for managers and a filterable workbench for admins.
 
 <p align="center">
-  <img src="assets/baselinelens-demo.gif" alt="BaselineLens demo: loading a CIS Benchmark PDF, scanning the device, and reviewing results in the Overview report and the Console workbench" width="840">
+  <video src="https://github.com/user-attachments/assets/10a96a2b-cf06-4e6c-af5c-0258d11423d9" width="840" controls>
+    <a href="https://github.com/user-attachments/assets/10a96a2b-cf06-4e6c-af5c-0258d11423d9">Watch the BaselineLens demo</a>
+  </video>
 </p>
 
 ## The problem
