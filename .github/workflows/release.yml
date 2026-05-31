@@ -27,11 +27,15 @@ jobs:
           for ($i = 0; $i -lt $lines.Count; $i++) {
             if ($lines[$i] -match "^## \[$([regex]::Escape($version))\]") { $start = $i; break }
           }
-          if ($start -lt 0) { throw "No CHANGELOG.md section found for $version" }
+          if ($start -lt 0 -and $version -notmatch '-') { throw "No CHANGELOG.md section found for $version" }
           $body = @()
-          for ($i = $start + 1; $i -lt $lines.Count; $i++) {
-            if ($lines[$i] -match '^## ' -or $lines[$i] -match '^\[[^\]]+\]:') { break }
-            $body += $lines[$i]
+          if ($start -ge 0) {
+            for ($i = $start + 1; $i -lt $lines.Count; $i++) {
+              if ($lines[$i] -match '^## ' -or $lines[$i] -match '^\[[^\]]+\]:') { break }
+              $body += $lines[$i]
+            }
+          } else {
+            Write-Warning "No CHANGELOG section for prerelease $version; release body left empty."
           }
           $text = ($body -join "`n").Trim()
           "body<<__NOTES_EOF__`n$text`n__NOTES_EOF__" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -86,6 +90,22 @@ jobs:
           } | ConvertTo-Json -Depth 5 | Out-File -FilePath $metadata -Encoding utf8
           "AZURE_SIGN_DLIB=$dlib"         | Out-File $env:GITHUB_ENV -Append
           "AZURE_SIGN_METADATA=$metadata" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Probe signing (diagnostic)
+        shell: pwsh
+        run: |
+          Write-Output "AZURE_SIGN_DLIB=$env:AZURE_SIGN_DLIB (exists: $(Test-Path $env:AZURE_SIGN_DLIB))"
+          Write-Output "AZURE_SIGN_METADATA=$env:AZURE_SIGN_METADATA (exists: $(Test-Path $env:AZURE_SIGN_METADATA))"
+          $onPath = Get-Command signtool.exe -ErrorAction SilentlyContinue
+          Write-Output "signtool on PATH: $($onPath.Source)"
+          Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Output "SDK signtool: $($_.FullName)" }
+          $probe = Join-Path $env:RUNNER_TEMP 'probe.exe'
+          Copy-Item "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" $probe -Force
+          Write-Output "--- running scripts/sign.ps1 on the probe ---"
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign.ps1 $probe
+          Write-Output "--- sign.ps1 exit code: $LASTEXITCODE ---"
+          if ($LASTEXITCODE -ne 0) { throw "sign.ps1 failed with exit code $LASTEXITCODE" }
 
       - run: npm run build
       - run: npm test
