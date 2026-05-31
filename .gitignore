@@ -3,6 +3,8 @@ compliance-data.json
 **/compliance-data.json
 *.pdf
 screenshots/
+!docs/screenshots/
+!docs/screenshots/**
 dev/
 
 # Logs
