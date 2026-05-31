@@ -17,6 +17,25 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          $lines = Get-Content CHANGELOG.md
+          $start = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match "^## \[$([regex]::Escape($version))\]") { $start = $i; break }
+          }
+          if ($start -lt 0) { throw "No CHANGELOG.md section found for $version" }
+          $body = @()
+          for ($i = $start + 1; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match '^## ' -or $lines[$i] -match '^\[[^\]]+\]:') { break }
+            $body += $lines[$i]
+          }
+          $text = ($body -join "`n").Trim()
+          "body<<__NOTES_EOF__`n$text`n__NOTES_EOF__" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 20
@@ -83,4 +102,5 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "BaselineLens ${{ github.ref_name }}"
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
