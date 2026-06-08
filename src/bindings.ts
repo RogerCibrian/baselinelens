@@ -412,6 +412,12 @@ export type ScanContext = {
 export type ScanContextLoad = {
 	context: ScanContext,
 	errors: ScanLoadErrors,
+	/**
+	 *  True when the latest scan ran under an audit script older than the
+	 *  running `AUDIT_SCRIPT_VERSION` — surfaces a re-scan prompt the same
+	 *  way a stale `parser_version` surfaces a re-parse prompt.
+	 */
+	scanStale: boolean,
 };
 
 /**

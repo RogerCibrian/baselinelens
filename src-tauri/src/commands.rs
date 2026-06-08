@@ -211,6 +211,10 @@ pub(crate) fn save_user_state(state: UserState) -> Result<(), String> {
 pub(crate) struct ScanContextLoad {
     pub(crate) context: ScanContext,
     pub(crate) errors: ScanLoadErrors,
+    /// True when the latest scan ran under an audit script older than the
+    /// running `AUDIT_SCRIPT_VERSION` — surfaces a re-scan prompt the same
+    /// way a stale `parser_version` surfaces a re-parse prompt.
+    pub(crate) scan_stale: bool,
 }
 
 /// Returns the dashboard's scan-related state for a baseline: the
@@ -222,7 +226,15 @@ pub(crate) struct ScanContextLoad {
 pub(crate) fn load_scan_context(baseline_sha: String) -> Result<ScanContextLoad, String> {
     let (context, errors) =
         persist::load_scan_context(&baseline_sha).map_err(|err| err.to_string())?;
-    Ok(ScanContextLoad { context, errors })
+    let scan_stale = context
+        .latest
+        .as_ref()
+        .is_some_and(|scan| scan.audit_script_version < AUDIT_SCRIPT_VERSION);
+    Ok(ScanContextLoad {
+        context,
+        errors,
+        scan_stale,
+    })
 }
 
 /// Deletes the most-recent full `Scan` file for `baseline_sha`. Used

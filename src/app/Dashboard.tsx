@@ -21,7 +21,7 @@ import Console from "../Console";
 import Overview from "../Overview";
 import { EmptyScanState } from "./EmptyScanState";
 import { SettingsMenu } from "./SettingsMenu";
-import { ScanErrorBanner, StaleBanner } from "./banners";
+import { RescanBanner, ScanErrorBanner, StaleBanner } from "./banners";
 
 export type Tab = "overview" | "console";
 
@@ -91,6 +91,10 @@ function Dashboard({
   onJumpToConsole: (filter: Partial<ConsoleFilter>) => void;
 }) {
   const [context, setContext] = useState<ScanContext>(emptyScanContext);
+  // True when the latest persisted scan ran under an older audit script
+  // than the one now running. The backend decides this off the persisted
+  // scan, so the in-progress partial's placeholder version never trips it.
+  const [scanStale, setScanStale] = useState(false);
   // App version for the settings readout. Fetched once; the command is
   // a constant so there's no need to refetch.
   const [appVersion, setAppVersion] = useState("");
@@ -152,8 +156,10 @@ function Dashboard({
       if (result.status === "ok") {
         setContext(result.data.context);
         setLoadErrors(result.data.errors);
+        setScanStale(result.data.scanStale);
       } else {
         setContext(emptyScanContext);
+        setScanStale(false);
         setLoadErrors({
           latest: result.error,
           changes: result.error,
@@ -179,6 +185,7 @@ function Dashboard({
     if (result.status === "ok") {
       setContext(result.data.context);
       setLoadErrors(result.data.errors);
+      setScanStale(result.data.scanStale);
     } else {
       setLoadErrors({
         latest: result.error,
@@ -282,6 +289,7 @@ function Dashboard({
       if (refreshed.status === "ok") {
         setContext(refreshed.data.context);
         setLoadErrors(refreshed.data.errors);
+        setScanStale(refreshed.data.scanStale);
       } else {
         // Backend wrote successfully but reload failed — leave the
         // partial in place so the user still sees their just-completed
@@ -445,6 +453,11 @@ function Dashboard({
       )}
 
       {isStale && <StaleBanner onReparse={onReparse} />}
+      {/* A stale parser takes precedence: re-parsing cascades into a fresh
+          scan, so the re-scan prompt would be redundant alongside it. */}
+      {!isStale && scanStale && !scanning && (
+        <RescanBanner onRescan={() => void rescan()} />
+      )}
       {scanError && (
         <ScanErrorBanner
           message={scanError}

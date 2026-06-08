@@ -49,6 +49,21 @@ export function StaleBanner({ onReparse }: { onReparse: () => void }) {
   );
 }
 
+export function RescanBanner({ onRescan }: { onRescan: () => void }) {
+  return (
+    <div className="stale-banner" role="status">
+      <WarnIcon />
+      <span className="stale-banner-message">
+        Audit script updated since this scan ran. Re-scan to pick up the
+        new checks.
+      </span>
+      <button className="stale-banner-action" onClick={onRescan}>
+        Re-scan
+      </button>
+    </div>
+  );
+}
+
 function WarnIcon() {
   return (
     <svg
