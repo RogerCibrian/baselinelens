@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-08
+
+### Added
+
+- A prompt to re-scan when the audit script has been updated since your last scan, so audit-only fixes surface on their own instead of waiting for a re-parse.
+
 ### Fixed
 
 - Recommendations with a range threshold ("or fewer" / "or more", including parenthesized forms like "(or less)") are now evaluated as a range instead of an exact value, so a stricter-than-required setting is correctly counted as passing. The threshold is read from the recommendation title or the audit text's qualifier. Affects recs such as some Windows LAPS password settings and the Config Refresh cadence.
@@ -29,5 +35,6 @@ Thanks to Reddit users u/FormerPick102 and u/saffronjewel420 for reporting the i
 - Export a scan to CSV or JSON.
 - Signed `.msi` installer for Windows 10 and 11.
 
-[Unreleased]: https://github.com/RogerCibrian/baselinelens/compare/1.0.0...HEAD
+[Unreleased]: https://github.com/RogerCibrian/baselinelens/compare/1.1.0...HEAD
+[1.1.0]: https://github.com/RogerCibrian/baselinelens/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/RogerCibrian/baselinelens/releases/tag/1.0.0
