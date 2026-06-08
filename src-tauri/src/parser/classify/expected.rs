@@ -469,7 +469,11 @@ fn parse_str_options(snippet: &str) -> Option<Vec<Value>> {
             value: option.to_string(),
         })
         .collect();
-    if options.len() >= 2 { Some(options) } else { None }
+    if options.len() >= 2 {
+        Some(options)
+    } else {
+        None
+    }
 }
 
 /// Parses a comma-separated list of GUIDs (with optional Oxford "and") into

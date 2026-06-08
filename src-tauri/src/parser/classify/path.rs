@@ -192,7 +192,10 @@ SVOL
 HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa:restrictremotesam \nO:BAG:BAD:(A;;RC;;;BA)\n";
         let paths = extract_all(body);
         assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].path, "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa");
+        assert_eq!(
+            paths[0].path,
+            "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa"
+        );
         assert_eq!(paths[0].value_name, "restrictremotesam");
     }
 
