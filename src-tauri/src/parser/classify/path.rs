@@ -43,13 +43,16 @@ pub(super) fn extract_all(body: &str) -> Vec<JoinedPath> {
             // delimiter yet) it may wrap mid-path, and a key path can
             // contain spaces (`Windows Defender\Behavioral Network
             // Blocks`), so multi-space continuations are glued. Once the
-            // `:` is present the value name is a single token; a
-            // multi-space line there is narrative and must not glue.
+            // `:` is present the value name is a single token: it only
+            // continues across a mid-token wrap, where the broken line has
+            // no trailing space. A space-terminated value name is complete,
+            // so a following line is narrative or repeated value data (an
+            // SDDL value printed below its path) and must not glue.
             let whitespace_count = next_content.chars().filter(|c| c.is_whitespace()).count();
             let value_delim_seen = joined.contains(':');
             if next_content.is_empty()
                 || starts_with_hive(next_content)
-                || (value_delim_seen && whitespace_count > 1)
+                || (value_delim_seen && (prev_had_trailing_space || whitespace_count > 1))
             {
                 break;
             }
@@ -178,6 +181,19 @@ SVOL
             "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa"
         );
         assert!(!paths[0].path.contains(':'));
+    }
+
+    #[test]
+    fn does_not_glue_value_repeated_on_the_next_line() {
+        // Mimics 49.20: the SDDL value is printed again on its own line
+        // below the path. The path line ends in a trailing space, so the
+        // value name is complete and the repeat must not glue onto it.
+        let body = "\
+HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa:restrictremotesam \nO:BAG:BAD:(A;;RC;;;BA)\n";
+        let paths = extract_all(body);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].path, "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa");
+        assert_eq!(paths[0].value_name, "restrictremotesam");
     }
 
     #[test]

@@ -262,8 +262,8 @@ mod tests {
             Counts {
                 file: "CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf",
                 recs: 457,
-                registry: 334,
-                policy_manager: 58,
+                registry: 333,
+                policy_manager: 59,
                 audit_policy: 27,
                 user_rights: 35,
                 secedit: 3,
@@ -272,8 +272,8 @@ mod tests {
             Counts {
                 file: "CIS_Microsoft_Intune_for_Windows_11_Benchmark_v3.0.1.pdf",
                 recs: 420,
-                registry: 324,
-                policy_manager: 34,
+                registry: 323,
+                policy_manager: 35,
                 audit_policy: 27,
                 user_rights: 28,
                 secedit: 3,
@@ -302,8 +302,8 @@ mod tests {
             Counts {
                 file: "CIS_Microsoft_Intune_for_Windows_10_Benchmark_v4.0.0.pdf",
                 recs: 412,
-                registry: 300,
-                policy_manager: 53,
+                registry: 299,
+                policy_manager: 54,
                 audit_policy: 27,
                 user_rights: 29,
                 secedit: 3,

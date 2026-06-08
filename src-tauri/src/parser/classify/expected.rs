@@ -75,10 +75,16 @@ pub(super) fn parse(body: &str) -> Option<ExpectedValue> {
     }
 
     if let Some(after) = find_after(&normalized, "REG_SZ value of ") {
-        let snippet = capture_until_period(after).trim();
+        // A REG_SZ value can hold periods of its own (a firewall log path
+        // ends in `.log`), so the value runs to the sentence-ending period,
+        // not the first one.
+        let snippet = capture_until_sentence_end(after).trim();
         if !snippet.is_empty() && !contains_per_key_split(snippet) {
             if let Some(guids) = parse_guid_list(snippet) {
                 return Some(ExpectedValue::ContainsAll { substrings: guids });
+            }
+            if let Some(options) = parse_str_options(snippet) {
+                return Some(ExpectedValue::OneOf { values: options });
             }
             return Some(ExpectedValue::Equals {
                 value: Value::Str {
@@ -230,6 +236,7 @@ fn parse_contains_constraint(snippet: &str) -> Option<ExpectedValue> {
 /// - `anything other than N` → `NotEquals(Dword(N))`
 /// - `N or fewer/less [<noun>], but not M` → `All([AtMost(N), NotEquals(M)])`
 /// - `N or fewer/less [<noun>]` → `AtMost(N)`
+/// - `N (or less)` / `N (or fewer)` parenthesized → `AtMost(N)`
 /// - `N or higher/more` → `AtLeast(N)`
 /// - `N or M [or …]` → `OneOf([Dword(N), Dword(M), …])`
 /// - `N` → `Equals(Dword(N))`
@@ -245,6 +252,14 @@ fn parse_dword_constraint(snippet: &str) -> Option<ExpectedValue> {
         let stripped = strip_parentheticals(trimmed);
         let bound = parse_int(stripped.trim())?;
         return Some(ExpectedValue::AtLeast { value: bound });
+    }
+
+    // The "(or less)" / "(or fewer)" cue is the same parenthesized shape on
+    // the upper-bound side and must likewise be read before the parens go.
+    if trimmed.contains("(or less)") || trimmed.contains("(or fewer)") {
+        let stripped = strip_parentheticals(trimmed);
+        let bound = parse_int(stripped.trim())?;
+        return Some(ExpectedValue::AtMost { value: bound });
     }
 
     let stripped = strip_parentheticals(trimmed);
@@ -418,6 +433,45 @@ fn capture_until_period(text: &str) -> &str {
     text.find('.').map(|idx| &text[..idx]).unwrap_or(text)
 }
 
+/// Captures up to the sentence-ending period: the first `.` that is
+/// followed by whitespace or ends the text. Periods inside the value
+/// itself (e.g. the `.log` of a firewall log path) are passed over, so
+/// the whole value is kept rather than cut at its first dot.
+fn capture_until_sentence_end(text: &str) -> &str {
+    let bytes = text.as_bytes();
+    for (idx, &byte) in bytes.iter().enumerate() {
+        if byte != b'.' {
+            continue;
+        }
+        match bytes.get(idx + 1) {
+            None => return &text[..idx],
+            Some(next) if next.is_ascii_whitespace() => return &text[..idx],
+            _ => {}
+        }
+    }
+    text
+}
+
+/// Parses a REG_SZ "one of" enumeration like `1, 2 or 3` into its string
+/// options. Returns `None` when the snippet has no `or` separator, leaving
+/// a lone value to stay an exact match.
+fn parse_str_options(snippet: &str) -> Option<Vec<Value>> {
+    if !snippet.contains(" or ") {
+        return None;
+    }
+    let options: Vec<Value> = snippet
+        .replace(", or ", ", ")
+        .replace(" or ", ", ")
+        .split(',')
+        .map(str::trim)
+        .filter(|option| !option.is_empty())
+        .map(|option| Value::Str {
+            value: option.to_string(),
+        })
+        .collect();
+    if options.len() >= 2 { Some(options) } else { None }
+}
+
 /// Parses a comma-separated list of GUIDs (with optional Oxford "and") into
 /// the substrings vector for `ContainsAll`. Returns `None` when the snippet
 /// isn't a list of well-formed GUIDs.
@@ -497,6 +551,13 @@ mod tests {
     fn parses_parenthesized_at_least() {
         let body = "...the value is set to 14 (or higher).\n";
         assert_eq!(parse(body), Some(ExpectedValue::AtLeast { value: 14 }));
+    }
+
+    #[test]
+    fn parses_parenthesized_at_most() {
+        // Mimics 15.2 Refresh cadence: "REG_DWORD value of 90 (or less)".
+        let body = "...REG_DWORD value of 90 (or less).\n";
+        assert_eq!(parse(body), Some(ExpectedValue::AtMost { value: 90 }));
     }
 
     #[test]
@@ -635,6 +696,46 @@ mod tests {
                 value: Value::Str {
                     value: "MyExpectedString".to_string()
                 },
+            })
+        );
+    }
+
+    #[test]
+    fn parses_sz_path_keeps_its_own_extension() {
+        // Mimics 38.6/38.13/38.22: the REG_SZ value is a log file path that
+        // ends in `.log`; stopping at the first period would drop the
+        // extension and fail a correctly-configured device.
+        let body = "...REG_SZ value of \
+            %SystemRoot%\\System32\\logfiles\\firewall\\domainfw.log.\nHKLM\\SYSTEM\\Foo:Bar\n";
+        assert_eq!(
+            parse(body),
+            Some(ExpectedValue::Equals {
+                value: Value::Str {
+                    value: "%SystemRoot%\\System32\\logfiles\\firewall\\domainfw.log".to_string()
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn parses_sz_enumeration_as_oneof_strings() {
+        // Mimics 49.11 ScRemoveOption: a REG_SZ whose value may be "1",
+        // "2", or "3" -- one of, not the literal phrase "1, 2 or 3".
+        let body = "...REG_SZ value of 1, 2 or 3.\nHKLM\\SOFTWARE\\Foo:Bar\n";
+        assert_eq!(
+            parse(body),
+            Some(ExpectedValue::OneOf {
+                values: vec![
+                    Value::Str {
+                        value: "1".to_string()
+                    },
+                    Value::Str {
+                        value: "2".to_string()
+                    },
+                    Value::Str {
+                        value: "3".to_string()
+                    },
+                ],
             })
         );
     }

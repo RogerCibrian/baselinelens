@@ -28,7 +28,7 @@ use crate::parser::model::{
 /// `parser_version` and surfaces a re-parse prompt when the cache was
 /// parsed by an older parser (a newer cache is left alone — running an
 /// older binary against a newer cache shouldn't churn the cache).
-pub(crate) const PARSER_VERSION: u32 = 1;
+pub(crate) const PARSER_VERSION: u32 = 2;
 
 /// One `ParserProgress::Classifying` event is emitted every N recs so the
 /// UI sees roughly 18 updates over ~450 recs rather than one per rec.

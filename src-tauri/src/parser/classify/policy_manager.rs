@@ -14,32 +14,57 @@ use crate::parser::classify::path::JoinedPath;
 use crate::parser::classify::{DetectCtx, Detection};
 use crate::parser::model::{AuditProcedure, PolicyScope};
 
-/// PolicyManager owns recs whose audit body has a `_WinningProvider`
-/// lookup path.
+/// Value-name suffixes that mark a provider-locator path. `_WinningProvider`
+/// (REG_SZ) holds the winning provider's GUID and is what the runtime reads
+/// to resolve the `Providers\{GUID}` path. Some recs cite the companion
+/// `_ProviderSet` value in their audit text instead; the GUID still lives in
+/// the `_WinningProvider` value beside it, so either suffix identifies the
+/// same two-step pattern and resolves through the same lookup.
+const PROVIDER_MARKERS: [&str; 2] = ["_WinningProvider", "_ProviderSet"];
+
+/// Returns the provider-locator suffix `value_name` ends with, if any.
+fn provider_marker(value_name: &str) -> Option<&'static str> {
+    PROVIDER_MARKERS
+        .iter()
+        .copied()
+        .find(|marker| value_name.ends_with(marker))
+}
+
+/// Reads a provider-locator path: its value name ends with a marker AND the
+/// path is a `PolicyManager\current\<scope>\<area>` path. Both are required
+/// -- a plain GPO value that merely ends in `_ProviderSet` (e.g. AppHVSI's
+/// `AllowAppHVSI_ProviderSet` under `SOFTWARE\Policies\...`) is an ordinary
+/// registry value, not this pattern, and must stay with the Registry
+/// variant. Returns the marker, scope, and area for the caller to use.
+fn provider_locator(joined: &JoinedPath) -> Option<(&'static str, PolicyScope, String)> {
+    let marker = provider_marker(&joined.value_name)?;
+    let (scope, area) = parse_scope_and_area(&joined.path)?;
+    Some((marker, scope, area))
+}
+
+/// PolicyManager owns recs whose audit body has a provider-locator lookup
+/// path.
 pub(super) fn detect(ctx: &DetectCtx) -> Detection {
     super::run_detector(
         ctx.paths
             .iter()
-            .any(|joined| joined.value_name.ends_with("_WinningProvider")),
+            .any(|joined| provider_locator(joined).is_some()),
         "PolicyManager body could not be parsed",
         || try_parse(ctx.body, &ctx.paths),
     )
 }
 
 /// Returns a `PolicyManager` `AuditProcedure` if the audit body has a
-/// `_WinningProvider` path AND a recognizable expected-value text shape.
+/// provider-locator path AND a recognizable expected-value text shape.
 /// Returns `None` so the dispatcher falls back to `Manual` for ASR-style
 /// `value contains` recs and ADMX-XML structured values, neither of which
 /// the v1 parser handles.
 pub(super) fn try_parse(body: &str, paths: &[JoinedPath]) -> Option<AuditProcedure> {
-    let provider = paths
-        .iter()
-        .find(|joined| joined.value_name.ends_with("_WinningProvider"))?;
-    let (scope, area) = parse_scope_and_area(&provider.path)?;
-    let setting = provider
-        .value_name
-        .strip_suffix("_WinningProvider")?
-        .to_string();
+    let (provider, marker, scope, area) = paths.iter().find_map(|joined| {
+        let (marker, scope, area) = provider_locator(joined)?;
+        Some((joined, marker, scope, area))
+    })?;
+    let setting = provider.value_name.strip_suffix(marker)?.to_string();
     let expected = expected::parse(body)?;
     Some(AuditProcedure::PolicyManager {
         scope,
@@ -135,8 +160,57 @@ HKLM\\SOFTWARE\\Microsoft\\PolicyManager\\Providers\\{GUID}\\Default\\Device\\Ab
     }
 
     #[test]
+    fn try_parse_recognizes_provider_set_marker() {
+        // Mimics 93.1: the audit text cites the `_ProviderSet` locator
+        // rather than `_WinningProvider`. It's the same two-step pattern,
+        // so it parses as PolicyManager with the marker stripped off the
+        // setting name.
+        let body = "\
+1.  Note the WinningProvider GUID at the location below.
+HKLM\\SOFTWARE\\Microsoft\\PolicyManager\\current\\device\\Wifi:AllowAutoConnectToWiFiSenseHotspots_ProviderSet
+
+2.  At the location below confirm the value is set to 0.
+HKLM\\SOFTWARE\\Microsoft\\PolicyManager\\Providers\\{GUID}\\Default\\Device\\Wifi:AllowAutoConnectToWiFiSenseHotspots
+";
+        let paths = path::extract_all(body);
+        let procedure = try_parse(body, &paths).expect("should parse");
+        match procedure {
+            AuditProcedure::PolicyManager {
+                scope,
+                area,
+                setting,
+                expected,
+            } => {
+                assert_eq!(scope, PolicyScope::Device);
+                assert_eq!(area, "Wifi");
+                assert_eq!(setting, "AllowAutoConnectToWiFiSenseHotspots");
+                assert_eq!(
+                    expected,
+                    ExpectedValue::Equals {
+                        value: Value::Dword { value: 0 }
+                    }
+                );
+            }
+            _ => panic!("expected PolicyManager variant"),
+        }
+    }
+
+    #[test]
     fn try_parse_returns_none_when_no_winning_provider() {
         let body = "HKLM\\SOFTWARE\\Foo:Bar\n";
+        let paths = path::extract_all(body);
+        assert!(try_parse(body, &paths).is_none());
+    }
+
+    #[test]
+    fn try_parse_ignores_gpo_value_ending_in_provider_set() {
+        // Mimics 18.10.43.6 (AppHVSI): a plain GPO value whose name ends in
+        // '_ProviderSet' but whose path is not a PolicyManager current path.
+        // It must NOT be claimed here -- it belongs to the Registry variant.
+        let body = "\
+REG_DWORD value of 1.
+HKLM\\SOFTWARE\\Policies\\Microsoft\\AppHVSI:AllowAppHVSI_ProviderSet
+";
         let paths = path::extract_all(body);
         assert!(try_parse(body, &paths).is_none());
     }

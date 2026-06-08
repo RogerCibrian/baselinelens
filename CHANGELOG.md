@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Recommendations with a range threshold ("or fewer" / "or more") are now evaluated as a range instead of an exact value, so a stricter-than-required setting is correctly counted as passing. When the audit text lists only a single number, the threshold is read from the recommendation title. This affects recs such as some Windows LAPS password settings.
+- Recommendations with a range threshold ("or fewer" / "or more", including parenthesized forms like "(or less)") are now evaluated as a range instead of an exact value, so a stricter-than-required setting is correctly counted as passing. The threshold is read from the recommendation title or the audit text's qualifier. Affects recs such as some Windows LAPS password settings and the Config Refresh cadence.
+- String settings whose value contains a period — such as a firewall log file path ending in ".log" — are no longer cut off at the first period, so a correctly-set value is detected instead of reported as a mismatch.
+- String settings that accept one of several values, such as "1, 2 or 3", now pass when the device matches any of them, rather than being compared against the whole phrase as a single literal. Affects recs such as the smart card removal behavior setting.
+- A setting whose expected value is repeated on its own line below the registry path no longer folds that value into the value name, so it reads the right value. Affects the setting for restricting remote calls to SAM.
+- Settings stored under a device-specific GUID subkey are now resolved at scan time — by locating the Intune enrollment or the policy's winning provider — instead of looking for a literal placeholder key that never exists. Affects recs such as Config Refresh and Auto-Connect to Wi-Fi Sense hotspots. A placeholder that can't be resolved is now reported as an error rather than a misleading failure.
+
+Thanks to Reddit users u/FormerPick102 and u/saffronjewel420 for reporting the issues fixed above.
 
 ## [1.0.0] - 2026-05-31
 

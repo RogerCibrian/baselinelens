@@ -75,6 +75,36 @@ function Resolve-TenantId {
     return $null
 }
 
+# GUID of the Intune MDM enrollment, used to resolve the '{ProviderGUID}'
+# placeholder some policy paths carry under
+# HKLM\SOFTWARE\Microsoft\Enrollments\{ProviderGUID}\. The enrollment
+# subkeys are GUID-named; the Intune one is the subkey whose 'ProviderID'
+# value is 'MS DM Server'. Resolved by inspecting each subkey rather than
+# trusting whatever GUID happens to exist. Cached (incl. a negative
+# result) since it's stable per scan.
+$script:enrollment_provider_guid = $null
+$script:enrollment_provider_guid_resolved = $false
+function Resolve-EnrollmentProviderGuid {
+    if ($script:enrollment_provider_guid_resolved) { return $script:enrollment_provider_guid }
+    $script:enrollment_provider_guid_resolved = $true
+
+    try {
+        $enrollments = 'HKLM:\SOFTWARE\Microsoft\Enrollments'
+        if (Test-Path -LiteralPath $enrollments) {
+            foreach ($sub in Get-ChildItem -LiteralPath $enrollments -ErrorAction Stop) {
+                $provider_id = (Get-ItemProperty -LiteralPath $sub.PSPath -Name 'ProviderID' -ErrorAction SilentlyContinue).ProviderID
+                if ($provider_id -eq 'MS DM Server') {
+                    $script:enrollment_provider_guid = $sub.PSChildName
+                    return $script:enrollment_provider_guid
+                }
+            }
+        }
+    } catch {
+        # No readable enrollment; leave the GUID null for the caller to handle.
+    }
+    return $null
+}
+
 # SID of the interactive desktop user, used to resolve user-scope reads:
 # the '[USER SID]' registry placeholder and the user-scope PolicyManager
 # subkeys both key off it. The scan runs elevated, so the process identity
@@ -140,6 +170,20 @@ function Resolve-CheckPath {
         }
     }
 
+    # Some policy paths carry a '{ProviderGUID}' placeholder for the Intune
+    # MDM enrollment subkey under HKLM\...\Enrollments\. Resolve it from the
+    # enrollment whose ProviderID is 'MS DM Server'.
+    if ($resolved -match '\{ProviderGUID\}') {
+        $provider_guid = Resolve-EnrollmentProviderGuid
+        if ([string]::IsNullOrWhiteSpace($provider_guid)) {
+            return @{
+                kind   = 'fail'
+                reason = 'Intune enrollment could not be found; the policy cannot be confirmed'
+            }
+        }
+        $resolved = $resolved.Replace('{ProviderGUID}', $provider_guid)
+    }
+
     # HKU paths carry a '[USER SID]' placeholder for the interactive
     # desktop user. Resolve it from explorer.exe's owner -- the same
     # source the user-scope PolicyManager check uses -- so user-scope
@@ -156,10 +200,14 @@ function Resolve-CheckPath {
         $resolved = $resolved.Replace($Matches[0], $usid)
     }
 
-    if ($resolved -match '[:<>]') {
+    # Any placeholder left unresolved here (an unhandled '{...}', or a
+    # stray ':'/'<'/'>') is an automation gap, not a device misconfig --
+    # surface it as Error rather than reading a literal key that can't
+    # exist and reporting a misleading Fail.
+    if ($resolved -match '[:<>{}]') {
         return @{
             kind   = 'error'
-            reason = 'Registry path could not be parsed'
+            reason = "Unsupported registry path placeholder in $resolved"
         }
     }
 
