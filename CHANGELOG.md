@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Recommendations with a range threshold ("or fewer" / "or more") are now evaluated as a range instead of an exact value, so a stricter-than-required setting is correctly counted as passing. When the audit text lists only a single number, the threshold is read from the recommendation title. This affects recs such as some Windows LAPS password settings.
+
 ## [1.0.0] - 2026-05-31
 
 ### Added
