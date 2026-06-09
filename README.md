@@ -6,10 +6,24 @@
 
 Audit a Windows endpoint against a CIS Benchmark you provide: a local-only desktop dashboard with a one-page report of where the device stands and a workbench for working through the findings.
 
+**Overview:** the one-page report of overall compliance, score by level, a trend across recent scans, and the weakest categories.
+
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/10a96a2b-cf06-4e6c-af5c-0258d11423d9" width="840" controls>
-    <a href="https://github.com/user-attachments/assets/10a96a2b-cf06-4e6c-af5c-0258d11423d9">Watch the BaselineLens demo</a>
-  </video>
+  <img src="docs/screenshots/Overview.png" width="840" alt="BaselineLens Overview tab showing overall compliance, score by level, trend, and weakest categories">
+</p>
+
+**Console:** where you search, filter, and sort every recommendation, with the expected value next to what was found.
+
+<p align="center">
+  <img src="docs/screenshots/Console.png" width="840" alt="BaselineLens Console tab showing a filterable table of recommendations with expected and found values">
+</p>
+
+Recommendation titles are blurred here because they're CIS Benchmark content, which BaselineLens doesn't ship.
+
+**Starting a scan:** confirm the parsed benchmark and target device, then run it.
+
+<p align="center">
+  <img src="docs/screenshots/Onboarding.png" width="840" alt="BaselineLens confirm-scan dialog showing the parsed benchmark, version, and target device">
 </p>
 
 ## The problem
@@ -35,22 +49,6 @@ Two views over the same scan:
 Everything runs on the device being audited. **No data leaves the machine.**
 
 BaselineLens audits and tracks; it doesn't change settings for you. If you want a starting point on the deployment side, [OpenIntuneBaseline](https://github.com/SkipToTheEndpoint/OpenIntuneBaseline) is a well-regarded community baseline for Intune-managed Windows. It's its own baseline with intentional differences from CIS, so the two won't line up exactly.
-
-## Screenshots
-
-**Overview:** the one-page report of overall compliance, score by level, a trend across recent scans, and the weakest categories.
-
-![BaselineLens Overview tab showing overall compliance, score by level, trend, and weakest categories](docs/screenshots/Overview.png)
-
-**Console:** where you search, filter, and sort every recommendation, with the expected value next to what was found.
-
-![BaselineLens Console tab showing a filterable table of recommendations with expected and found values](docs/screenshots/Console.png)
-
-Recommendation titles are blurred here because they're CIS Benchmark content, which BaselineLens doesn't ship.
-
-**Starting a scan:** confirm the parsed benchmark and target device, then run it.
-
-![BaselineLens confirm-scan dialog showing the parsed benchmark, version, and target device](docs/screenshots/Onboarding.png)
 
 ## Features
 
