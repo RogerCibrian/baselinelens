@@ -32,11 +32,25 @@ pub(super) fn try_parse(body: &str, paths: &[JoinedPath], title: &str) -> Option
     // Common case: a single expected value applies to every check.
     if let Some(expected) = expected::parse(body) {
         let expected = refine_with_title_range(expected, title);
+        // The `<numeric value>` placeholder pairs with a ContainsAll GUID
+        // list (each GUID sits in its own numbered value under the key).
+        // Any other expected shape alongside the placeholder is a body the
+        // parser can't interpret, so bail to Manual.
+        let has_placeholder = scoped
+            .iter()
+            .any(|(_, joined)| is_numbered_values_placeholder(&joined.value_name));
+        if has_placeholder && !matches!(expected, ExpectedValue::ContainsAll { .. }) {
+            return None;
+        }
         let checks = scoped
             .into_iter()
             .map(|(scope, joined)| RegistryCheck {
                 path: joined.path.clone(),
-                value_name: joined.value_name.clone(),
+                value_name: if is_numbered_values_placeholder(&joined.value_name) {
+                    None
+                } else {
+                    Some(joined.value_name.clone())
+                },
                 expected: expected.clone(),
                 scope,
             })
@@ -58,7 +72,7 @@ pub(super) fn try_parse(body: &str, paths: &[JoinedPath], title: &str) -> Option
                 .find(|(name, _)| name == &joined.value_name)?;
             checks.push(RegistryCheck {
                 path: joined.path.clone(),
-                value_name: joined.value_name.clone(),
+                value_name: Some(joined.value_name.clone()),
                 expected: entry.1.clone(),
                 scope: *scope,
             });
@@ -102,6 +116,14 @@ fn refine_with_title_range(expected: ExpectedValue, title: &str) -> ExpectedValu
         }
         _ => unchanged,
     }
+}
+
+/// True for the benchmark's `<numeric value>` value-name placeholder. It
+/// stands for the key's numbered values as a group (the policy writes one
+/// entry per value, named `1`, `2`, ...), so no value by that literal name
+/// exists.
+fn is_numbered_values_placeholder(value_name: &str) -> bool {
+    value_name.eq_ignore_ascii_case("<numeric value>")
 }
 
 fn scope_prefix(path: &str) -> Option<RegistryScope> {
@@ -174,8 +196,14 @@ HKLM\\SOFTWARE\\Y:DoReport
         match procedure {
             AuditProcedure::Registry { checks } => {
                 assert_eq!(checks.len(), 2);
-                let disabled = checks.iter().find(|c| c.value_name == "Disabled").unwrap();
-                let do_report = checks.iter().find(|c| c.value_name == "DoReport").unwrap();
+                let disabled = checks
+                    .iter()
+                    .find(|c| c.value_name.as_deref() == Some("Disabled"))
+                    .unwrap();
+                let do_report = checks
+                    .iter()
+                    .find(|c| c.value_name.as_deref() == Some("DoReport"))
+                    .unwrap();
                 assert_eq!(
                     disabled.expected,
                     ExpectedValue::Equals {
@@ -292,6 +320,48 @@ HKLM\\SOFTWARE\\A:X
             }
             _ => panic!("expected Registry variant"),
         }
+    }
+
+    #[test]
+    fn numeric_value_placeholder_reads_all_values_under_the_key() {
+        // Mimics 4.10.9.1.3 device-class deny list: each GUID sits in its
+        // own numbered value under the key, and the audit text writes the
+        // value name as the `<numeric value>` placeholder.
+        let body = "\
+REG_SZ value of {d48179be-ec20-11d1-b6b8-00c04fa372a7} and {6bdd1fc1-810f-11d0-bec7-08002be2092f}.
+HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DeviceInstall\\Restrictions\\DenyDeviceClasses:<numeric value>
+";
+        let paths = paths_for(body);
+        let procedure = try_parse(body, &paths, "").expect("should parse");
+        match procedure {
+            AuditProcedure::Registry { checks } => {
+                assert_eq!(checks.len(), 1);
+                assert_eq!(checks[0].value_name, None);
+                assert_eq!(
+                    checks[0].expected,
+                    ExpectedValue::ContainsAll {
+                        substrings: vec![
+                            "{d48179be-ec20-11d1-b6b8-00c04fa372a7}".to_string(),
+                            "{6bdd1fc1-810f-11d0-bec7-08002be2092f}".to_string(),
+                        ]
+                    }
+                );
+            }
+            _ => panic!("expected Registry variant"),
+        }
+    }
+
+    #[test]
+    fn numeric_value_placeholder_without_guid_list_bails() {
+        // The placeholder's numbered-values meaning is defined only for a
+        // ContainsAll GUID list; a DWORD expected alongside it is a body
+        // the parser can't interpret.
+        let body = "\
+REG_DWORD value of 1.
+HKLM\\SOFTWARE\\A:<numeric value>
+";
+        let paths = paths_for(body);
+        assert!(try_parse(body, &paths, "").is_none());
     }
 
     #[test]

@@ -270,6 +270,16 @@ mod tests {
                 manual: 0,
             },
             Counts {
+                file: "CIS_Microsoft_Intune_for_Windows_11_Benchmark_v5.0.0.pdf",
+                recs: 419,
+                registry: 313,
+                policy_manager: 34,
+                audit_policy: 27,
+                user_rights: 35,
+                secedit: 3,
+                manual: 7,
+            },
+            Counts {
                 file: "CIS_Microsoft_Intune_for_Windows_11_Benchmark_v3.0.1.pdf",
                 recs: 420,
                 registry: 323,
@@ -308,6 +318,16 @@ mod tests {
                 user_rights: 29,
                 secedit: 3,
                 manual: 0,
+            },
+            Counts {
+                file: "CIS_Microsoft_Intune_for_Windows_10_Benchmark_v5.0.0.pdf",
+                recs: 358,
+                registry: 263,
+                policy_manager: 29,
+                audit_policy: 27,
+                user_rights: 29,
+                secedit: 3,
+                manual: 7,
             },
             Counts {
                 file: "CIS_Microsoft_Windows_10_Enterprise_Benchmark_v4.0.0.pdf",
@@ -398,7 +418,7 @@ mod tests {
             ("4.6.8.2", "Registry multi-key, all REG_DWORD=0"),
             ("4.6.11.1", "Registry multi-key REG_SZ"),
             ("4.7.5", "Registry OneOf(Dword(0), Dword(1))"),
-            ("4.10.9.1.3", "Registry ContainsAll(4 GUIDs)"),
+            ("4.10.9.1.3", "Registry all-values ContainsAll(4 GUIDs)"),
             ("4.10.19.2", "Registry Absent"),
             ("4.10.20.1.13", "Registry per-key different (should bail)"),
             ("4.11.5.2", "Registry HKU (CurrentUser scope)"),
@@ -614,6 +634,47 @@ mod tests {
         }
     }
 
+    #[test]
+    #[ignore = "diagnostic — lists every rec whose extracted value name is a placeholder"]
+    fn dumps_placeholder_value_names_across_dev_pdfs() {
+        let dev_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../dev");
+        for entry in std::fs::read_dir(&dev_dir).expect("dev dir") {
+            let path = entry.expect("dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("pdf") {
+                continue;
+            }
+            let Ok(text) = pdf::extract(&path) else {
+                continue;
+            };
+            let Ok(recs) = structure::slice(&text) else {
+                continue;
+            };
+            eprintln!(
+                "\n===== {} =====",
+                path.file_name().unwrap().to_string_lossy()
+            );
+            for rec in &recs {
+                if let AuditProcedure::Registry { checks } = audit_procedure(rec) {
+                    for check in &checks {
+                        let placeholder_like = check
+                            .value_name
+                            .as_deref()
+                            .is_none_or(|name| name.contains('<') || name.contains('>'));
+                        if placeholder_like {
+                            eprintln!(
+                                "[{}] {}:{}\n      expected={:?}",
+                                rec.id,
+                                check.path,
+                                check.value_name.as_deref().unwrap_or("(all values)"),
+                                check.expected
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn summarize(procedure: &AuditProcedure) -> String {
         match procedure {
             AuditProcedure::Registry { checks } => {
@@ -621,7 +682,10 @@ mod tests {
                 for check in checks {
                     summary.push_str(&format!(
                         "\n           {:?}  {}:{}  expected={:?}",
-                        check.scope, check.path, check.value_name, check.expected
+                        check.scope,
+                        check.path,
+                        check.value_name.as_deref().unwrap_or("(all values)"),
+                        check.expected
                     ));
                 }
                 summary

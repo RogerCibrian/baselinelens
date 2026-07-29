@@ -137,7 +137,11 @@ pub(crate) enum AuditProcedure {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RegistryCheck {
     pub(crate) path: String,
-    pub(crate) value_name: String,
+    /// Name of the value to read. `None` when the benchmark writes the
+    /// `<numeric value>` placeholder: the policy stores one entry per
+    /// numbered value under the key, so the audit reads every value under
+    /// `path` and evaluates `expected` against their combined data.
+    pub(crate) value_name: Option<String>,
     pub(crate) expected: ExpectedValue,
     pub(crate) scope: RegistryScope,
 }

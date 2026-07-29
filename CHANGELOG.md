@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Settings stored as a list of numbered registry values under one key are now audited by reading every value under the key and confirming each expected entry is present. Previously the audit looked for a single value literally named `<numeric value>` and reported a failure even on a correctly configured device. Affects the recommendation that blocks installing drivers for specific device setup classes.
+
 ## [1.1.0] - 2026-06-08
 
 ### Added

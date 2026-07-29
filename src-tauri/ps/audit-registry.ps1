@@ -29,6 +29,20 @@ function Get-RegValue {
     }
 }
 
+# Reads the data of every value under a key as an array of strings, for
+# checks whose expected value spans the key's values as a group. Returns
+# $null when the key is missing. Other failures bubble up so the per-rec
+# catch block can classify them.
+function Get-RegKeyValues {
+    param([Parameter(Mandatory)][string]$Path)
+    try {
+        $key = Get-Item -LiteralPath $Path -ErrorAction Stop
+    } catch [System.Management.Automation.ItemNotFoundException] {
+        return $null
+    }
+    return @($key.GetValueNames() | ForEach-Object { [string]$key.GetValue($_) })
+}
+
 # Authoritative Entra/Azure AD tenant ID for this device. Some policy
 # keys (e.g. PassportForWork) live under a per-tenant GUID subkey that
 # the benchmark writes as a '<Tenant-ID>' placeholder. Resolved from the

@@ -351,7 +351,13 @@ export type Reference = { type: "Url"; url: string } | { type: "Note"; text: str
 
 export type RegistryCheck = {
 	path: string,
-	valueName: string,
+	/**
+	 *  Name of the value to read. `None` when the benchmark writes the
+	 *  `<numeric value>` placeholder: the policy stores one entry per
+	 *  numbered value under the key, so the audit reads every value under
+	 *  `path` and evaluates `expected` against their combined data.
+	 */
+	valueName: string | null,
 	expected: ExpectedValue,
 	scope: RegistryScope,
 };

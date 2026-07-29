@@ -464,7 +464,16 @@ function Invoke-Rec {
                 $expected_summary = @()
                 $path_error = $null
                 foreach ($check in $audit.checks) {
-                    $is_service = Test-ServiceStartCheck $check.path $check.valueName
+                    # A null valueName means the expected value spans every
+                    # value under the key as a group: the check reads all
+                    # values and evaluates their joined data. Summaries
+                    # label these with the key's own name, and the
+                    # per-check detail leaves the value name blank since
+                    # the path already ends in the key.
+                    $is_aggregate = $null -eq $check.valueName
+                    $label = if ($is_aggregate) { ($check.path -split '\\')[-1] } else { $check.valueName }
+                    $detail_value_name = if ($is_aggregate) { '' } else { $check.valueName }
+                    $is_service = (-not $is_aggregate) -and (Test-ServiceStartCheck $check.path $check.valueName)
                     $exp_str = if ($is_service) {
                         Format-ServiceStartExpected $check.expected
                     } else {
@@ -481,22 +490,39 @@ function Invoke-Rec {
                         # per-tenant policy can't be confirmed, which is a
                         # real Fail rather than an automation gap.
                         $passes += $false
-                        $current_summary += "$($check.valueName) = (unresolved)"
-                        $expected_summary += "$($check.valueName) = $exp_str"
+                        $current_summary += "$label = (unresolved)"
+                        $expected_summary += "$label = $exp_str"
                         $check_details += [ordered]@{
                             path      = $check.path
-                            valueName = $check.valueName
+                            valueName = $detail_value_name
                             expected  = $exp_str
                             actual    = $resolution.reason
                             pass      = $false
                         }
                         continue
                     }
-                    $current = Get-RegValue -Path $resolution.path -Name $check.valueName
+                    if ($is_aggregate) {
+                        $values = Get-RegKeyValues -Path $resolution.path
+                        # Joined into one string so the substring predicates
+                        # (Contains/ContainsAll) see all entries at once; a
+                        # GUID never spans two values, so joining cannot
+                        # create a false match.
+                        $current = if ($null -eq $values -or @($values).Count -eq 0) {
+                            $null
+                        } else {
+                            @($values) -join ', '
+                        }
+                    } else {
+                        $current = Get-RegValue -Path $resolution.path -Name $check.valueName
+                    }
                     $pass = Test-Expected $current $check.expected
                     $passes += $pass
                     $found_str = if ($is_service) {
                         Format-ServiceStartFound $current
+                    } elseif ($is_aggregate) {
+                        # The joined list is already readable text; show
+                        # it as-is.
+                        if ($null -eq $current) { 'Not configured' } else { $current }
                     } else {
                         Format-Found $current $check.expected
                     }
@@ -508,12 +534,12 @@ function Invoke-Rec {
                         $current_summary += $found_str
                         $expected_summary += $exp_str
                     } else {
-                        $current_summary += "$($check.valueName) = $found_str"
-                        $expected_summary += "$($check.valueName) = $exp_str"
+                        $current_summary += "$label = $found_str"
+                        $expected_summary += "$label = $exp_str"
                     }
                     $check_details += [ordered]@{
                         path      = $resolution.display
-                        valueName = $check.valueName
+                        valueName = $detail_value_name
                         expected  = $exp_str
                         actual    = $actual_str
                         pass      = $pass
