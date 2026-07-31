@@ -494,10 +494,10 @@ export type ScanSummary = {
 	manual: number,
 	error: number,
 	/**
-	 *  Count of Fail results that carry a matching entry in the user's
-	 *  exception list at scan time. Held separately from `fail` so the
-	 *  trend math can exclude accepted exceptions from the In-scope
-	 *  rate, matching the level cards.
+	 *  Count of Fail and unattested Manual results that carry a matching
+	 *  entry in the user's exception list at scan time. Held separately
+	 *  from `fail` so the trend math can exclude accepted exceptions
+	 *  from the In-scope rate, matching the level cards.
 	 */
 	exception: number,
 	parserVersion: number,

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-31
+
 ### Changed
 
 - The headline's points figure now measures overall progress from your first recorded scan to the latest, matching the trend chart's full history. It previously claimed a 30-day window but actually compared only the last two scans, reading "0.0 pts" whenever consecutive scans matched. Resetting the trend history restarts the measurement.
@@ -53,7 +55,8 @@ Thanks to Reddit users u/FormerPick102 and u/saffronjewel420 for reporting the i
 - Export a scan to CSV or JSON.
 - Signed `.msi` installer for Windows 10 and 11.
 
-[Unreleased]: https://github.com/RogerCibrian/baselinelens/compare/1.1.1...HEAD
+[Unreleased]: https://github.com/RogerCibrian/baselinelens/compare/1.2.0...HEAD
+[1.2.0]: https://github.com/RogerCibrian/baselinelens/compare/1.1.1...1.2.0
 [1.1.1]: https://github.com/RogerCibrian/baselinelens/compare/1.1.0...1.1.1
 [1.1.0]: https://github.com/RogerCibrian/baselinelens/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/RogerCibrian/baselinelens/releases/tag/1.0.0
