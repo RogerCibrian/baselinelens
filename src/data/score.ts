@@ -16,13 +16,15 @@ export type EffectiveStatus =
 
 /**
  * Returns the display status for `rec` against the scan and user state.
- * A Fail with a matching entry in `userState.exceptions` is reported as
- * "exception" — a deliberately accepted risk. It's excluded from the
- * In-scope pass rate (like manual and pending) and counts toward the
- * Strict compliance total. A Manual with a matching entry in
+ * A Fail or Manual with a matching entry in `userState.exceptions` is
+ * reported as "exception" — a deliberately accepted risk. It's excluded
+ * from the In-scope pass rate (like manual and pending) and counts
+ * toward the Strict compliance total. A Manual with a matching entry in
  * `userState.attestations` resolves to the admin's recorded "pass" /
  * "fail" so a hand-verified check counts in the In-scope rate the same
- * as an automated one. A missing result for an in-progress scan (no
+ * as an automated one; an attested pass outranks an exception, while an
+ * attested fail with an exception reads as exception, the same as an
+ * automated Fail would. A missing result for an in-progress scan (no
  * `finishedAt`) is reported as "pending" so the UI can render it
  * distinctly from "manual" while results stream in.
  */
@@ -42,8 +44,14 @@ export function effectiveStatus(
   }
   if (result.status === "Manual") {
     const attestation = userState.attestations?.[rec.id];
+    if (attestation?.outcome === "pass") {
+      return "pass";
+    }
+    if (userState.exceptions[rec.id]) {
+      return "exception";
+    }
     if (attestation) {
-      return attestation.outcome === "pass" ? "pass" : "fail";
+      return "fail";
     }
   }
   switch (result.status) {

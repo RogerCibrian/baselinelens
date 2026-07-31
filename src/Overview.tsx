@@ -99,8 +99,8 @@ export default function Overview({
   const headline = useMemo<Headline>(() => {
     const built = buildHeadline(
       summaries,
-      improved.length,
-      regressed.length,
+      improvedTotal,
+      regressedTotal,
       weakCategoryCount,
     );
     // During a scan, `summaries` reloads only after the run persists, so
@@ -109,7 +109,7 @@ export default function Overview({
     // headline holds steady while the scan finishes and the first summary
     // lands.
     return scanning && built.kind === "empty" ? { kind: "first" } : built;
-  }, [summaries, improved.length, regressed.length, weakCategoryCount, scanning]);
+  }, [summaries, improvedTotal, regressedTotal, weakCategoryCount, scanning]);
 
   const trendPoints = useMemo<TrendPoint[]>(() => {
     // Collapse consecutive scans with the exact same result into one

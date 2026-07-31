@@ -43,10 +43,40 @@ describe("effectiveStatus", () => {
     expect(effectiveStatus(r, s, us)).toBe("exception");
   });
 
-  it("ignores an exception when the result is not a Fail", () => {
-    const s = scan({ "1.1": result("Pass") });
+  it("ignores an exception when the result passes or errors", () => {
     const us = userState({ exceptions: { "1.1": exception() } });
-    expect(effectiveStatus(r, s, us)).toBe("pass");
+    expect(effectiveStatus(r, scan({ "1.1": result("Pass") }), us)).toBe("pass");
+    expect(effectiveStatus(r, scan({ "1.1": result("Error") }), us)).toBe("error");
+  });
+
+  it("reports a Manual with a matching exception as exception", () => {
+    const s = scan({ "1.1": result("Manual") });
+    const us = userState({ exceptions: { "1.1": exception() } });
+    expect(effectiveStatus(r, s, us)).toBe("exception");
+  });
+
+  it("ranks an attested pass above an exception, and an exception above an attested fail", () => {
+    const s = scan({ "1.1": result("Manual") });
+    expect(
+      effectiveStatus(
+        r,
+        s,
+        userState({
+          exceptions: { "1.1": exception() },
+          attestations: { "1.1": attestation("pass") },
+        }),
+      ),
+    ).toBe("pass");
+    expect(
+      effectiveStatus(
+        r,
+        s,
+        userState({
+          exceptions: { "1.1": exception() },
+          attestations: { "1.1": attestation("fail") },
+        }),
+      ),
+    ).toBe("exception");
   });
 
   it("resolves a Manual result through its attestation outcome", () => {

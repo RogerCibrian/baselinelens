@@ -129,10 +129,10 @@ pub(crate) struct ScanSummary {
     pub(crate) fail: u32,
     pub(crate) manual: u32,
     pub(crate) error: u32,
-    /// Count of Fail results that carry a matching entry in the user's
-    /// exception list at scan time. Held separately from `fail` so the
-    /// trend math can exclude accepted exceptions from the In-scope
-    /// rate, matching the level cards.
+    /// Count of Fail and unattested Manual results that carry a matching
+    /// entry in the user's exception list at scan time. Held separately
+    /// from `fail` so the trend math can exclude accepted exceptions
+    /// from the In-scope rate, matching the level cards.
     pub(crate) exception: u32,
     pub(crate) parser_version: u32,
     pub(crate) audit_script_version: u32,
@@ -153,11 +153,13 @@ pub(crate) struct ScanContext {
 
 impl ScanSummary {
     /// Derives a summary from a full `Scan` by tallying its results.
-    /// A Fail whose `rec_id` appears in `exception_ids` is counted toward
-    /// `exception` instead of `fail`. A Manual whose `rec_id` appears in
-    /// `attested_pass` / `attested_fail` is counted as `pass` / `fail`
-    /// instead of `manual`. Both mirror the frontend's `effectiveStatus`
-    /// so trend math matches what the level cards show.
+    /// A Fail or Manual whose `rec_id` appears in `exception_ids` is
+    /// counted toward `exception` instead of `fail` / `manual`. A Manual
+    /// whose `rec_id` appears in `attested_pass` / `attested_fail` is
+    /// counted as `pass` / `fail` instead of `manual`; an attested pass
+    /// outranks an exception, while an attested fail with an exception
+    /// counts as `exception`. All of it mirrors the frontend's
+    /// `effectiveStatus` so trend math matches what the level cards show.
     pub(crate) fn from_scan(
         scan: &Scan,
         exception_ids: &HashSet<&str>,
@@ -182,6 +184,8 @@ impl ScanSummary {
                 Status::Manual => {
                     if attested_pass.contains(rec_id.as_str()) {
                         pass += 1;
+                    } else if exception_ids.contains(rec_id.as_str()) {
+                        exception += 1;
                     } else if attested_fail.contains(rec_id.as_str()) {
                         fail += 1;
                     } else {
@@ -202,5 +206,76 @@ impl ScanSummary {
             parser_version: scan.parser_version,
             audit_script_version: scan.audit_script_version,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scan_with(results: &[(&str, Status)]) -> Scan {
+        let now = Utc::now();
+        Scan {
+            baseline_sha256: "sha".to_string(),
+            started_at: now,
+            finished_at: Some(now),
+            device: DeviceInfo {
+                hostname: "HOST".to_string(),
+                os_name: "Windows 11".to_string(),
+                os_version: "10.0".to_string(),
+                os_build: "26100".to_string(),
+                managed_by: Management {
+                    intune: false,
+                    group_policy: false,
+                },
+            },
+            results: results
+                .iter()
+                .map(|(id, status)| {
+                    (
+                        id.to_string(),
+                        ScanResult {
+                            status: *status,
+                            current_value: None,
+                            expected: None,
+                            checks: Vec::new(),
+                            error: None,
+                            measured_at: now,
+                        },
+                    )
+                })
+                .collect(),
+            error: None,
+            parser_version: 1,
+            audit_script_version: 1,
+        }
+    }
+
+    #[test]
+    fn from_scan_counts_excepted_fail_and_manual_as_exception() {
+        let scan = scan_with(&[
+            ("1.1", Status::Fail),
+            ("1.2", Status::Manual),
+            ("1.3", Status::Manual),
+        ]);
+        let exception_ids: HashSet<&str> = ["1.1", "1.2"].into_iter().collect();
+        let summary =
+            ScanSummary::from_scan(&scan, &exception_ids, &HashSet::new(), &HashSet::new());
+        assert_eq!(summary.exception, 2);
+        assert_eq!(summary.fail, 0);
+        assert_eq!(summary.manual, 1);
+    }
+
+    #[test]
+    fn from_scan_ranks_attested_pass_above_exception_above_attested_fail() {
+        let scan = scan_with(&[("1.1", Status::Manual), ("1.2", Status::Manual)]);
+        let exception_ids: HashSet<&str> = ["1.1", "1.2"].into_iter().collect();
+        let attested_pass: HashSet<&str> = ["1.1"].into_iter().collect();
+        let attested_fail: HashSet<&str> = ["1.2"].into_iter().collect();
+        let summary = ScanSummary::from_scan(&scan, &exception_ids, &attested_pass, &attested_fail);
+        assert_eq!(summary.pass, 1);
+        assert_eq!(summary.exception, 1);
+        assert_eq!(summary.fail, 0);
+        assert_eq!(summary.manual, 0);
     }
 }

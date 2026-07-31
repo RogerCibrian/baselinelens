@@ -87,18 +87,18 @@ export function buildHeadline(
 
   const latest = summaries[summaries.length - 1];
   const cutoff = Date.parse(latest.startedAt) - TREND_WINDOW_DAYS * 86_400_000;
-  // Walk backwards to find the oldest summary that still falls inside
-  // the window; that's the comparison anchor. If none does, fall back
-  // to the very first summary so we still produce a trend over
-  // whatever range we have.
+  // Walk backwards, extending the anchor as long as summaries fall
+  // inside the window, so it lands on the oldest one within it. If
+  // none does, fall back to the very first summary so we still
+  // produce a trend over whatever range we have.
   let anchor: ScanSummary = summaries[0];
   let windowDays = TREND_WINDOW_DAYS;
   for (let i = summaries.length - 2; i >= 0; i--) {
     const ts = Date.parse(summaries[i].startedAt);
-    if (ts >= cutoff) {
-      anchor = summaries[i];
+    if (ts < cutoff) {
       break;
     }
+    anchor = summaries[i];
   }
   if (Date.parse(anchor.startedAt) < cutoff) {
     windowDays = Math.max(
