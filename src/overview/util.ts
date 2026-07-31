@@ -9,7 +9,6 @@ import type {
 } from "../bindings";
 import { computeDelta, indexLatestChanges, type Delta } from "../data/changes";
 
-const TREND_WINDOW_DAYS = 30;
 const STABLE_THRESHOLD_PTS = 0.5;
 const RECENTLY_CHANGED_LIMIT = 6;
 
@@ -37,7 +36,8 @@ export type Headline =
       kind: "trend";
       trend: Trend;
       pointsDelta: number;
-      windowDays: number;
+      /** Days between the first recorded scan and the latest. */
+      spanDays: number;
       improved: number;
       regressed: number;
       weakCategoryCount: number;
@@ -73,8 +73,12 @@ export function passPctOf(summary: ScanSummary): number {
  * cards. Returns `first` while only one summary exists (no comparison
  * yet) and `empty` when there are none. The trend variant carries the
  * direction (`improving`/`declining`/`stable`), the magnitude in
- * percentage points, the window in days the comparison spans, and
- * counts for the "remediated · regressed · K below 50%" tail.
+ * percentage points since the first recorded scan, the span in days
+ * that covers, and counts for the "remediated · regressed · K below
+ * 50%" tail. The comparison spans the whole recorded history: the
+ * dashboard exists to drive a baseline rollout, and overall progress
+ * since the rollout began is the report's story. Resetting the trend
+ * history re-anchors it.
  */
 export function buildHeadline(
   summaries: ScanSummary[],
@@ -86,29 +90,14 @@ export function buildHeadline(
   if (summaries.length < 2) return { kind: "first" };
 
   const latest = summaries[summaries.length - 1];
-  const cutoff = Date.parse(latest.startedAt) - TREND_WINDOW_DAYS * 86_400_000;
-  // Walk backwards, extending the anchor as long as summaries fall
-  // inside the window, so it lands on the oldest one within it. If
-  // none does, fall back to the very first summary so we still
-  // produce a trend over whatever range we have.
-  let anchor: ScanSummary = summaries[0];
-  let windowDays = TREND_WINDOW_DAYS;
-  for (let i = summaries.length - 2; i >= 0; i--) {
-    const ts = Date.parse(summaries[i].startedAt);
-    if (ts < cutoff) {
-      break;
-    }
-    anchor = summaries[i];
-  }
-  if (Date.parse(anchor.startedAt) < cutoff) {
-    windowDays = Math.max(
-      1,
-      Math.round(
-        (Date.parse(latest.startedAt) - Date.parse(anchor.startedAt)) /
-          86_400_000,
-      ),
-    );
-  }
+  const anchor = summaries[0];
+  const spanDays = Math.max(
+    1,
+    Math.round(
+      (Date.parse(latest.startedAt) - Date.parse(anchor.startedAt)) /
+        86_400_000,
+    ),
+  );
   const pointsDelta = (passPctOf(latest) - passPctOf(anchor)) * 100;
   const trend: Trend =
     pointsDelta > STABLE_THRESHOLD_PTS
@@ -120,7 +109,7 @@ export function buildHeadline(
     kind: "trend",
     trend,
     pointsDelta,
-    windowDays,
+    spanDays,
     improved,
     regressed,
     weakCategoryCount,

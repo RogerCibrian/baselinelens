@@ -65,14 +65,14 @@ export function HeadlineFacts({
       </p>
     );
   }
-  const { pointsDelta, windowDays, improved, regressed, weakCategoryCount } =
+  const { pointsDelta, spanDays, improved, regressed, weakCategoryCount } =
     headline;
   const arrow = pointsDelta >= 0 ? "↑" : "↓";
   return (
     <p className="headline-facts">
       <span className="headline-fact mono">
-        {arrow} {Math.abs(pointsDelta).toFixed(1)} pts in {windowDays} day
-        {windowDays === 1 ? "" : "s"}
+        {arrow} {Math.abs(pointsDelta).toFixed(1)} pts in {spanDays} day
+        {spanDays === 1 ? "" : "s"}
       </span>
       <span className="headline-divider" aria-hidden="true" />
       <span className="headline-fact mono">

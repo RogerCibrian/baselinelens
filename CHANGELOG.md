@@ -7,13 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The headline's points figure now measures overall progress from your first recorded scan to the latest, matching the trend chart's full history. It previously claimed a 30-day window but actually compared only the last two scans, reading "0.0 pts" whenever consecutive scans matched. Resetting the trend history restarts the measurement.
+
 ### Fixed
 
 - Settings under a per-tenant registry key are audited again on benchmarks that write the tenant placeholder in quotes (`"Tenant-ID"`) instead of angle brackets. The quoted form was read as a literal key name that never exists, reporting a failure even when the device was configured correctly. Affects recs such as the Windows Hello for Business PIN settings in the v5.0.0 benchmarks.
 - Settings whose recommended state is "configured" with a placeholder value in the audit text — such as the firewall log file path settings in the v5 benchmarks, written as `<path>\<filename>.log` — now pass when any value is present, instead of comparing the device's value against the placeholder text and always failing.
 - Expected and Found values containing `<`, `>`, `&`, or `'` — such as the XML-valued SmartScreen settings — display those characters as typed instead of `\u003c`-style escape codes.
 - Recommendations with a Manual verdict now show as Exception when you record an exception for them, the same as a failing recommendation would. An attestation of Pass still outranks the exception.
-- The headline's points-over-time figure now compares against the oldest scan inside the 30-day window. It previously compared only the last two scans, so it read "0.0 pts" whenever two scans in a row matched, no matter how much the month had improved.
 - The headline's remediated and regressed counts now count every changed recommendation. They were previously capped at 6 — the display limit of the Recently changed lists.
 
 ## [1.1.1] - 2026-07-29
