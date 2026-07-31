@@ -209,55 +209,61 @@ impl ScanSummary {
     }
 }
 
+/// Builds a `Scan` over `results` with stock device fields. Shared by
+/// the test modules in this crate that need a populated scan.
+#[cfg(test)]
+pub(crate) fn test_scan(parser_version: u32, results: &[(&str, Status)]) -> Scan {
+    let now = Utc::now();
+    Scan {
+        baseline_sha256: "sha".to_string(),
+        started_at: now,
+        finished_at: Some(now),
+        device: DeviceInfo {
+            hostname: "HOST".to_string(),
+            os_name: "Windows 11".to_string(),
+            os_version: "10.0".to_string(),
+            os_build: "26100".to_string(),
+            managed_by: Management {
+                intune: false,
+                group_policy: false,
+            },
+        },
+        results: results
+            .iter()
+            .map(|(id, status)| {
+                (
+                    (*id).to_string(),
+                    ScanResult {
+                        status: *status,
+                        current_value: None,
+                        expected: None,
+                        checks: Vec::new(),
+                        error: None,
+                        measured_at: now,
+                    },
+                )
+            })
+            .collect(),
+        error: None,
+        parser_version,
+        audit_script_version: 1,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn scan_with(results: &[(&str, Status)]) -> Scan {
-        let now = Utc::now();
-        Scan {
-            baseline_sha256: "sha".to_string(),
-            started_at: now,
-            finished_at: Some(now),
-            device: DeviceInfo {
-                hostname: "HOST".to_string(),
-                os_name: "Windows 11".to_string(),
-                os_version: "10.0".to_string(),
-                os_build: "26100".to_string(),
-                managed_by: Management {
-                    intune: false,
-                    group_policy: false,
-                },
-            },
-            results: results
-                .iter()
-                .map(|(id, status)| {
-                    (
-                        id.to_string(),
-                        ScanResult {
-                            status: *status,
-                            current_value: None,
-                            expected: None,
-                            checks: Vec::new(),
-                            error: None,
-                            measured_at: now,
-                        },
-                    )
-                })
-                .collect(),
-            error: None,
-            parser_version: 1,
-            audit_script_version: 1,
-        }
-    }
-
     #[test]
     fn from_scan_counts_excepted_fail_and_manual_as_exception() {
-        let scan = scan_with(&[
-            ("1.1", Status::Fail),
-            ("1.2", Status::Manual),
-            ("1.3", Status::Manual),
-        ]);
+        let scan = test_scan(
+            1,
+            &[
+                ("1.1", Status::Fail),
+                ("1.2", Status::Manual),
+                ("1.3", Status::Manual),
+            ],
+        );
         let exception_ids: HashSet<&str> = ["1.1", "1.2"].into_iter().collect();
         let summary =
             ScanSummary::from_scan(&scan, &exception_ids, &HashSet::new(), &HashSet::new());
@@ -268,7 +274,7 @@ mod tests {
 
     #[test]
     fn from_scan_ranks_attested_pass_above_exception_above_attested_fail() {
-        let scan = scan_with(&[("1.1", Status::Manual), ("1.2", Status::Manual)]);
+        let scan = test_scan(1, &[("1.1", Status::Manual), ("1.2", Status::Manual)]);
         let exception_ids: HashSet<&str> = ["1.1", "1.2"].into_iter().collect();
         let attested_pass: HashSet<&str> = ["1.1"].into_iter().collect();
         let attested_fail: HashSet<&str> = ["1.2"].into_iter().collect();

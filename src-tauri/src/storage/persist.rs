@@ -417,52 +417,13 @@ pub(crate) fn remove_baseline(baseline_sha: &str) -> Result<(), StorageError> {
 
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
-
     use super::*;
-    use crate::audit::model::{DeviceInfo, Management, ScanResult, Status};
-
-    fn scan(parser_version: u32, results: &[(&str, Status)]) -> Scan {
-        let results = results
-            .iter()
-            .map(|(id, status)| {
-                (
-                    (*id).to_string(),
-                    ScanResult {
-                        status: *status,
-                        current_value: None,
-                        expected: None,
-                        checks: Vec::new(),
-                        error: None,
-                        measured_at: Utc::now(),
-                    },
-                )
-            })
-            .collect();
-        Scan {
-            baseline_sha256: "sha".to_string(),
-            started_at: Utc::now(),
-            finished_at: Some(Utc::now()),
-            device: DeviceInfo {
-                hostname: "HOST".to_string(),
-                os_name: "Windows 11".to_string(),
-                os_version: "10.0".to_string(),
-                os_build: "22631".to_string(),
-                managed_by: Management {
-                    intune: false,
-                    group_policy: false,
-                },
-            },
-            results,
-            error: None,
-            parser_version,
-            audit_script_version: 1,
-        }
-    }
+    use crate::audit::model;
+    use crate::audit::model::Status;
 
     #[test]
     fn no_prior_scan_anchors_every_rec_with_a_first_observation() {
-        let current = scan(1, &[("1.1", Status::Pass), ("1.2", Status::Fail)]);
+        let current = model::test_scan(1, &[("1.1", Status::Pass), ("1.2", Status::Fail)]);
         let events = change_events_for(None, &current);
         assert_eq!(events.len(), 2);
         assert!(events.iter().all(|event| event.from_status.is_none()));
@@ -470,8 +431,8 @@ mod tests {
 
     #[test]
     fn matching_versions_record_only_the_changed_rec() {
-        let prior = scan(1, &[("1.1", Status::Pass), ("1.2", Status::Pass)]);
-        let current = scan(1, &[("1.1", Status::Pass), ("1.2", Status::Fail)]);
+        let prior = model::test_scan(1, &[("1.1", Status::Pass), ("1.2", Status::Pass)]);
+        let current = model::test_scan(1, &[("1.1", Status::Pass), ("1.2", Status::Fail)]);
         let events = change_events_for(Some(&prior), &current);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].rec_id, "1.2");
@@ -481,8 +442,8 @@ mod tests {
 
     #[test]
     fn a_version_change_records_no_events_even_when_status_flips() {
-        let prior = scan(1, &[("1.1", Status::Pass)]);
-        let current = scan(2, &[("1.1", Status::Fail)]);
+        let prior = model::test_scan(1, &[("1.1", Status::Pass)]);
+        let current = model::test_scan(2, &[("1.1", Status::Fail)]);
         let events = change_events_for(Some(&prior), &current);
         assert!(events.is_empty());
     }

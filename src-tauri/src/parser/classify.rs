@@ -161,6 +161,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::parser::model::ExpectedValue;
     use crate::parser::{pdf, structure};
 
     /// Path to the benchmark PDF the diagnostics run against. Defaults to the
@@ -661,10 +662,7 @@ mod tests {
                             .as_deref()
                             .is_none_or(|name| name.contains('<') || name.contains('>'));
                         let placeholder_path = check.path.contains('<') || check.path.contains('"');
-                        let configured = matches!(
-                            check.expected,
-                            crate::parser::model::ExpectedValue::Configured
-                        );
+                        let configured = matches!(check.expected, ExpectedValue::Configured);
                         if placeholder_value_name || placeholder_path || configured {
                             eprintln!(
                                 "[{}] {}:{}\n      expected={:?}",
