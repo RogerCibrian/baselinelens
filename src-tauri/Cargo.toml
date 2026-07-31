@@ -52,3 +52,6 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
+
+[profile.dev.package."*"]
+opt-level = 2
