@@ -102,9 +102,14 @@ const RecRow = memo(function RecRow({
   const status = effectiveStatus(rec, scan, userState);
   const delta = computeDelta(rec, changesIndex, scan, userState);
   const result = scan.results[rec.id];
+  // The badge marks a verdict the attestation decided, so it applies
+  // only when the displayed status is that recorded pass/fail — an
+  // exception override or a plain manual display is not the admin's
+  // recorded verdict.
   const attested =
-    result?.status === "Manual" &&
-    userState.attestations?.[rec.id] !== undefined;
+    (result === undefined || result.status === "Manual") &&
+    userState.attestations?.[rec.id] !== undefined &&
+    (status === "pass" || status === "fail");
   const categoryLabel =
     categoryNames.get(rec.categoryNumber) ?? rec.categoryNumber;
   return (

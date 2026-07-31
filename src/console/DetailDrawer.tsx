@@ -352,7 +352,11 @@ export function DetailDrawer({
                 {status && (
                   <StatusPill
                     status={status}
-                    attested={isManual && hasAttestation}
+                    attested={
+                      isManual &&
+                      hasAttestation &&
+                      (status === "pass" || status === "fail")
+                    }
                   />
                 )}
                 <span className="chip-neutral">

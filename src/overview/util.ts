@@ -76,9 +76,9 @@ export function passPctOf(summary: ScanSummary): number {
  * percentage points since the first recorded scan, the span in days
  * that covers, and counts for the "remediated · regressed · K below
  * 50%" tail. The comparison spans the whole recorded history: the
- * dashboard exists to drive a baseline rollout, and overall progress
- * since the rollout began is the report's story. Resetting the trend
- * history re-anchors it.
+ * dashboard exists to drive a baseline rollout, so it reports overall
+ * progress since the rollout began. Resetting the trend history
+ * re-anchors it.
  */
 export function buildHeadline(
   summaries: ScanSummary[],
@@ -90,7 +90,11 @@ export function buildHeadline(
   if (summaries.length < 2) return { kind: "first" };
 
   const latest = summaries[summaries.length - 1];
-  const anchor = summaries[0];
+  // A summary that evaluated nothing (every check errored) has no pass
+  // rate to compare against, so the anchor is the earliest summary
+  // with at least one evaluated check.
+  const anchor =
+    summaries.find((s) => s.pass + s.fail > 0) ?? summaries[0];
   const spanDays = Math.max(
     1,
     Math.round(

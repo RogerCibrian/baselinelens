@@ -55,6 +55,20 @@ describe("effectiveStatus", () => {
     expect(effectiveStatus(r, s, us)).toBe("exception");
   });
 
+  it("applies the exception and attestation overlay to a missing result on a finished scan", () => {
+    const s = scan({});
+    expect(
+      effectiveStatus(r, s, userState({ exceptions: { "1.1": exception() } })),
+    ).toBe("exception");
+    expect(
+      effectiveStatus(
+        r,
+        s,
+        userState({ attestations: { "1.1": attestation("pass") } }),
+      ),
+    ).toBe("pass");
+  });
+
   it("ranks an attested pass above an exception, and an exception above an attested fail", () => {
     const s = scan({ "1.1": result("Manual") });
     expect(

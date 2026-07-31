@@ -36,31 +36,21 @@ export function effectiveStatus(
   const result = scan.results[rec.id];
   if (!result) {
     // No result yet. If the scan is still running we know more is
-    // coming; once it's done, treat a missing result as Manual.
-    return scan.finishedAt === null ? "pending" : "manual";
+    // coming; once it's done, a missing result reads as Manual and
+    // takes the same attestation/exception overlay.
+    return scan.finishedAt === null ? "pending" : manualStatus(rec, userState);
   }
   if (result.status === "Fail" && userState.exceptions[rec.id]) {
     return "exception";
   }
   if (result.status === "Manual") {
-    const attestation = userState.attestations?.[rec.id];
-    if (attestation?.outcome === "pass") {
-      return "pass";
-    }
-    if (userState.exceptions[rec.id]) {
-      return "exception";
-    }
-    if (attestation) {
-      return "fail";
-    }
+    return manualStatus(rec, userState);
   }
   switch (result.status) {
     case "Pass":
       return "pass";
     case "Fail":
       return "fail";
-    case "Manual":
-      return "manual";
     case "Error":
       return "error";
     default:
@@ -69,6 +59,28 @@ export function effectiveStatus(
       // than returning undefined and silently skewing every tally.
       return "error";
   }
+}
+
+/**
+ * Resolves a Manual verdict through the user-state overlay: an
+ * attested pass wins, then a recorded exception, then an attested
+ * fail; plain "manual" otherwise.
+ */
+function manualStatus(
+  rec: Recommendation,
+  userState: UserState,
+): EffectiveStatus {
+  const attestation = userState.attestations?.[rec.id];
+  if (attestation?.outcome === "pass") {
+    return "pass";
+  }
+  if (userState.exceptions[rec.id]) {
+    return "exception";
+  }
+  if (attestation) {
+    return "fail";
+  }
+  return "manual";
 }
 
 export type LevelScore = {

@@ -35,8 +35,9 @@ export function HeadlineH1({
   );
 }
 
-/** The supporting fact line under the headline: points-delta over the
- * window, remediated/regressed counts, and weak-category count. */
+/** The supporting fact line under the headline: points-delta across
+ * the recorded scan history, remediated/regressed counts, and
+ * weak-category count. */
 export function HeadlineFacts({
   headline,
   errorsSevere,

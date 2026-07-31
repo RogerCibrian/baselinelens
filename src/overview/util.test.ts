@@ -51,6 +51,21 @@ describe("buildHeadline", () => {
     expect(headline.spanDays).toBe(70);
   });
 
+  it("skips a first summary with no evaluated checks when anchoring", () => {
+    // An all-error first scan (pass+fail = 0) has no pass rate; the
+    // anchor must be the next summary that evaluated something (40%),
+    // so the headline reads +10 pts against it.
+    const summaries = [
+      summary("2025-05-05T12:00:00Z", 0, 0),
+      summary("2025-05-10T12:00:00Z", 4, 6),
+      summary("2025-05-15T12:00:00Z", 5, 5),
+    ];
+    const headline = buildHeadline(summaries, 0, 0, 0);
+    if (headline.kind !== "trend") throw new Error("expected trend");
+    expect(headline.pointsDelta).toBeCloseTo(10);
+    expect(headline.spanDays).toBe(5);
+  });
+
   it("labels a sub-threshold move stable and floors the span at one day", () => {
     const summaries = [
       summary("2025-05-15T10:00:00Z", 50, 50),
