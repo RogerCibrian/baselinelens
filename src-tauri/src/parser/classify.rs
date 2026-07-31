@@ -256,154 +256,201 @@ mod tests {
         manual: usize,
     }
 
-    #[test]
-    #[ignore = "requires the dev/ benchmark PDFs on disk; pins exact classification counts"]
-    fn classifies_all_benchmarks() {
-        let cases = [
-            Counts {
-                file: "CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf",
-                recs: 457,
-                registry: 333,
-                policy_manager: 59,
-                audit_policy: 27,
-                user_rights: 35,
-                secedit: 3,
-                manual: 0,
-            },
-            Counts {
-                file: "CIS_Microsoft_Intune_for_Windows_11_Benchmark_v5.0.0.pdf",
-                recs: 419,
-                registry: 313,
-                policy_manager: 34,
-                audit_policy: 27,
-                user_rights: 35,
-                secedit: 3,
-                manual: 7,
-            },
-            Counts {
-                file: "CIS_Microsoft_Intune_for_Windows_11_Benchmark_v3.0.1.pdf",
-                recs: 420,
-                registry: 323,
-                policy_manager: 35,
-                audit_policy: 27,
-                user_rights: 28,
-                secedit: 3,
-                manual: 4,
-            },
-            Counts {
-                file: "CIS_Microsoft_Windows_11_Enterprise_Benchmark_v5.0.1.pdf",
-                recs: 560,
-                registry: 480,
-                policy_manager: 0,
-                audit_policy: 27,
-                user_rights: 38,
-                secedit: 15,
-                manual: 0,
-            },
-            Counts {
-                file: "CIS_Microsoft_Windows_11_Stand-alone_Benchmark_v5.0.0.pdf",
-                recs: 488,
-                registry: 408,
-                policy_manager: 0,
-                audit_policy: 27,
-                user_rights: 38,
-                secedit: 15,
-                manual: 0,
-            },
-            Counts {
-                file: "CIS_Microsoft_Intune_for_Windows_10_Benchmark_v4.0.0.pdf",
-                recs: 412,
-                registry: 299,
-                policy_manager: 54,
-                audit_policy: 27,
-                user_rights: 29,
-                secedit: 3,
-                manual: 0,
-            },
-            Counts {
-                file: "CIS_Microsoft_Intune_for_Windows_10_Benchmark_v5.0.0.pdf",
-                recs: 358,
-                registry: 263,
-                policy_manager: 29,
-                audit_policy: 27,
-                user_rights: 29,
-                secedit: 3,
-                manual: 7,
-            },
-            Counts {
-                file: "CIS_Microsoft_Windows_10_Enterprise_Benchmark_v4.0.0.pdf",
-                recs: 543,
-                registry: 461,
-                policy_manager: 0,
-                audit_policy: 27,
-                user_rights: 38,
-                secedit: 15,
-                manual: 2,
-            },
-            Counts {
-                file: "CIS_Microsoft_Windows_10_Stand-alone_Benchmark_v4.0.0.pdf",
-                recs: 494,
-                registry: 412,
-                policy_manager: 0,
-                audit_policy: 27,
-                user_rights: 38,
-                secedit: 15,
-                manual: 2,
-            },
-            Counts {
-                file: "CIS_Microsoft_Windows_10_Stand-alone_Benchmark_v3.0.0.pdf",
-                recs: 489,
-                registry: 407,
-                policy_manager: 0,
-                audit_policy: 27,
-                user_rights: 37,
-                secedit: 15,
-                manual: 3,
-            },
-        ];
+    /// Asserts one benchmark PDF's pinned classification counts.
+    fn assert_classification_counts(case: Counts) {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../dev")
+            .join(case.file);
+        let text = pdf::extract(&path).unwrap_or_else(|err| panic!("extract {}: {err}", case.file));
+        let recs =
+            structure::slice(&text).unwrap_or_else(|err| panic!("slice {}: {err}", case.file));
 
-        let dev_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../dev");
-        for case in &cases {
-            let path = dev_dir.join(case.file);
-            let text =
-                pdf::extract(&path).unwrap_or_else(|err| panic!("extract {}: {err}", case.file));
-            let recs =
-                structure::slice(&text).unwrap_or_else(|err| panic!("slice {}: {err}", case.file));
-
-            let mut registry = 0usize;
-            let mut policy_manager = 0usize;
-            let mut audit_policy = 0usize;
-            let mut user_rights = 0usize;
-            let mut secedit = 0usize;
-            let mut manual = 0usize;
-            for rec in &recs {
-                match audit_procedure(rec) {
-                    AuditProcedure::Registry { .. } => registry += 1,
-                    AuditProcedure::PolicyManager { .. } => policy_manager += 1,
-                    AuditProcedure::AuditPolicy { .. } => audit_policy += 1,
-                    AuditProcedure::UserRightsAssignment { .. } => user_rights += 1,
-                    AuditProcedure::Secedit { .. } => secedit += 1,
-                    AuditProcedure::Manual { .. } => manual += 1,
-                }
+        let mut registry = 0usize;
+        let mut policy_manager = 0usize;
+        let mut audit_policy = 0usize;
+        let mut user_rights = 0usize;
+        let mut secedit = 0usize;
+        let mut manual = 0usize;
+        for rec in &recs {
+            match audit_procedure(rec) {
+                AuditProcedure::Registry { .. } => registry += 1,
+                AuditProcedure::PolicyManager { .. } => policy_manager += 1,
+                AuditProcedure::AuditPolicy { .. } => audit_policy += 1,
+                AuditProcedure::UserRightsAssignment { .. } => user_rights += 1,
+                AuditProcedure::Secedit { .. } => secedit += 1,
+                AuditProcedure::Manual { .. } => manual += 1,
             }
-
-            assert_eq!(recs.len(), case.recs, "{}: rec count", case.file);
-            assert_eq!(registry, case.registry, "{}: registry", case.file);
-            assert_eq!(
-                policy_manager, case.policy_manager,
-                "{}: policy_manager",
-                case.file
-            );
-            assert_eq!(
-                audit_policy, case.audit_policy,
-                "{}: audit_policy",
-                case.file
-            );
-            assert_eq!(user_rights, case.user_rights, "{}: user_rights", case.file);
-            assert_eq!(secedit, case.secedit, "{}: secedit", case.file);
-            assert_eq!(manual, case.manual, "{}: manual", case.file);
         }
+
+        assert_eq!(recs.len(), case.recs, "{}: rec count", case.file);
+        assert_eq!(registry, case.registry, "{}: registry", case.file);
+        assert_eq!(
+            policy_manager, case.policy_manager,
+            "{}: policy_manager",
+            case.file
+        );
+        assert_eq!(
+            audit_policy, case.audit_policy,
+            "{}: audit_policy",
+            case.file
+        );
+        assert_eq!(user_rights, case.user_rights, "{}: user_rights", case.file);
+        assert_eq!(secedit, case.secedit, "{}: secedit", case.file);
+        assert_eq!(manual, case.manual, "{}: manual", case.file);
     }
+
+    /// Generates one `#[test]` per pinned benchmark so the test runner
+    /// spreads the PDF sweeps across threads; a single test looping the
+    /// benchmarks would run them one after another on one thread.
+    macro_rules! classification_counts_test {
+        ($name:ident, $counts:expr) => {
+            #[test]
+            #[ignore = "requires the dev/ benchmark PDFs on disk; pins exact classification counts"]
+            fn $name() {
+                assert_classification_counts($counts);
+            }
+        };
+    }
+
+    classification_counts_test!(
+        classifies_intune_win11_v4,
+        Counts {
+            file: "CIS_Microsoft_Intune_for_Windows_11_Benchmark_v4.0.0.pdf",
+            recs: 457,
+            registry: 333,
+            policy_manager: 59,
+            audit_policy: 27,
+            user_rights: 35,
+            secedit: 3,
+            manual: 0,
+        }
+    );
+
+    classification_counts_test!(
+        classifies_intune_win11_v5,
+        Counts {
+            file: "CIS_Microsoft_Intune_for_Windows_11_Benchmark_v5.0.0.pdf",
+            recs: 419,
+            registry: 313,
+            policy_manager: 34,
+            audit_policy: 27,
+            user_rights: 35,
+            secedit: 3,
+            manual: 7,
+        }
+    );
+
+    classification_counts_test!(
+        classifies_intune_win11_v3_0_1,
+        Counts {
+            file: "CIS_Microsoft_Intune_for_Windows_11_Benchmark_v3.0.1.pdf",
+            recs: 420,
+            registry: 323,
+            policy_manager: 35,
+            audit_policy: 27,
+            user_rights: 28,
+            secedit: 3,
+            manual: 4,
+        }
+    );
+
+    classification_counts_test!(
+        classifies_win11_enterprise_v5_0_1,
+        Counts {
+            file: "CIS_Microsoft_Windows_11_Enterprise_Benchmark_v5.0.1.pdf",
+            recs: 560,
+            registry: 480,
+            policy_manager: 0,
+            audit_policy: 27,
+            user_rights: 38,
+            secedit: 15,
+            manual: 0,
+        }
+    );
+
+    classification_counts_test!(
+        classifies_win11_standalone_v5,
+        Counts {
+            file: "CIS_Microsoft_Windows_11_Stand-alone_Benchmark_v5.0.0.pdf",
+            recs: 488,
+            registry: 408,
+            policy_manager: 0,
+            audit_policy: 27,
+            user_rights: 38,
+            secedit: 15,
+            manual: 0,
+        }
+    );
+
+    classification_counts_test!(
+        classifies_intune_win10_v4,
+        Counts {
+            file: "CIS_Microsoft_Intune_for_Windows_10_Benchmark_v4.0.0.pdf",
+            recs: 412,
+            registry: 299,
+            policy_manager: 54,
+            audit_policy: 27,
+            user_rights: 29,
+            secedit: 3,
+            manual: 0,
+        }
+    );
+
+    classification_counts_test!(
+        classifies_intune_win10_v5,
+        Counts {
+            file: "CIS_Microsoft_Intune_for_Windows_10_Benchmark_v5.0.0.pdf",
+            recs: 358,
+            registry: 263,
+            policy_manager: 29,
+            audit_policy: 27,
+            user_rights: 29,
+            secedit: 3,
+            manual: 7,
+        }
+    );
+
+    classification_counts_test!(
+        classifies_win10_enterprise_v4,
+        Counts {
+            file: "CIS_Microsoft_Windows_10_Enterprise_Benchmark_v4.0.0.pdf",
+            recs: 543,
+            registry: 461,
+            policy_manager: 0,
+            audit_policy: 27,
+            user_rights: 38,
+            secedit: 15,
+            manual: 2,
+        }
+    );
+
+    classification_counts_test!(
+        classifies_win10_standalone_v4,
+        Counts {
+            file: "CIS_Microsoft_Windows_10_Stand-alone_Benchmark_v4.0.0.pdf",
+            recs: 494,
+            registry: 412,
+            policy_manager: 0,
+            audit_policy: 27,
+            user_rights: 38,
+            secedit: 15,
+            manual: 2,
+        }
+    );
+
+    classification_counts_test!(
+        classifies_win10_standalone_v3,
+        Counts {
+            file: "CIS_Microsoft_Windows_10_Stand-alone_Benchmark_v3.0.0.pdf",
+            recs: 489,
+            registry: 407,
+            policy_manager: 0,
+            audit_policy: 27,
+            user_rights: 37,
+            secedit: 15,
+            manual: 3,
+        }
+    );
 
     #[test]
     #[ignore = "spot-check classifications for the oracle test-case sections"]
