@@ -134,19 +134,35 @@ function Write-NdjsonDevice {
 # Human-readable formatters (for the `expected` UI field)
 # ============================================================================
 
-# Turns a Value object ({type, value/values/bytes}) into a short string.
-# String values go through ConvertTo-Json so quotes inside the string are
-# escaped properly -- single-quote wrapping would render strings like
+# Quotes a string for display. ConvertTo-Json supplies the quoting and
+# escape handling -- single-quote wrapping would render strings like
 # `it's` as `'it's'`, which a reader has no way to disambiguate from a
-# closed quote followed by stray text.
+# closed quote followed by stray text. PowerShell 5.1's JSON encoder
+# also emits \uXXXX escapes for printable characters (<, >, &, '), which
+# read as noise in the Expected/Found columns, so printable escapes are
+# decoded back to their characters. Control-character escapes stay
+# encoded. The lookbehind requires an even run of backslashes before the
+# escape, so a literal backslash-u sequence in the data (encoded as
+# \\uXXXX) is left alone.
+function ConvertTo-DisplayString {
+    param([AllowEmptyString()][string]$Text)
+    $json = ConvertTo-Json -InputObject $Text -Compress
+    return [regex]::Replace($json, '(?<=(?:^|[^\\])(?:\\\\)*)\\u([0-9a-fA-F]{4})', {
+        param($m)
+        $code = [Convert]::ToInt32($m.Groups[1].Value, 16)
+        if ($code -ge 0x20) { [string][char]$code } else { $m.Value }
+    })
+}
+
+# Turns a Value object ({type, value/values/bytes}) into a short string.
 function Format-Value {
     param($Value)
     switch ($Value.type) {
         'Dword'    { [string]$Value.value }
         'QDword'   { [string]$Value.value }
-        'Str'      { ConvertTo-Json -InputObject $Value.value -Compress }
+        'Str'      { ConvertTo-DisplayString $Value.value }
         'MultiStr' {
-            '[' + (($Value.values | ForEach-Object { ConvertTo-Json -InputObject $_ -Compress }) -join ', ') + ']'
+            '[' + (($Value.values | ForEach-Object { ConvertTo-DisplayString $_ }) -join ', ') + ']'
         }
         'Binary'   { '0x' + (($Value.bytes | ForEach-Object { '{0:X2}' -f $_ }) -join '') }
         default    { "?$($Value.type)?" }
