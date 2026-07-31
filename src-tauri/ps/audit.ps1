@@ -219,7 +219,9 @@ function Get-ExpectedValueType {
         'AtMost'      { 'Dword' }
         'Contains'    { 'Str' }
         'ContainsAll' { 'Str' }
-        'Configured'  { 'Str' }
+        # A Configured expected names no literal value to mirror, so the
+        # found value renders plain (no quoting).
+        'Configured'  { $null }
         'AbsentOr'    { Get-ExpectedValueType $Expected.inner }
         'All'         { if (@($Expected.values).Count -gt 0) { Get-ExpectedValueType $Expected.values[0] } else { $null } }
         'Any'         { if (@($Expected.values).Count -gt 0) { Get-ExpectedValueType $Expected.values[0] } else { $null } }
