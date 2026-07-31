@@ -185,17 +185,42 @@ pub(crate) enum MatchMode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(tag = "type", rename_all_fields = "camelCase")]
 pub(crate) enum ExpectedValue {
-    Equals { value: Value },
-    NotEquals { value: Value },
-    AtLeast { value: i64 },
-    AtMost { value: i64 },
-    OneOf { values: Vec<Value> },
-    Contains { substring: String },
-    ContainsAll { substrings: Vec<String> },
+    Equals {
+        value: Value,
+    },
+    NotEquals {
+        value: Value,
+    },
+    AtLeast {
+        value: i64,
+    },
+    AtMost {
+        value: i64,
+    },
+    OneOf {
+        values: Vec<Value>,
+    },
+    Contains {
+        substring: String,
+    },
+    ContainsAll {
+        substrings: Vec<String>,
+    },
+    /// Any non-empty value passes. Used when the benchmark prescribes
+    /// that the setting be configured while leaving its content to the
+    /// administrator (the audit text writes a placeholder like
+    /// `<path>\<filename>.log` for the expected value).
+    Configured,
     Absent,
-    AbsentOr { inner: Box<ExpectedValue> },
-    All { values: Vec<ExpectedValue> },
-    Any { values: Vec<ExpectedValue> },
+    AbsentOr {
+        inner: Box<ExpectedValue>,
+    },
+    All {
+        values: Vec<ExpectedValue>,
+    },
+    Any {
+        values: Vec<ExpectedValue>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]

@@ -270,7 +270,14 @@ export type Exception = {
 	grantedBy: string | null,
 };
 
-export type ExpectedValue = { type: "Equals"; value: Value } | { type: "NotEquals"; value: Value } | { type: "AtLeast"; value: number } | { type: "AtMost"; value: number } | { type: "OneOf"; values: Value[] } | { type: "Contains"; substring: string } | { type: "ContainsAll"; substrings: string[] } | { type: "Absent" } | { type: "AbsentOr"; inner: ExpectedValue } | { type: "All"; values: ExpectedValue[] } | { type: "Any"; values: ExpectedValue[] };
+export type ExpectedValue = { type: "Equals"; value: Value } | { type: "NotEquals"; value: Value } | { type: "AtLeast"; value: number } | { type: "AtMost"; value: number } | { type: "OneOf"; values: Value[] } | { type: "Contains"; substring: string } | { type: "ContainsAll"; substrings: string[] } | 
+/**
+ *  Any non-empty value passes. Used when the benchmark prescribes
+ *  that the setting be configured while leaving its content to the
+ *  administrator (the audit text writes a placeholder like
+ *  `<path>\<filename>.log` for the expected value).
+ */
+{ type: "Configured" } | { type: "Absent" } | { type: "AbsentOr"; inner: ExpectedValue } | { type: "All"; values: ExpectedValue[] } | { type: "Any"; values: ExpectedValue[] };
 
 export type Level = "L1" | "L2" | "BL";
 

@@ -9,8 +9,9 @@ use crate::parser::model::{ExpectedValue, Value};
 
 /// Extracts the expected registry value from the audit text. Patterns are
 /// tried in priority order: `Absent` → `AbsentOr(Equals(Dword))` → `REG_SZ`
-/// (GUID list as `ContainsAll`, otherwise `Equals(Str)`) → `REG_DWORD`
-/// constraint → `is set to` constraint (PolicyManager-style).
+/// (GUID list as `ContainsAll`, placeholder path as `Configured`,
+/// otherwise `Equals(Str)`) → `REG_DWORD` constraint → `is set to`
+/// constraint (PolicyManager-style).
 pub(super) fn parse(body: &str) -> Option<ExpectedValue> {
     let normalized = normalize_whitespace(body);
 
@@ -82,6 +83,9 @@ pub(super) fn parse(body: &str) -> Option<ExpectedValue> {
         if !snippet.is_empty() && !contains_per_key_split(snippet) {
             if let Some(guids) = parse_guid_list(snippet) {
                 return Some(ExpectedValue::ContainsAll { substrings: guids });
+            }
+            if is_placeholder_path(snippet) {
+                return Some(ExpectedValue::Configured);
             }
             if let Some(options) = parse_str_options(snippet) {
                 return Some(ExpectedValue::OneOf { values: options });
@@ -496,6 +500,41 @@ fn parse_guid_list(snippet: &str) -> Option<Vec<String>> {
     }
 }
 
+/// True for a placeholder-shaped path like `<path>\<filename>.log`:
+/// one or more angle-bracket tokens of plain words, joined by path
+/// punctuation. The benchmark writes this shape when the value's
+/// content is the administrator's choice and only its presence is
+/// prescribed, so it maps to `Configured`. An ADMX-XML literal
+/// (`<enabled/><data ... />`) fails the plain-word token test and
+/// stays an exact string match.
+fn is_placeholder_path(snippet: &str) -> bool {
+    let mut rest = snippet;
+    let mut token_count = 0usize;
+    let mut literal = String::new();
+    while let Some(open) = rest.find('<') {
+        literal.push_str(&rest[..open]);
+        let Some(close_offset) = rest[open..].find('>') else {
+            return false;
+        };
+        let token = &rest[open + 1..open + close_offset];
+        let token_is_plain_word = !token.is_empty()
+            && token
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '_' | '-'));
+        if !token_is_plain_word {
+            return false;
+        }
+        token_count += 1;
+        rest = &rest[open + close_offset + 1..];
+    }
+    literal.push_str(rest);
+    token_count > 0
+        && literal.contains(['\\', '/', '.'])
+        && literal
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '\\' | '/' | '.'))
+}
+
 fn is_guid(text: &str) -> bool {
     let trimmed = text.trim();
     let Some(inner) = trimmed
@@ -855,6 +894,26 @@ mod tests {
     fn bails_on_per_key_different_dwords() {
         let body = "...REG_DWORD value of 1 (Disabled) and 0 (DoReport).\n";
         assert_eq!(parse(body), None);
+    }
+
+    #[test]
+    fn parses_placeholder_path_as_configured() {
+        // Mimics the v5 firewall log-path recs: the audit text names a
+        // placeholder path, so any configured value passes.
+        let body = "...REG_SZ value of <path>\\<filename>.log. \nHKLM\\SYSTEM\\Foo:LogFilePath\n";
+        assert_eq!(parse(body), Some(ExpectedValue::Configured));
+    }
+
+    #[test]
+    fn placeholder_detection_rejects_admx_xml_and_literals() {
+        assert!(is_placeholder_path("<path>\\<filename>.log"));
+        assert!(!is_placeholder_path(
+            "<enabled/><data id=\"X\" value=\"Block\" />"
+        ));
+        assert!(!is_placeholder_path(
+            "%SystemRoot%\\System32\\logfiles\\firewall\\domainfw.log"
+        ));
+        assert!(!is_placeholder_path("<blank>"));
     }
 
     #[test]

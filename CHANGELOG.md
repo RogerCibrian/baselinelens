@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Settings under a per-tenant registry key are audited again on benchmarks that write the tenant placeholder in quotes (`"Tenant-ID"`) instead of angle brackets. The quoted form was read as a literal key name that never exists, reporting a failure even when the device was configured correctly. Affects recs such as the Windows Hello for Business PIN settings in the v5.0.0 benchmarks.
+- Settings whose recommended state is "configured" with a placeholder value in the audit text — such as the firewall log file path settings in the v5 benchmarks, written as `<path>\<filename>.log` — now pass when any value is present, instead of comparing the device's value against the placeholder text and always failing.
+
 ## [1.1.1] - 2026-07-29
 
 ### Fixed

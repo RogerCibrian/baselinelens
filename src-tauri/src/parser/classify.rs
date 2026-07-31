@@ -656,11 +656,16 @@ mod tests {
             for rec in &recs {
                 if let AuditProcedure::Registry { checks } = audit_procedure(rec) {
                     for check in &checks {
-                        let placeholder_like = check
+                        let placeholder_value_name = check
                             .value_name
                             .as_deref()
                             .is_none_or(|name| name.contains('<') || name.contains('>'));
-                        if placeholder_like {
+                        let placeholder_path = check.path.contains('<') || check.path.contains('"');
+                        let configured = matches!(
+                            check.expected,
+                            crate::parser::model::ExpectedValue::Configured
+                        );
+                        if placeholder_value_name || placeholder_path || configured {
                             eprintln!(
                                 "[{}] {}:{}\n      expected={:?}",
                                 rec.id,

@@ -73,7 +73,7 @@ pub(super) fn extract_all(body: &str) -> Vec<JoinedPath> {
         if let Some(colon_idx) = joined.find(':') {
             let (path_part, rest) = joined.split_at(colon_idx);
             let value_name = rest[1..].trim().to_string();
-            let path = normalize_hive(path_part.trim());
+            let path = normalize_placeholders(&normalize_hive(path_part.trim()));
             if !path.is_empty() && !value_name.is_empty() {
                 paths.push(JoinedPath { path, value_name });
             }
@@ -106,6 +106,36 @@ fn normalize_hive(path: &str) -> String {
 
 fn had_trailing_whitespace(raw: &str) -> bool {
     raw.len() != raw.trim_end().len()
+}
+
+/// Rewrites the quoted `"Tenant-ID"` placeholder spelling to the
+/// angle-bracket form `<Tenant-ID>` that the audit script's path
+/// resolver substitutes at scan time. Some benchmarks quote the
+/// placeholder; the resolver recognizes only the `<...>` grammar.
+fn normalize_placeholders(path: &str) -> String {
+    const QUOTED: &str = "\"tenant-id\"";
+    let mut out = String::with_capacity(path.len());
+    let mut rest = path;
+    while let Some(idx) = find_ignore_ascii_case(rest, QUOTED) {
+        out.push_str(&rest[..idx]);
+        out.push_str("<Tenant-ID>");
+        rest = &rest[idx + QUOTED.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Byte offset of the first case-insensitive occurrence of `needle` in
+/// `haystack`. ASCII-only comparison, which covers the registry paths
+/// this module extracts.
+fn find_ignore_ascii_case(haystack: &str, needle: &str) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .position(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
 #[cfg(test)]
@@ -197,6 +227,25 @@ HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa:restrictremotesam \nO:BAG:BAD:(A;;
             "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa"
         );
         assert_eq!(paths[0].value_name, "restrictremotesam");
+    }
+
+    #[test]
+    fn normalizes_quoted_tenant_id_to_angle_bracket_placeholder() {
+        // Mimics the v5 PIN-complexity recs: the tenant placeholder is
+        // quoted and wraps mid-token, and a narrative Note line follows
+        // the completed value name.
+        let body = "\
+HKLM\\SOFTWARE\\Microsoft\\Policies\\PassportForWork\\\"Tenant-
+ID\"\\Device\\Policies\\PINComplexity:MinimumPINLength \n\
+Note: \"Tenant-ID\" in the above Registry Key, will be the organizations actual Tenant-ID.
+";
+        let paths = extract_all(body);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(
+            paths[0].path,
+            "HKLM\\SOFTWARE\\Microsoft\\Policies\\PassportForWork\\<Tenant-ID>\\Device\\Policies\\PINComplexity"
+        );
+        assert_eq!(paths[0].value_name, "MinimumPINLength");
     }
 
     #[test]

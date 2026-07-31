@@ -180,6 +180,7 @@ function Format-Expected {
         'OneOf'       { 'one of ' + (($Expected.values | ForEach-Object { Format-Value $_ }) -join ', ') }
         'Contains'    { "contains '$($Expected.substring)'" }
         'ContainsAll' { 'contains all of ' + (($Expected.substrings | ForEach-Object { "'$_'" }) -join ', ') }
+        'Configured'  { 'any configured value' }
         'Absent'      { 'Not configured' }
         'AbsentOr'    { 'Not configured, or ' + (Format-Expected $Expected.inner) }
         'All'         { 'all of (' + (($Expected.values | ForEach-Object { Format-Expected $_ }) -join '; ') + ')' }
@@ -202,6 +203,7 @@ function Get-ExpectedValueType {
         'AtMost'      { 'Dword' }
         'Contains'    { 'Str' }
         'ContainsAll' { 'Str' }
+        'Configured'  { 'Str' }
         'AbsentOr'    { Get-ExpectedValueType $Expected.inner }
         'All'         { if (@($Expected.values).Count -gt 0) { Get-ExpectedValueType $Expected.values[0] } else { $null } }
         'Any'         { if (@($Expected.values).Count -gt 0) { Get-ExpectedValueType $Expected.values[0] } else { $null } }
@@ -366,7 +368,7 @@ function Get-AsrFoundAction {
 function Test-Expected {
     param($Current, $Expected)
 
-    $requiresPresent = @('Equals', 'NotEquals', 'AtLeast', 'AtMost', 'OneOf', 'Contains', 'ContainsAll')
+    $requiresPresent = @('Equals', 'NotEquals', 'AtLeast', 'AtMost', 'OneOf', 'Contains', 'ContainsAll', 'Configured')
     if ($Expected.type -in $requiresPresent -and $null -eq $Current) {
         return $false
     }
@@ -391,6 +393,7 @@ function Test-Expected {
             }
             return $all
         }
+        'Configured'  { -not [string]::IsNullOrWhiteSpace([string]$Current) }
         'Absent'      { $null -eq $Current }
         'AbsentOr'    { ($null -eq $Current) -or (Test-Expected $Current $Expected.inner) }
         'All'         {
